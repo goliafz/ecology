@@ -20,9 +20,9 @@
   --warn-bg: #FBF0E4;
   --red: #B9473B;
 
-  --font: "Onest", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --font-display: "Onest", system-ui, sans-serif;
-  --font-brand: "Unbounded", "Onest", system-ui, sans-serif;
+  --font: "Onest", -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  --font-display: "Onest", -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  --font-brand: "Unbounded", "Onest", -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
 
   --radius: 22px;
   --radius-sm: 14px;
@@ -36,7 +36,7 @@
 *::before,
 *::after { box-sizing: border-box; }
 
-html { scroll-behavior: smooth; scroll-padding-top: calc(var(--header-h) + 12px); -webkit-text-size-adjust: 100%; }
+html { scroll-behavior: smooth; scroll-padding-top: calc(var(--header-h) + 12px); -webkit-text-size-adjust: 100%; -moz-text-size-adjust: 100%; text-size-adjust: 100%; }
 
 body {
   margin: 0;
@@ -46,6 +46,9 @@ body {
   color: var(--ink);
   background: var(--paper);
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  -webkit-tap-highlight-color: transparent;
   overflow-x: hidden;
 }
 
@@ -80,7 +83,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 .btn:hover { transform: translateY(-1px); }
 .btn--sm { min-height: 44px; padding: 0 20px; font-size: 16px; }
-.btn--lg { min-height: 60px; padding: 0 32px; font-size: 18px; }
+.btn--lg { min-height: 60px; padding: 0 26px; font-size: 17px; }
 .btn--block { width: 100%; }
 .btn--primary { background: var(--green-800); color: var(--white); }
 .btn--primary:hover { background: var(--green-700); box-shadow: 0 10px 24px -10px rgba(14, 59, 44, .6); }
@@ -123,7 +126,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .nav a { padding: 8px 12px; border-radius: 10px; font-size: 16px; font-weight: 500; color: var(--ink); transition: background-color .2s, color .2s; }
 .nav a:hover { background: var(--cream); color: var(--green-800); }
 
-.header__actions { display: flex; align-items: center; gap: 16px; flex: none; }
+.header__actions { display: flex; align-items: center; gap: 16px; flex: none; margin-left: auto; }
 .header__phone { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; color: var(--green-900); white-space: nowrap; }
 .header__phone .ic { width: 20px; height: 20px; color: var(--green-600); }
 
@@ -142,7 +145,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .hero__bg { position: absolute; inset: 0; pointer-events: none; }
 .hero__lines { width: 100%; height: 100%; color: rgba(200, 219, 122, .14); }
 
-.hero__grid { position: relative; display: grid; grid-template-columns: 1.4fr .85fr; gap: 56px; align-items: center; }
+.hero__grid { position: relative; display: grid; grid-template-columns: 1.5fr .8fr; gap: 56px; align-items: center; }
 
 .hero__title {
   font-family: var(--font-display); font-weight: 600;
@@ -150,7 +153,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 .hero__title em { font-style: normal; color: var(--lime); white-space: nowrap; }
 .hero__lead { margin-top: 26px; max-width: 580px; font-size: 20px; color: rgba(255, 255, 255, .78); }
-.hero__buttons { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 40px; }
+.hero__buttons { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 40px; }
 
 .hero__facts { display: flex; flex-wrap: wrap; gap: 12px 28px; margin-top: 48px; padding-top: 28px; border-top: 1px solid rgba(255, 255, 255, .12); }
 .hero__facts li { display: flex; align-items: center; gap: 10px; font-size: 15px; color: rgba(255, 255, 255, .75); }
@@ -429,10 +432,17 @@ button, input, select, textarea { font: inherit; color: inherit; }
 /* ==========================================================================
    Адаптив
    ========================================================================== */
-@media (max-width: 1480px) {
+@media (max-width: 1560px) {
   .nav a { padding: 8px 9px; font-size: 15px; }
   .header__phone span { display: none; }
   .header__inner { gap: 20px; }
+}
+
+/* Первый экран в одну колонку, как только кнопки перестают помещаться в ряд */
+@media (max-width: 1180px) {
+  .hero__grid { grid-template-columns: 1fr; gap: 48px; }
+  .hero__content { max-width: 720px; }
+  .quick { max-width: 560px; }
 }
 
 @media (max-width: 1100px) {
@@ -452,7 +462,6 @@ button, input, select, textarea { font: inherit; color: inherit; }
   .nav a:last-child { border-bottom: 0; }
 
   .hero { padding: 64px 0 72px; }
-  .hero__grid { grid-template-columns: 1fr; gap: 48px; }
   .cards, .rules { grid-template-columns: 1fr 1fr; }
   .about { grid-template-columns: 1fr; }
   .rule--info { grid-column: span 2; }
@@ -469,6 +478,11 @@ button, input, select, textarea { font: inherit; color: inherit; }
   .footer__grid > div:first-child { grid-column: span 2; }
 }
 
+@media (max-width: 720px) {
+  .hero__buttons { flex-direction: column; align-items: stretch; }
+  .hero__buttons .btn { width: 100%; white-space: normal; text-align: center; line-height: 1.25; padding-top: 14px; padding-bottom: 14px; }
+}
+
 @media (max-width: 640px) {
   body { font-size: 17px; padding-bottom: 76px; }
   .container { padding: 0 16px; }
@@ -482,7 +496,6 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
   .hero { padding: 48px 0 56px; }
   .hero__lead { font-size: 18px; }
-  .hero__buttons .btn { width: 100%; white-space: normal; text-align: center; line-height: 1.25; padding-top: 14px; padding-bottom: 14px; }
   .hero__facts { flex-direction: column; margin-top: 36px; }
   .quick { padding: 20px; border-radius: 24px; }
   .quick__item { padding: 14px 8px; margin: 0; }
@@ -490,6 +503,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
   .cards, .rules, .steps, .news, .field-row { grid-template-columns: 1fr; }
   .about__item { padding: 28px 24px; }
   .rule--info, .news__item--feature { grid-column: auto; }
+  .news__item--feature { min-height: 0; }
+  .news__item--feature h3 { font-size: 22px; }
   .card, .rule, .step { padding: 26px; }
 
   .tabs__list { display: flex; }
