@@ -50,8 +50,17 @@
     });
   });
 
+  // Ссылки «Физлицам» / «Юрлицам» открывают нужную вкладку
+  document.addEventListener('click', function (e) {
+    var link = e.target.closest('[data-tab]');
+    if (link) {
+      var tab = document.getElementById(link.getAttribute('data-tab'));
+      if (tab) tab.click();
+    }
+  });
+
   // Плавное появление блоков
-  var revealTargets = document.querySelectorAll('.section__head, .card, .step, .contract, .ways li, .rule, .faq__item, .news__item, .form');
+  var revealTargets = document.querySelectorAll('.section__head, .about__item, .card, .step, .contract, .ways li, .rule, .faq__item, .news__item, .form');
   if ('IntersectionObserver' in window) {
     var io = new IntersectionObserver(function (entries) {
       entries.forEach(function (entry) {
@@ -88,6 +97,7 @@
       'Тема: ' + data.get('topic'),
       'Имя: ' + data.get('name'),
       'Телефон: ' + data.get('phone'),
+      'E-mail: ' + (data.get('email') || '—'),
       '',
       data.get('message')
     ].join('\n');
@@ -96,6 +106,11 @@
       + '&body=' + encodeURIComponent(body);
     status.className = 'form__status is-ok';
     status.textContent = 'Спасибо! Откроется почтовая программа — осталось нажать «Отправить».';
+  });
+  // Кнопки с темой заранее выбирают её в форме
+  document.addEventListener('click', function (e) {
+    var link = e.target.closest('[data-topic]');
+    if (link) form.elements.topic.value = link.getAttribute('data-topic');
   });
   form.addEventListener('input', function (e) {
     e.target.classList.remove('is-invalid');

@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Экология-сервис — региональный оператор по обращению с ТКО</title>
-  <meta name="description" content="ООО «Экология-сервис» — региональный оператор по обращению с твёрдыми коммунальными отходами в зоне 2 Хабаровского края. Договор, оплата, тарифы, вывоз мусора.">
+  <title>ООО «Экология-Сервис» — региональный оператор по обращению с ТКО</title>
+  <meta name="description" content="ООО «Экология-Сервис» — региональный оператор по обращению с твёрдыми коммунальными отходами в зоне деятельности № 2 Хабаровского края с 01.07.2025 г. Договор, оплата, новости, контакты.">
   <meta name="theme-color" content="#0E3B2C">
   <link rel="icon" href="assets/img/logo.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -37,6 +37,9 @@
     <symbol id="i-building" viewBox="0 0 24 24"><path d="M4 21.5V4a1.5 1.5 0 0 1 1.5-1.5h9A1.5 1.5 0 0 1 16 4v17.5M16 9h3.5A1.5 1.5 0 0 1 21 10.5v11M2.5 21.5h19M8 7h4M8 11h4M8 15h4"/></symbol>
     <symbol id="i-app" viewBox="0 0 24 24"><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M11 18.5h2"/></symbol>
     <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5"/><path d="M12 7v5l3 2"/></symbol>
+    <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7.5"/><circle cx="12" cy="12" r="3"/><path d="M12 1.5v3M12 19.5v3M1.5 12h3M19.5 12h3"/></symbol>
+    <symbol id="i-leaf" viewBox="0 0 24 24"><path d="M4 20c0-9 6-15 16-16 0 10-6 16-15 16"/><path d="M4 20c3-5 6-8 10-10"/></symbol>
+    <symbol id="i-book" viewBox="0 0 24 24"><path d="M12 6.5C10 5 7 4.5 3 4.5v14c4 0 7 .5 9 2 2-1.5 5-2 9-2v-14c-4 0-7 .5-9 2ZM12 6.5v14"/><path d="M6 9h3M6 12.5h3M15 9h3M15 12.5h3"/></symbol>
     <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
   </defs>
 </svg>
@@ -46,20 +49,19 @@
 <!-- Шапка -->
 <header class="header" id="top">
   <div class="container header__inner">
-    <a class="brand" href="#top" aria-label="Экология-сервис — на главную">
+    <a class="brand" href="#top" aria-label="Экология-Сервис — на главную">
       <img src="assets/img/logo.svg" alt="" width="44" height="44">
       <span class="brand__text">
-        <span class="brand__name">Экология-сервис</span>
-        <span class="brand__sub">Региональный оператор ТКО</span>
+        <span class="brand__name">Экология-Сервис</span>
+        <span class="brand__sub">Честно и чисто</span>
       </span>
     </a>
 
     <nav class="nav" id="nav" aria-label="Основное меню">
-      <a href="#services">Услуги</a>
-      <a href="#contract">Договор</a>
+      <a href="#about">О компании</a>
+      <a href="#contract" data-tab="t-people">Физлицам</a>
+      <a href="#contract" data-tab="t-business">Юрлицам</a>
       <a href="#pay">Оплата</a>
-      <a href="#rules">Правила</a>
-      <a href="#faq">Вопросы</a>
       <a href="#news">Новости</a>
       <a href="#contacts">Контакты</a>
     </nav>
@@ -67,9 +69,9 @@
     <div class="header__actions">
       <a class="header__phone" href="tel:+74217500255">
         <svg class="ic"><use href="#i-phone"/></svg>
-        <span>(4217) 50-02-55</span>
+        <span>+7 (4217) 50-02-55</span>
       </a>
-      <a class="btn btn--primary btn--sm header__cta" href="#pay">Оплатить</a>
+      <a class="btn btn--primary btn--sm header__cta" href="#contacts">Оставить заявку</a>
       <button class="burger" type="button" aria-label="Открыть меню" aria-expanded="false" aria-controls="nav">
         <svg class="ic"><use href="#i-menu"/></svg>
       </button>
@@ -97,17 +99,16 @@
 
     <div class="container hero__grid">
       <div class="hero__content">
-        <p class="eyebrow eyebrow--light">Зона №&nbsp;2 Хабаровского края · с 1 июля 2025 года</p>
-        <h1 class="hero__title">Чистота вокруг&nbsp;— <br><em>наша работа</em></h1>
+        <p class="eyebrow eyebrow--light">Честно и чисто</p>
+        <h1 class="hero__title">ООО<br><em>«Экология-Сервис»</em></h1>
         <p class="hero__lead">
-          ООО «Экология-сервис»&nbsp;— региональный оператор по обращению с&nbsp;твёрдыми коммунальными отходами.
-          Мы вывозим, обрабатываем и&nbsp;безопасно размещаем отходы, чтобы ваш двор, улица и&nbsp;город оставались чистыми.
+          Региональный оператор по обращению с&nbsp;твердыми коммунальными отходами в&nbsp;зоне деятельности №&nbsp;2 Хабаровского края с&nbsp;01.07.2025&nbsp;г.
         </p>
         <div class="hero__buttons">
-          <a class="btn btn--accent btn--lg" href="#pay">
-            <svg class="ic"><use href="#i-card"/></svg> Оплатить услугу
+          <a class="btn btn--accent btn--lg" href="#contacts" data-topic="Заключение договора">
+            <svg class="ic"><use href="#i-doc"/></svg> Отправить заявку на заключение договора
           </a>
-          <a class="btn btn--ghost btn--lg" href="#contract">Заключить договор</a>
+          <a class="btn btn--ghost btn--lg" href="#about">Подробнее</a>
         </div>
         <ul class="hero__facts">
           <li><svg class="ic"><use href="#i-shield"/></svg> Статус регионального оператора</li>
@@ -123,21 +124,49 @@
           <span><b>Оплатить квитанцию</b><small>Онлайн, в приложении или в банке</small></span>
           <svg class="ic quick__arrow"><use href="#i-arrow"/></svg>
         </a>
-        <a class="quick__item" href="#contract">
+        <a class="quick__item" href="#contract" data-tab="t-people">
           <span class="quick__icon"><svg class="ic"><use href="#i-doc"/></svg></span>
           <span><b>Заключить договор</b><small>Для жителей и для бизнеса</small></span>
           <svg class="ic quick__arrow"><use href="#i-arrow"/></svg>
         </a>
-        <a class="quick__item" href="#contacts">
+        <a class="quick__item" href="#contacts" data-topic="Мусор не вывезли">
           <span class="quick__icon quick__icon--warn"><svg class="ic"><use href="#i-alert"/></svg></span>
           <span><b>Мусор не вывезли</b><small>Сообщите нам — мы разберёмся</small></span>
           <svg class="ic quick__arrow"><use href="#i-arrow"/></svg>
         </a>
         <a class="quick__phone" href="tel:+74217500255">
           <span>Единая справочная</span>
-          <b>(4217) 50-02-55</b>
+          <b>+7 (4217) 50-02-55</b>
         </a>
       </aside>
+    </div>
+  </section>
+
+  <!-- Деятельность -->
+  <section class="section section--about" id="about">
+    <div class="container">
+      <div class="section__head">
+        <p class="eyebrow">О компании</p>
+        <h2 class="section__title">Деятельность</h2>
+      </div>
+
+      <div class="about">
+        <article class="about__item">
+          <span class="about__icon"><svg class="ic"><use href="#i-target"/></svg></span>
+          <h3>Цель</h3>
+          <p>Формирование системы обращения с&nbsp;твердыми коммунальными отходами (ТКО)</p>
+        </article>
+        <article class="about__item">
+          <span class="about__icon"><svg class="ic"><use href="#i-leaf"/></svg></span>
+          <h3>Охрана окружающей среды</h3>
+          <p>Соблюдение обязательных требований&nbsp;— транспортирование ТКО на&nbsp;объекты, предназначенные для этих целей</p>
+        </article>
+        <article class="about__item">
+          <span class="about__icon"><svg class="ic"><use href="#i-book"/></svg></span>
+          <h3>Просвещение</h3>
+          <p>Основная задача&nbsp;— повысить экологическую культуру населения. Просветительская работа с&nbsp;образовательными и&nbsp;общественными организациями</p>
+        </article>
+      </div>
     </div>
   </section>
 
@@ -273,7 +302,7 @@
             </div>
             <ol class="checklist">
               <li><span>1</span><div><b>Подготовьте документы</b>реквизиты, документы на объект, данные о площади и виде деятельности</div></li>
-              <li><span>2</span><div><b>Подайте заявку</b>в офисе по адресу ул.&nbsp;Краснофлотская,&nbsp;25/2 или на <a href="mailto:info@eco-service27.ru">info@eco-service27.ru</a></div></li>
+              <li><span>2</span><div><b>Подайте заявку</b>в офисе по адресу ул.&nbsp;Краснофлотская, д.&nbsp;25&nbsp;к.&nbsp;2, помещ.&nbsp;15 или на <a href="mailto:info@eco-service27.ru">info@eco-service27.ru</a></div></li>
               <li><span>3</span><div><b>Подпишите договор</b>и получайте счета и акты в удобном формате</div></li>
             </ol>
           </div>
@@ -282,7 +311,7 @@
 
       <div class="notice">
         <svg class="ic"><use href="#i-phone"/></svg>
-        <p>Не уверены, что подходит именно вам? Позвоните по номеру <a href="tel:+74217500255"><b>(4217) 50-02-55</b></a>&nbsp;— специалист всё объяснит.</p>
+        <p>Не уверены, что подходит именно вам? Позвоните по номеру <a href="tel:+74217500255"><b>+7 (4217) 50-02-55</b></a>&nbsp;— специалист всё объяснит.</p>
       </div>
     </div>
   </section>
@@ -385,7 +414,7 @@
       <div class="faq__list">
         <details class="faq__item" open>
           <summary>Кто такой региональный оператор и зачем он нужен?</summary>
-          <div><p>Это компания, которая отвечает за весь путь коммунальных отходов в своей зоне: сбор, вывоз, обработку и размещение. С 1 июля 2025 года в зоне №&nbsp;2 Хабаровского края эту работу выполняет ООО «Экология-сервис».</p></div>
+          <div><p>Это компания, которая отвечает за весь путь коммунальных отходов в своей зоне: сбор, вывоз, обработку и размещение. С 1 июля 2025 года в зоне №&nbsp;2 Хабаровского края эту работу выполняет ООО «Экология-Сервис».</p></div>
         </details>
         <details class="faq__item">
           <summary>Почему нужно платить, если я не заключал договор?</summary>
@@ -401,7 +430,7 @@
         </details>
         <details class="faq__item">
           <summary>Мусор не вывезли вовремя. Что делать?</summary>
-          <div><p>Позвоните по номеру (4217) 50-02-55 или напишите на info@eco-service27.ru. Укажите точный адрес контейнерной площадки и, если можно, приложите фото. Мы передадим информацию диспетчеру и&nbsp;проконтролируем вывоз.</p></div>
+          <div><p>Позвоните по номеру +7 (4217) 50-02-55 или напишите на info@eco-service27.ru. Укажите точный адрес контейнерной площадки и, если можно, приложите фото. Мы передадим информацию диспетчеру и&nbsp;проконтролируем вывоз.</p></div>
         </details>
       </div>
     </div>
@@ -413,32 +442,28 @@
       <div class="section__head section__head--row">
         <div>
           <p class="eyebrow">Новости</p>
-          <h2 class="section__title">Что происходит в компании</h2>
+          <h2 class="section__title">Новости отрасли</h2>
         </div>
-        <a class="btn btn--outline" href="https://eco-service27.ru/category/nashi-novosti/">Все новости <svg class="ic"><use href="#i-arrow"/></svg></a>
+        <a class="btn btn--outline" href="https://eco-service27.ru/novosti-otrasli/">Все новости <svg class="ic"><use href="#i-arrow"/></svg></a>
       </div>
 
       <div class="news">
-        <a class="news__item news__item--feature" href="https://eco-service27.ru/2026/03/03/prilozhenie-vc-vychislitelnyj-centr/">
-          <time datetime="2026-03-03">3 марта 2026</time>
-          <h3>Приложение ВЦ: оплата за вывоз ТКО со смартфона</h3>
-          <p>Оплачивайте квитанции, следите за начислениями и задолженностью в мобильном приложении.</p>
-          <span class="card__link">Читать <svg class="ic"><use href="#i-arrow"/></svg></span>
+        <a class="news__item news__item--feature" href="https://eco-service27.ru/novosti-otrasli/">
+          <span class="news__tag">Важно</span>
+          <h3>Уведомление о&nbsp;расторжении договора на&nbsp;оказание услуг по&nbsp;обращению с&nbsp;ТКО с&nbsp;ТСЖ «Пионерская-24»</h3>
+          <span class="card__link">Подробнее <svg class="ic"><use href="#i-arrow"/></svg></span>
         </a>
-        <a class="news__item" href="https://eco-service27.ru/2025/08/05/ustanovlen-lgotnyj-tarif/">
-          <time datetime="2025-08-05">5 августа 2025</time>
-          <h3>Установлен льготный тариф</h3>
-          <span class="card__link">Читать <svg class="ic"><use href="#i-arrow"/></svg></span>
+        <a class="news__item" href="https://eco-service27.ru/2026/03/03/prilozhenie-vc-vychislitelnyj-centr/">
+          <h3>Приложение ВЦ («Вычислительный центр»)</h3>
+          <span class="card__link">Подробнее <svg class="ic"><use href="#i-arrow"/></svg></span>
         </a>
-        <a class="news__item" href="https://eco-service27.ru/2025/06/19/test/">
-          <time datetime="2025-06-19">19 июня 2025</time>
-          <h3>Руководитель «Экология-сервис» встретился с предпринимателями Комсомольска-на-Амуре</h3>
-          <span class="card__link">Читать <svg class="ic"><use href="#i-arrow"/></svg></span>
+        <a class="news__item" href="https://eco-service27.ru/novosti-otrasli/">
+          <h3>Внесение изменений в&nbsp;постановление №44/74 от&nbsp;19.12.2025</h3>
+          <span class="card__link">Подробнее <svg class="ic"><use href="#i-arrow"/></svg></span>
         </a>
-        <a class="news__item" href="https://eco-service27.ru/2025/05/29/rukovoditel-jekologija-servis-vstretilsja-s-predstaviteljami-mestnyh-snt/">
-          <time datetime="2025-05-29">29 мая 2025</time>
-          <h3>Встреча с представителями местных СНТ</h3>
-          <span class="card__link">Читать <svg class="ic"><use href="#i-arrow"/></svg></span>
+        <a class="news__item" href="https://eco-service27.ru/novosti-otrasli/">
+          <h3>Уважаемые жители города!</h3>
+          <span class="card__link">Подробнее <svg class="ic"><use href="#i-arrow"/></svg></span>
         </a>
       </div>
     </div>
@@ -449,13 +474,13 @@
     <div class="container contacts">
       <div class="contacts__info">
         <p class="eyebrow eyebrow--light">Контакты</p>
-        <h2 class="section__title">Мы на связи</h2>
-        <p class="section__lead">Звоните, пишите или приходите в офис&nbsp;— ответим на вопросы и примем заявку.</p>
+        <h2 class="section__title">Сделайте шаг к&nbsp;экологичному будущему вместе с&nbsp;нами!</h2>
+        <p class="section__lead">Работая с&nbsp;нами, Вы выбираете профессионализм, экологичность и&nbsp;заботу о&nbsp;чистоте</p>
 
         <ul class="contacts__list">
           <li>
             <span class="contacts__icon"><svg class="ic"><use href="#i-phone"/></svg></span>
-            <div><small>Телефон</small><a href="tel:+74217500255">(4217) 50-02-55</a></div>
+            <div><small>Телефон</small><a href="tel:+74217500255">+7 (4217) 50-02-55</a></div>
           </li>
           <li>
             <span class="contacts__icon"><svg class="ic"><use href="#i-mail"/></svg></span>
@@ -463,7 +488,7 @@
           </li>
           <li>
             <span class="contacts__icon"><svg class="ic"><use href="#i-pin"/></svg></span>
-            <div><small>Приём документов</small><span>г. Комсомольск-на-Амуре, ул.&nbsp;Краснофлотская,&nbsp;25/2</span></div>
+            <div><small>Адрес</small><span>г. Комсомольск-на-Амуре, ул.&nbsp;Краснофлотская, д.&nbsp;25&nbsp;к.&nbsp;2, помещ.&nbsp;15</span></div>
           </li>
         </ul>
 
@@ -473,7 +498,7 @@
       </div>
 
       <form class="form" id="feedback" novalidate>
-        <h3 class="form__title">Оставьте обращение</h3>
+        <h3 class="form__title">Оставить заявку</h3>
         <p class="form__sub">Опишите вопрос — мы свяжемся с вами.</p>
 
         <label class="field">
@@ -487,20 +512,26 @@
           </select>
         </label>
         <label class="field">
-          <span>Ваше имя</span>
+          <span>Фамилия Имя</span>
           <input type="text" name="name" autocomplete="name" required>
         </label>
+        <div class="field-row">
+          <label class="field">
+            <span>Ваш телефон</span>
+            <input type="tel" name="phone" autocomplete="tel" placeholder="+7" required>
+          </label>
+          <label class="field">
+            <span>E-mail</span>
+            <input type="email" name="email" autocomplete="email">
+          </label>
+        </div>
         <label class="field">
-          <span>Телефон</span>
-          <input type="tel" name="phone" autocomplete="tel" placeholder="+7" required>
-        </label>
-        <label class="field">
-          <span>Адрес и суть вопроса</span>
+          <span>Текст сообщения</span>
           <textarea name="message" rows="3" required></textarea>
         </label>
         <label class="consent">
           <input type="checkbox" name="consent" required>
-          <span>Согласен на обработку персональных данных</span>
+          <span>Нажимая кнопку «Отправить», вы даёте согласие на обработку персональных данных в&nbsp;соответствии с&nbsp;политикой конфиденциальности.</span>
         </label>
         <button class="btn btn--accent btn--block" type="submit">Отправить</button>
         <p class="form__status" role="status" aria-live="polite"></p>
@@ -517,29 +548,38 @@
       <a class="brand brand--light" href="#top">
         <img src="assets/img/logo.svg" alt="" width="40" height="40">
         <span class="brand__text">
-          <span class="brand__name">Экология-сервис</span>
-          <span class="brand__sub">Региональный оператор ТКО</span>
+          <span class="brand__name">Экология-Сервис</span>
+          <span class="brand__sub">Честно и чисто</span>
         </span>
       </a>
-      <p class="footer__about">Региональный оператор по обращению с твёрдыми коммунальными отходами в зоне №&nbsp;2 Хабаровского края.</p>
+      <p class="footer__about">Региональный оператор по обращению с&nbsp;твердыми коммунальными отходами в&nbsp;зоне деятельности №&nbsp;2 Хабаровского края с&nbsp;01.07.2025&nbsp;г.</p>
     </div>
     <nav class="footer__nav" aria-label="Разделы">
-      <a href="#services">Услуги</a>
-      <a href="#contract">Договор</a>
-      <a href="#pay">Оплата</a>
-      <a href="#rules">Правила</a>
-      <a href="#faq">Вопросы</a>
+      <a href="#about">О компании</a>
       <a href="#news">Новости</a>
+      <a href="#contract" data-tab="t-people">Физлицам</a>
+      <a href="#contract" data-tab="t-business">Юрлицам</a>
+      <a href="#pay">Оплата</a>
+      <a href="#contacts">Контакты</a>
     </nav>
     <div class="footer__contacts">
-      <a href="tel:+74217500255">(4217) 50-02-55</a>
+      <a href="tel:+74217500255">+7 (4217) 50-02-55</a>
       <a href="mailto:info@eco-service27.ru">info@eco-service27.ru</a>
-      <span>г. Комсомольск-на-Амуре, ул.&nbsp;Краснофлотская,&nbsp;25/2</span>
+      <span>г. Комсомольск-на-Амуре, ул.&nbsp;Краснофлотская, д.&nbsp;25&nbsp;к.&nbsp;2, помещ.&nbsp;15</span>
+      <a class="btn btn--accent btn--sm footer__cta" href="#contacts">Оставить заявку</a>
     </div>
   </div>
+  <div class="container">
+    <p class="footer__legal">Данный сайт носит исключительно информационный характер и&nbsp;ни при каких условиях не&nbsp;является публичной офертой, определяемой положениями статьи 437 (2) Гражданского кодекса Российской Федерации. Для получения подробной информации об&nbsp;услугах, ценах и&nbsp;спецпредложениях, пожалуйста, обратитесь к&nbsp;нашим специалистам компании «Экология-Сервис».</p>
+  </div>
   <div class="container footer__bottom">
-    <span>© <span data-year>2026</span> ООО «Экология-сервис»</span>
-    <a href="#top">Наверх ↑</a>
+    <span>© <span data-year>2026</span> ООО «Экология-Сервис». Все права защищены.</span>
+    <!-- TODO: подставить ссылки на документы с действующего сайта -->
+    <nav class="footer__docs" aria-label="Документы">
+      <a href="#">Форма договора</a>
+      <a href="#">Политика конфиденциальности</a>
+      <a href="#">Согласие на обработку персональных данных</a>
+    </nav>
   </div>
 </footer>
 
