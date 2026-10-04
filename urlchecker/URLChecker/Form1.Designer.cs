@@ -77,6 +77,9 @@
             this.toolStripButton7 = new System.Windows.Forms.ToolStripButton();
             this.toolStripButton9 = new System.Windows.Forms.ToolStripButton();
             this.bWL = new System.Windows.Forms.ToolStripButton();
+            this.bProxy = new System.Windows.Forms.ToolStripSplitButton();
+            this.настройкиПроксиToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+            this.toolStripProxyStatus = new System.Windows.Forms.ToolStripStatusLabel();
             this.ExportFileDialog = new System.Windows.Forms.SaveFileDialog();
             this.imageList1 = new System.Windows.Forms.ImageList(this.components);
             this.mainMenu.SuspendLayout();
@@ -153,7 +156,8 @@
             this.statusMenu.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
             this.statusLabel,
             this.toolStripStatus,
-            this.toolStripStatusLabel1});
+            this.toolStripStatusLabel1,
+            this.toolStripProxyStatus});
             this.statusMenu.Location = new System.Drawing.Point(0, 428);
             this.statusMenu.Name = "statusMenu";
             this.statusMenu.Size = new System.Drawing.Size(800, 22);
@@ -175,6 +179,11 @@
             this.toolStripStatusLabel1.ForeColor = System.Drawing.Color.FromArgb(((int)(((byte)(192)))), ((int)(((byte)(0)))), ((int)(((byte)(0)))));
             this.toolStripStatusLabel1.Name = "toolStripStatusLabel1";
             this.toolStripStatusLabel1.Size = new System.Drawing.Size(0, 17);
+            // 
+            // toolStripProxyStatus
+            // 
+            this.toolStripProxyStatus.Name = "toolStripProxyStatus";
+            this.toolStripProxyStatus.Size = new System.Drawing.Size(0, 17);
             // 
             // tabControl1
             // 
@@ -403,7 +412,8 @@
             this.toolStripButton6,
             this.toolStripButton7,
             this.toolStripButton9,
-            this.bWL});
+            this.bWL,
+            this.bProxy});
             this.toolStrip1.Location = new System.Drawing.Point(0, 24);
             this.toolStrip1.Name = "toolStrip1";
             this.toolStrip1.RenderMode = System.Windows.Forms.ToolStripRenderMode.System;
@@ -523,6 +533,25 @@
             this.bWL.TextImageRelation = System.Windows.Forms.TextImageRelation.ImageAboveText;
             this.bWL.Click += new System.EventHandler(this.toolStripButton8_Click);
             // 
+            // bProxy
+            // 
+            this.bProxy.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] {
+            this.настройкиПроксиToolStripMenuItem});
+            this.bProxy.ImageScaling = System.Windows.Forms.ToolStripItemImageScaling.None;
+            this.bProxy.ImageTransparentColor = System.Drawing.Color.Magenta;
+            this.bProxy.Name = "bProxy";
+            this.bProxy.Size = new System.Drawing.Size(64, 64);
+            this.bProxy.Text = "Прокси";
+            this.bProxy.TextImageRelation = System.Windows.Forms.TextImageRelation.ImageAboveText;
+            this.bProxy.ButtonClick += new System.EventHandler(this.bProxy_ButtonClick);
+            // 
+            // настройкиПроксиToolStripMenuItem
+            // 
+            this.настройкиПроксиToolStripMenuItem.Name = "настройкиПроксиToolStripMenuItem";
+            this.настройкиПроксиToolStripMenuItem.Size = new System.Drawing.Size(180, 22);
+            this.настройкиПроксиToolStripMenuItem.Text = "Настройки прокси...";
+            this.настройкиПроксиToolStripMenuItem.Click += new System.EventHandler(this.настройкиПроксиToolStripMenuItem_Click);
+            // 
             // ExportFileDialog
             // 
             this.ExportFileDialog.DefaultExt = "*.csv";
@@ -612,6 +641,9 @@
         private System.Windows.Forms.ToolStripButton toolStripButton7;
         private System.Windows.Forms.SaveFileDialog ExportFileDialog;
         private System.Windows.Forms.ToolStripButton bWL;
+        private System.Windows.Forms.ToolStripSplitButton bProxy;
+        private System.Windows.Forms.ToolStripMenuItem настройкиПроксиToolStripMenuItem;
+        private System.Windows.Forms.ToolStripStatusLabel toolStripProxyStatus;
         private System.Windows.Forms.ToolStripButton toolStripButton8;
         private System.Windows.Forms.ToolStripStatusLabel toolStripStatusLabel1;
         private System.Windows.Forms.ToolStripButton toolStripButton9;

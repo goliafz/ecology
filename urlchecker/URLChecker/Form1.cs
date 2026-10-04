@@ -17,7 +17,7 @@ namespace URLChecker
 {
     public partial class Form1 : Form
     {
-        string _VERSION = "0.11 от 05.12.2018";
+        string _VERSION = "0.11 + прокси от 04.10.2026";
         Thread thread;
 
         static bool _haveBrokeLink = false;
@@ -82,6 +82,58 @@ namespace URLChecker
             else
                 bWL.Image = Resources.wlno;
 
+            Network.ReloadProxy();
+            UpdateProxyButton();
+        }
+
+        private void UpdateProxyButton()
+        {
+            ProxyConfig proxy = Network.ActiveProxy;
+            if (proxy != null)
+            {
+                bProxy.Image = Resources.proxy_on;
+                bProxy.ToolTipText = "Прокси включен (" + proxy.Address + "). Нажмите, чтобы выключить";
+                toolStripProxyStatus.ForeColor = Color.Green;
+                toolStripProxyStatus.Text = "Прокси: " + proxy.Address;
+            }
+            else
+            {
+                bProxy.Image = Resources.proxy_off;
+                bProxy.ToolTipText = "Прокси выключен. Нажмите, чтобы включить";
+                toolStripProxyStatus.ForeColor = SystemColors.ControlText;
+                toolStripProxyStatus.Text = "Без прокси";
+            }
+        }
+
+        private void bProxy_ButtonClick(object sender, EventArgs e)
+        {
+            if (!Settings.Default.proxyEnabled && Settings.Default.proxyHost.Trim() == "")
+            {
+                // Прокси ещё не настроен - сразу открываем настройки
+                ShowProxySettings(true);
+                return;
+            }
+
+            Settings.Default.proxyEnabled = !Settings.Default.proxyEnabled;
+            Settings.Default.Save();
+            Network.ReloadProxy();
+            UpdateProxyButton();
+        }
+
+        private void настройкиПроксиToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            ShowProxySettings(false);
+        }
+
+        private void ShowProxySettings(bool enableOnOpen)
+        {
+            using (FormProxy formProxy = new FormProxy())
+            {
+                formProxy.EnableOnOpen = enableOnOpen;
+                formProxy.ShowDialog(this);
+            }
+            Network.ReloadProxy();
+            UpdateProxyButton();
         }
 
         private void настройкиToolStripMenuItem_Click(object sender, EventArgs e)

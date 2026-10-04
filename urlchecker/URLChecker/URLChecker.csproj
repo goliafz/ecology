@@ -50,6 +50,7 @@
     <Reference Include="System.Data" />
     <Reference Include="System.Deployment" />
     <Reference Include="System.Drawing" />
+    <Reference Include="System.Security" />
     <Reference Include="System.Windows.Forms" />
     <Reference Include="System.Xml" />
     <Reference Include="xNet, Version=3.3.3.0, Culture=neutral, processorArchitecture=MSIL">
@@ -94,6 +95,12 @@
     </Compile>
     <Compile Include="FormOptions.Designer.cs">
       <DependentUpon>FormOptions.cs</DependentUpon>
+    </Compile>
+    <Compile Include="FormProxy.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="FormProxy.Designer.cs">
+      <DependentUpon>FormProxy.cs</DependentUpon>
     </Compile>
     <Compile Include="MyDGV.cs">
       <SubType>Component</SubType>
@@ -209,6 +216,12 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="Resources\broken_link_off.png" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Resources\proxy_on.png" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Resources\proxy_off.png" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>
