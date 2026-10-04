@@ -1,0 +1,214 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProjectGuid>{8F47BEFE-CF74-4625-92E3-FC2208DDC091}</ProjectGuid>
+    <OutputType>WinExe</OutputType>
+    <RootNamespace>URLChecker</RootNamespace>
+    <AssemblyName>URLChecker</AssemblyName>
+    <TargetFrameworkVersion>v4.6.1</TargetFrameworkVersion>
+    <FileAlignment>512</FileAlignment>
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+    <Deterministic>true</Deterministic>
+    <TargetFrameworkProfile />
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <Optimize>false</Optimize>
+    <OutputPath>bin\Debug\</OutputPath>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+    <Prefer32Bit>false</Prefer32Bit>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <DebugType>pdbonly</DebugType>
+    <Optimize>true</Optimize>
+    <OutputPath>bin\Release\</OutputPath>
+    <DefineConstants>TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+    <Prefer32Bit>false</Prefer32Bit>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="HtmlAgilityPack, Version=1.8.10.0, Culture=neutral, PublicKeyToken=bd319b19eaf3b43a, processorArchitecture=MSIL">
+      <HintPath>..\packages\HtmlAgilityPack.1.8.10\lib\Net45\HtmlAgilityPack.dll</HintPath>
+    </Reference>
+    <Reference Include="JsonFx, Version=2.0.1209.2802, Culture=neutral, PublicKeyToken=315052dd637f8a52, processorArchitecture=MSIL">
+      <HintPath>..\packages\JsonFx.2.0.1209.2802\lib\net40\JsonFx.dll</HintPath>
+    </Reference>
+    <Reference Include="RobotsTxt, Version=1.0.6892.28400, Culture=neutral, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\..\DLL\RobotsTxt.dll</HintPath>
+    </Reference>
+    <Reference Include="System" />
+    <Reference Include="System.Data" />
+    <Reference Include="System.Deployment" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Xml" />
+    <Reference Include="xNet, Version=3.3.3.0, Culture=neutral, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\..\xNet-master\bin\Debug\xNet.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="Classes.cs" />
+    <Compile Include="Form1.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Form1.Designer.cs">
+      <DependentUpon>Form1.cs</DependentUpon>
+    </Compile>
+    <Compile Include="FormDuble.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="FormDuble.Designer.cs">
+      <DependentUpon>FormDuble.cs</DependentUpon>
+    </Compile>
+    <Compile Include="FormFiltr.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="FormFiltr.Designer.cs">
+      <DependentUpon>FormFiltr.cs</DependentUpon>
+    </Compile>
+    <Compile Include="FormImportLinks.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="FormImportLinks.Designer.cs">
+      <DependentUpon>FormImportLinks.cs</DependentUpon>
+    </Compile>
+    <Compile Include="FormMessage.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="FormMessage.Designer.cs">
+      <DependentUpon>FormMessage.cs</DependentUpon>
+    </Compile>
+    <Compile Include="FormOptions.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="FormOptions.Designer.cs">
+      <DependentUpon>FormOptions.cs</DependentUpon>
+    </Compile>
+    <Compile Include="MyDGV.cs">
+      <SubType>Component</SubType>
+    </Compile>
+    <Compile Include="Network.cs" />
+    <Compile Include="Parser.cs" />
+    <Compile Include="Program.cs" />
+    <Compile Include="Properties\AssemblyInfo.cs" />
+    <EmbeddedResource Include="Form1.resx">
+      <DependentUpon>Form1.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="FormDuble.resx">
+      <DependentUpon>FormDuble.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="FormFiltr.resx">
+      <DependentUpon>FormFiltr.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="FormImportLinks.resx">
+      <DependentUpon>FormImportLinks.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="FormMessage.resx">
+      <DependentUpon>FormMessage.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="FormOptions.resx">
+      <DependentUpon>FormOptions.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="FormAddDomen.resx">
+      <DependentUpon>FormAddDomen.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Properties\Resources.resx">
+      <Generator>ResXFileCodeGenerator</Generator>
+      <SubType>Designer</SubType>
+      <LastGenOutput>Resources.Designer.cs</LastGenOutput>
+    </EmbeddedResource>
+    <None Include="packages.config" />
+    <None Include="Properties\Settings.settings">
+      <Generator>SettingsSingleFileGenerator</Generator>
+      <LastGenOutput>Settings.Designer.cs</LastGenOutput>
+    </None>
+    <Compile Include="FormAddDomen.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="FormAddDomen.Designer.cs">
+      <DependentUpon>FormAddDomen.cs</DependentUpon>
+    </Compile>
+    <Compile Include="Properties\Resources.Designer.cs">
+      <AutoGen>True</AutoGen>
+      <DesignTime>True</DesignTime>
+      <DependentUpon>Resources.resx</DependentUpon>
+    </Compile>
+    <Compile Include="Properties\Settings.Designer.cs">
+      <AutoGen>True</AutoGen>
+      <DependentUpon>Settings.settings</DependentUpon>
+      <DesignTimeSharedInput>True</DesignTimeSharedInput>
+    </Compile>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="App.config" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Resources\play1.png" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Resources\stop2.png" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Resources\domen.png" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Resources\filter.png" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Resources\filter1.png" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Resources\lamp.png" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Resources\lamp_light.png" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Resources\clear.png" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Resources\import.png" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Resources\export.png" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Resources\export2.png" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Resources\WL.png" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Resources\WL1.png" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Resources\WL+.png" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Resources\WL--.png" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Resources\WL++.png" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Resources\filter_no.png" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Resources\broken_link.png" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Resources\broken_link_off.png" />
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+</Project>

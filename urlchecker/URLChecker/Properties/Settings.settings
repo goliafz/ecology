@@ -1,0 +1,57 @@
+﻿<?xml version='1.0' encoding='utf-8'?>
+<SettingsFile xmlns="http://schemas.microsoft.com/VisualStudio/2004/01/settings" CurrentProfile="(Default)" GeneratedClassNamespace="URLChecker.Properties" GeneratedClassName="Settings">
+  <Profiles />
+  <Settings>
+    <Setting Name="timeout" Type="System.Decimal" Scope="User">
+      <Value Profile="(Default)">5000</Value>
+    </Setting>
+    <Setting Name="countThread" Type="System.Decimal" Scope="User">
+      <Value Profile="(Default)">5</Value>
+    </Setting>
+    <Setting Name="domens" Type="System.String" Scope="User">
+      <Value Profile="(Default)" />
+    </Setting>
+    <Setting Name="colorRobots" Type="System.Drawing.Color" Scope="User">
+      <Value Profile="(Default)">192, 192, 255</Value>
+    </Setting>
+    <Setting Name="colorNoindex" Type="System.Drawing.Color" Scope="User">
+      <Value Profile="(Default)">255, 192, 192</Value>
+    </Setting>
+    <Setting Name="podsvetka" Type="System.Boolean" Scope="User">
+      <Value Profile="(Default)">False</Value>
+    </Setting>
+    <Setting Name="useReplace" Type="System.Boolean" Scope="User">
+      <Value Profile="(Default)">False</Value>
+    </Setting>
+    <Setting Name="podsvetkaWL" Type="System.Boolean" Scope="User">
+      <Value Profile="(Default)">False</Value>
+    </Setting>
+    <Setting Name="colorWL" Type="System.Drawing.Color" Scope="User">
+      <Value Profile="(Default)">0, 192, 0</Value>
+    </Setting>
+    <Setting Name="noObrabotka" Type="System.Boolean" Scope="User">
+      <Value Profile="(Default)">False</Value>
+    </Setting>
+    <Setting Name="path" Type="System.String" Scope="User">
+      <Value Profile="(Default)" />
+    </Setting>
+    <Setting Name="saveAddress" Type="System.Boolean" Scope="User">
+      <Value Profile="(Default)">False</Value>
+    </Setting>
+    <Setting Name="ankorExport" Type="System.Boolean" Scope="User">
+      <Value Profile="(Default)">False</Value>
+    </Setting>
+    <Setting Name="filtrBroken" Type="System.Boolean" Scope="User">
+      <Value Profile="(Default)">False</Value>
+    </Setting>
+    <Setting Name="selectionColor" Type="System.Drawing.Color" Scope="User">
+      <Value Profile="(Default)">Silver</Value>
+    </Setting>
+    <Setting Name="font" Type="System.String" Scope="User">
+      <Value Profile="(Default)">Times New Roman</Value>
+    </Setting>
+    <Setting Name="sizeFont" Type="System.Decimal" Scope="User">
+      <Value Profile="(Default)">8</Value>
+    </Setting>
+  </Settings>
+</SettingsFile>
