@@ -171,11 +171,13 @@ namespace FastGen.Core
             public string Removed;          // удалённый вариант
             public int RemovedIndex;        // его номер (0 — исходный)
             public string FirstVariant;     // исходный вариант до удаления
+            public bool KeptOriginal;       // щёлкнули по исходному — конструкция снята, оставлено оно
         }
 
         /// <summary>
-        /// Удаление варианта, на котором стоит символ charIndex, из самой внутренней конструкции:
-        /// {1|2|3} → удалить 2 → {1|3}; удалить 1 → {2|3}; из {1|2} → просто 1.
+        /// Правый щелчок по варианту самой внутренней конструкции:
+        ///  по исходному (первому) — конструкция снимается, остаётся он: {1|2|3} → 1;
+        ///  по любому другому — он удаляется: {1|2|3} → удалить 2 → {1|3}; из {1|2} → просто 1.
         /// false — символ вне конструкции, на скобке или на «|».
         /// </summary>
         public static bool TryRemoveVariantAt(string text, int charIndex, out VariantRemoval result)
@@ -205,6 +207,13 @@ namespace FastGen.Core
                 RemovedIndex = clicked,
                 FirstVariant = variants[0]
             };
+            if (clicked == 0)
+            {
+                result.KeptOriginal = true;
+                result.Replacement = variants[0];
+                return true;
+            }
+
             variants.RemoveAt(clicked);
             result.Replacement = BuildConstruct(variants);
             return true;

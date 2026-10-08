@@ -534,6 +534,7 @@ namespace FastGen
                 "  Shift+End — Вариант 2 (и, или)\r\n" +
                 "  Shift+PgDn — ротация «a и b» → {a и b|b и a}\r\n" +
                 "  Правый щелчок по варианту в {…} — стереть его: {1|2|3} → {1|3}\r\n" +
+                "  Правый щелчок по исходному (жирному) варианту — оставить только его: {1|2|3} → 1\r\n" +
                 "  Ctrl+Z / Ctrl+Y — отменить / вернуть;  Ctrl+S — сохранить сейчас\r\n\r\n" +
                 "Строка состояния внизу показывает число вариантов текста и ошибки скобок\r\n" +
                 "(щелчок по ошибке — перейти к ней).";
@@ -610,7 +611,8 @@ namespace FastGen
 
         /// <summary>
         /// Правый щелчок по варианту в {…} стирает его: {1|2|3} → {1|3}. Остался один вариант — скобки убираются.
-        /// Отменяется Ctrl+Z. Удалённый синоним запоминается и больше не предлагается для этого слова.
+        /// Щелчок по исходному (жирному) варианту снимает конструкцию: {1|2|3} → 1.
+        /// Отменяется Ctrl+Z. Стёртый синоним запоминается и больше не предлагается для этого слова.
         /// </summary>
         private bool RemoveReproVariantAt(int charIndex)
         {
@@ -632,7 +634,7 @@ namespace FastGen
             SetScrollPos(txtReproEditor, scroll);
 
             string first = r.FirstVariant.Trim();
-            if (r.RemovedIndex > 0 && r.Removed.Trim().Length > 0 && first.Length > 0 &&
+            if (!r.KeptOriginal && r.RemovedIndex > 0 && r.Removed.Trim().Length > 0 && first.Length > 0 &&
                 first.IndexOfAny(new[] { '{', '}', '|', '[', ']' }) < 0)
             {
                 _store.RegisterRejected(first, new[] { r.Removed });
@@ -641,7 +643,9 @@ namespace FastGen
 
             RefreshReproTarget(force: true);
             UpdateTemplateInfo();
-            SetHint("Стёрто: «" + Shorten(r.Removed.Trim(), 40) + "». Ctrl+Z — вернуть");
+            SetHint(r.KeptOriginal
+                ? "Конструкция снята, оставлено «" + Shorten(first, 40) + "». Ctrl+Z — вернуть"
+                : "Стёрто: «" + Shorten(r.Removed.Trim(), 40) + "». Ctrl+Z — вернуть");
             return true;
         }
 

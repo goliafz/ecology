@@ -93,7 +93,7 @@ namespace FastGen
                 AutoSize = true,
                 ForeColor = Color.DimGray,
                 Margin = new Padding(10, 6, 0, 0),
-                Text = "Правый щелчок по варианту в {…} — удалить его. «Вернуть» — оставить исходное слово."
+                Text = "Правый щелчок по варианту в {…} — удалить его; по исходному (жирному) — оставить только его."
             };
             middle.Controls.Add(lblQuickInfo);
 
