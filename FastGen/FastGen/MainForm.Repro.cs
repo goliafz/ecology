@@ -297,7 +297,7 @@ namespace FastGen
                 AutoSize = true,
                 ForeColor = Color.DimGray,
                 Margin = new Padding(0, 3, 0, 0),
-                Text = "✓ — войдёт в шаблон · жирный и «×N» — сколько раз вы его выбирали\r\nзелёный — «Моя база» · серый — DICT.DBF"
+                Text = "✓ — войдёт в шаблон · жирный и «×N» — сколько раз вы его выбирали\r\nтёмно-зелёный жирный — «Моя база» (ваши синонимы)"
             };
 
             panel.Controls.Add(lblTarget, 0, 0);
@@ -839,7 +839,14 @@ namespace FastGen
             };
         }
 
-        private static readonly Color UserColor = Color.FromArgb(0, 120, 60);
+        private static readonly Color UserColor = Color.DarkGreen;
+
+        /// <summary>Синоним из «Моей базы» — тёмно-зелёный жирный.</summary>
+        private void MarkAsUser(ListViewItem item)
+        {
+            item.ForeColor = UserColor;
+            item.Font = LvBoldFont;
+        }
 
         private void PopulateVariants()
         {
@@ -940,8 +947,8 @@ namespace FastGen
             else if (cand != null)
             {
                 if (cand.UsageCount > 0) item.Font = LvBoldFont;
-                if (cand.Source == SynonymSource.Dict) item.ForeColor = Color.Gray;
-                else if (cand.Source == SynonymSource.User) item.ForeColor = UserColor;
+                // DICT.DBF, GoldBase и частые — обычным чёрным; выделяется только «Моя база»
+                if (cand.Source == SynonymSource.User) MarkAsUser(item);
             }
             lvVariants.Items.Add(item);
             return item;
@@ -1076,7 +1083,7 @@ namespace FastGen
             }
 
             var item = AddVariantItem(v, true, null, false);
-            item.ForeColor = UserColor;
+            MarkAsUser(item);
             lvVariants.EnsureVisible(item.Index);
             txtAddVariant.Clear();
         }
@@ -1272,7 +1279,7 @@ namespace FastGen
             for (int i = 1; i < lvVariants.Items.Count; i++)
             {
                 var it = lvVariants.Items[i];
-                if (checkedTexts.Contains(it.Text.Trim())) it.ForeColor = UserColor;
+                if (checkedTexts.Contains(it.Text.Trim())) MarkAsUser(it);
             }
         }
 
