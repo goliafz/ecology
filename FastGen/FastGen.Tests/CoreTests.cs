@@ -172,6 +172,25 @@ namespace FastGen.Tests
             Assert.Equal("один", Sub(t, TextNav.PrevToken(t, 6)));
         }
 
+        [Theory]
+        // протянули от «фильмы» (без «{») до «}» второй конструкции и пробела за ней
+        [InlineData("русские {фильмы|сериалы} и {сериалы|фильмы} {разных|многих}", "фильмы|сериалы} и {сериалы|фильмы} ", "{фильмы|сериалы} и {сериалы|фильмы}")]
+        // конец внутри конструкции, начало до неё
+        [InlineData("русские {фильмы|сериалы} и {сериалы|фильмы}.", "русские {фильмы|се", "русские {фильмы|сериалы}")]
+        // оба края внутри разных конструкций
+        [InlineData("a {b|c} d {e|f} g", "c} d {e", "{b|c} d {e|f}")]
+        // внутри одной конструкции — не трогаем
+        [InlineData("a {онлайн фильмы|сериалы} b", "онлайн фил", "онлайн фил")]
+        [InlineData("a {онлайн фильмы|сериалы} b", "фильмы|сериалы", "фильмы|сериалы")]
+        // обычный текст — только пробелы по краям
+        [InlineData("один два три", " два ", "два")]
+        public void SnapSelection(string text, string selected, string expected)
+        {
+            int start = text.IndexOf(selected, StringComparison.Ordinal);
+            var r = TextNav.SnapSelection(text, start, start + selected.Length);
+            Assert.Equal(expected, text.Substring(r.Start, r.Length));
+        }
+
         [Fact]
         public void ConstructNavigation()
         {

@@ -208,6 +208,7 @@ namespace FastGen
             txtReproEditor.KeyUp += TxtReproEditor_KeyUp;
             txtReproEditor.MouseUp += TxtReproEditor_MouseUp;
             txtReproEditor.MouseDown += TxtReproEditor_MouseDown;
+            DisableAutoWordSelection(txtReproEditor);
 
             split.Controls.Add(txtReproEditor, 0, 0);
             split.Controls.Add(BuildVariantsPanel(), 1, 0);
@@ -649,21 +650,32 @@ namespace FastGen
             if (_adjustingSelection) return;
             if (e.Button == MouseButtons.Right) return; // правая кнопка обработана в MouseDown
 
-            // подрезаем пробелы в конце выделения (двойной щелчок захватывает пробел)
+            // пробелы по краям убираем, конструкции {…} захватываем целиком — со скобками
             int start = txtReproEditor.SelectionStart;
             int length = txtReproEditor.SelectionLength;
             if (length > 0)
             {
-                string text = txtReproEditor.Text;
-                int end = start + length;
-                while (end > start && end <= text.Length && (text[end - 1] == ' ' || text[end - 1] == '\t' || text[end - 1] == '\u00A0'))
-                    end--;
-                if (end - start != length)
-                    SelectRepro(start, end - start);
+                var r = TextNav.SnapSelection(txtReproEditor.Text, start, start + length);
+                if (r.Start != start || r.Length != length)
+                    SelectRepro(r.Start, r.Length);
             }
 
             // щелчок не выделяет слово целиком — иначе следующая буква его затрёт
             RefreshReproTarget();
+        }
+
+        /// <summary>
+        /// RichTextBox при протягивании мышью «прилипает» к целым словам: пропускает «{» и захватывает пробел.
+        /// Свойство AutoWordSelection=false из-за ошибки WinForms не срабатывает, пока его не переключить
+        /// после создания окна.
+        /// </summary>
+        private static void DisableAutoWordSelection(RichTextBox box)
+        {
+            box.HandleCreated += (s, e) =>
+            {
+                box.AutoWordSelection = true;
+                box.AutoWordSelection = false;
+            };
         }
 
         private void SelectRepro(int start, int length)

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
 
@@ -220,6 +221,42 @@ namespace FastGen.Core
                 i--;
             }
             return default(TextToken);
+        }
+
+        /// <summary>
+        /// Поправляет выделение мышью: убирает пробелы по краям, а если выделение выходит за пределы
+        /// конструкции {…} или […], расширяет его до её скобок. Выделение внутри одной конструкции
+        /// (часть варианта) не трогается.
+        /// </summary>
+        public static TextRange SnapSelection(string text, int start, int end)
+        {
+            if (string.IsNullOrEmpty(text)) return new TextRange(start, end);
+            start = Math.Max(0, Math.Min(start, text.Length));
+            end = Math.Max(start, Math.Min(end, text.Length));
+
+            while (start < end && char.IsWhiteSpace(text[start])) start++;
+            while (end > start && char.IsWhiteSpace(text[end - 1])) end--;
+            if (end <= start) return new TextRange(start, start);
+
+            var blocks = GetBlocks(text);
+
+            // начало внутри конструкции, а конец — за ней: берём конструкцию целиком
+            int bi = BlockIndexAt(blocks, start);
+            if (bi >= 0 && blocks[bi].Kind != TokenKind.Protected)
+            {
+                var r = blocks[bi].Range;
+                if (start > r.Start && end >= r.End) start = r.Start;
+            }
+
+            // конец внутри конструкции, а начало — до неё
+            bi = BlockIndexAt(blocks, end - 1);
+            if (bi >= 0 && blocks[bi].Kind != TokenKind.Protected)
+            {
+                var r = blocks[bi].Range;
+                if (end < r.End && start <= r.Start) end = r.End;
+            }
+
+            return new TextRange(start, end);
         }
 
         /// <summary>Следующая конструкция {…} верхнего уровня, начинающаяся не раньше from.</summary>

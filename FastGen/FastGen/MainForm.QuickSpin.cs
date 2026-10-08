@@ -75,6 +75,7 @@ namespace FastGen
             };
             txtEditorResult.SelectionChanged += TxtEditorResult_SelectionChanged;
             txtEditorResult.MouseDown += TxtEditorResult_MouseDown;
+            DisableAutoWordSelection(txtEditorResult);
 
             var middle = NewFlowRow();
             middle.Margin = new Padding(0, 5, 0, 5);
