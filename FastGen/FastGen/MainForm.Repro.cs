@@ -140,7 +140,7 @@ namespace FastGen
             var btnSpinAll = MakeButton("Размножить всё (F5)", (s, e) => SpinAllRepro(), Color.FromArgb(46, 204, 113), true);
             var btnTrial = MakeButton("Пробная генерация (F9)", (s, e) => ShowTrialGeneration(), Color.RoyalBlue, true);
 
-            var lblMax = new Label { Text = "Синонимов:", AutoSize = true, Margin = new Padding(10, 7, 3, 0) };
+            var lblMax = new Label { Text = "Синонимов в F5:", AutoSize = true, Margin = new Padding(10, 7, 3, 0) };
             numMaxSynonyms = new NumericUpDown
             {
                 Minimum = 1,
@@ -149,6 +149,9 @@ namespace FastGen
                 Width = 45,
                 Margin = new Padding(0, 4, 5, 0)
             };
+            new ToolTip().SetToolTip(numMaxSynonyms,
+                "Сколько синонимов F5 ставит в одну конструкцию (кроме исходного слова).\r\n" +
+                "На ручной выбор в списке справа не влияет.");
             chkUseDict = new CheckBox
             {
                 Text = "DICT.DBF",
@@ -887,23 +890,13 @@ namespace FastGen
                 if (baseIsPlain && baseText.Length > 0)
                 {
                     var cands = _store.GetCandidates(baseText, chkUseDict.Checked);
-                    bool hasUser = cands.Any(c => c.Source == SynonymSource.User);
-                    int autoChecks = (int)numMaxSynonyms.Value; // столько же, сколько берёт F5
-
-                    // порядок: «Моя база» → чаще всего выбираемые вами → GoldBase → DICT.DBF
+                    // порядок: «Моя база» → чаще всего выбираемые вами → GoldBase → DICT.DBF.
+                    // Ничего не отмечаем заранее: галочка только у самого слова, синонимы выбираете вы.
                     foreach (var c in cands)
                     {
                         string display = TextCase.ApplyCase(baseText, c.Text);
                         if (!present.Add(display.Trim())) continue;
-
-                        bool check;
-                        if (_target.IsConstruct) check = false;                         // готовую конструкцию не трогаем — только предлагаем
-                        else if (hasUser) check = c.Source == SynonymSource.User;
-                        else check = c.Source != SynonymSource.Dict && autoChecks > 0;
-                        if (check && !hasUser) autoChecks--;
-
-                        var item = AddVariantItem(display, check, c, false, c.UsageCount);
-                        if (check) item.Name = AutoCheckedMark;
+                        AddVariantItem(display, false, c, false, c.UsageCount);
                     }
                 }
 
@@ -929,8 +922,6 @@ namespace FastGen
         {
             get { return _lvBoldFont ?? (_lvBoldFont = new Font(lvVariants.Font, FontStyle.Bold)); }
         }
-
-        private const string AutoCheckedMark = "auto";
 
         private ListViewItem AddVariantItem(string text, bool check, SynonymCandidate cand, bool isOriginal, int usage = 0)
         {
@@ -1179,7 +1170,7 @@ namespace FastGen
         }
 
         /// <summary>
-        /// Варианты, которые были в конструкции (или отмечены автоматически), а вы их сняли, —
+        /// Варианты, которые были в конструкции, а вы их сняли, —
         /// запоминаются и больше не предлагаются для этого слова.
         /// </summary>
         private void RememberRejected(List<string> finalVariants)
@@ -1193,12 +1184,6 @@ namespace FastGen
 
             if (_target.IsConstruct)
                 rejected.AddRange(SpinSyntax.GetVariants(_target.Raw).Skip(1).Where(v => v.Trim().Length > 0 && !kept.Contains(v.Trim())));
-
-            for (int i = 1; i < lvVariants.Items.Count; i++)
-            {
-                var it = lvVariants.Items[i];
-                if (it.Name == AutoCheckedMark && !it.Checked && !kept.Contains(it.Text.Trim())) rejected.Add(it.Text);
-            }
 
             if (rejected.Count == 0) return;
             _store.RegisterRejected(baseWord, rejected);
@@ -1215,7 +1200,6 @@ namespace FastGen
                 var cand = lvVariants.Items[i].Tag as SynonymCandidate;
                 bool frequent = cand != null && cand.UsageCount > 0;
                 if (frequent) added++;
-                lvVariants.Items[i].Name = string.Empty; // «только частые» — это не отказ от остальных
 
                 // у готовой конструкции её варианты оставляем, частые только добавляем
                 if (_target.IsConstruct) { if (frequent) lvVariants.Items[i].Checked = true; }
