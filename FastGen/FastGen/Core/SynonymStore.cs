@@ -43,6 +43,9 @@ namespace FastGen.Core
         public string UsagePath { get; set; }
         public string RejectedPath { get; set; }
 
+        /// <summary>Журнал наборов, выбранных вручную (не теряются при пересборке GoldBase).</summary>
+        public string GoldAutoPath { get; set; }
+
         public int GoldCount { get { return _gold.Count; } }
         public int UserCount { get { return _user.Count; } }
         public int DictCount { get { var d = _dict; return d == null ? 0 : d.Count; } }
@@ -345,6 +348,62 @@ namespace FastGen.Core
                 d[syn] = c + 1;
                 if (_rejected.TryGetValue(key, out var rej)) rej.Remove(syn);
             }
+        }
+
+        /// <summary>
+        /// Пополняет GoldBase набором, который вы собрали вручную ({слово|синоним|синоним}):
+        /// дописывает строку в GoldBase.txt и в журнал ручных наборов и сразу учитывает в памяти.
+        /// false — набор уже целиком есть в базе (ничего не записано).
+        /// </summary>
+        public bool AddGoldSet(IEnumerable<string> variants)
+        {
+            var words = new List<string>();
+            foreach (var v in variants)
+            {
+                if (v == null || v.IndexOfAny(new[] { '{', '}', '[', ']', '|', '<', '>' }) >= 0) continue;
+                string t = TextCase.NormalizeSpaces(v.Trim()).ToLowerInvariant();
+                if (t.Length == 0 || words.Contains(t, StringComparer.Ordinal)) continue;
+                words.Add(t);
+            }
+            if (words.Count < 2) return false;
+
+            // уже есть? (для каждого слова все остальные уже среди его синонимов)
+            bool known = words.All(w =>
+                _gold.TryGetValue(Normalize(w), out var list) &&
+                words.Where(o => o != w).All(o => list.Contains(o, StringComparer.OrdinalIgnoreCase)));
+            if (known) return false;
+
+            foreach (var w in words)
+            {
+                string key = Normalize(w);
+                _gold.TryGetValue(key, out var existing);
+                var list = existing != null ? new List<string>(existing) : new List<string>();
+                foreach (var o in words)
+                    if (o != w && !list.Contains(o, StringComparer.OrdinalIgnoreCase)) list.Add(o);
+                _gold[key] = list.ToArray();
+            }
+
+            string line = string.Join("|", words) + Environment.NewLine;
+            if (!string.IsNullOrEmpty(GoldPath)) AppendLine(GoldPath, line);
+            if (!string.IsNullOrEmpty(GoldAutoPath)) AppendLine(GoldAutoPath, line);
+            return true;
+        }
+
+        private static void AppendLine(string path, string line)
+        {
+            // если файл не кончается переводом строки — сначала добавим его
+            if (File.Exists(path))
+            {
+                using (var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                {
+                    if (fs.Length > 0)
+                    {
+                        fs.Seek(-1, SeekOrigin.End);
+                        if (fs.ReadByte() != '\n') line = Environment.NewLine + line;
+                    }
+                }
+            }
+            File.AppendAllText(path, line, Utf8NoBom);
         }
 
         /// <summary>

@@ -286,6 +286,7 @@ namespace FastGen
                 BorderStyle = BorderStyle.FixedSingle
             };
             lvVariants.Columns.Add("Вариант", 200);
+            lvVariants.Columns.Add("Выбрано", 46, HorizontalAlignment.Right);
             lvVariants.Resize += (s, e) => FitVariantsColumn();
             lvVariants.ItemCheck += LvVariants_ItemCheck;
             lvVariants.KeyDown += LvVariants_KeyDown;
@@ -296,7 +297,7 @@ namespace FastGen
                 AutoSize = true,
                 ForeColor = Color.DimGray,
                 Margin = new Padding(0, 3, 0, 0),
-                Text = "✓ — войдёт в шаблон · жирный — вы уже выбирали\r\nзелёный — «Моя база» · серый — DICT.DBF\r\nзачёркнутый — не встречался рядом с этими соседями"
+                Text = "✓ — войдёт в шаблон · жирный и «×N» — сколько раз вы его выбирали\r\nзелёный — «Моя база» · серый — DICT.DBF"
             };
 
             panel.Controls.Add(lblTarget, 0, 0);
@@ -337,8 +338,8 @@ namespace FastGen
 
         private void FitVariantsColumn()
         {
-            if (lvVariants.Columns.Count > 0)
-                lvVariants.Columns[0].Width = Math.Max(50, lvVariants.ClientSize.Width - 4);
+            if (lvVariants.Columns.Count > 1)
+                lvVariants.Columns[0].Width = Math.Max(50, lvVariants.ClientSize.Width - lvVariants.Columns[1].Width - 4);
         }
 
         private void SetHint(string text)
@@ -864,7 +865,8 @@ namespace FastGen
                     for (int i = 0; i < variants.Count; i++)
                     {
                         string v = variants[i];
-                        AddVariantItem(v, true, null, i == 0);
+                        int usage = i > 0 && baseIsPlain ? _store.GetUsage(baseText, v) : 0;
+                        AddVariantItem(v, true, null, i == 0, usage);
                         present.Add(v.Trim());
                     }
                 }
@@ -880,28 +882,21 @@ namespace FastGen
                     var cands = _store.GetCandidates(baseText, chkUseDict.Checked);
                     bool hasUser = cands.Any(c => c.Source == SynonymSource.User);
                     int autoChecks = (int)numMaxSynonyms.Value; // столько же, сколько берёт F5
-                    var ctx = ActiveContext;
-                    AutoSpinner.GetNeighbors(txtReproEditor.Text, _target.Start, _target.End, out string left, out string right);
 
-                    // сначала подходящие по соседям, потом остальные
-                    var ordered = cands.Where(c => AutoSpinner.FitsContext(ctx, c, left, right))
-                                       .Concat(cands.Where(c => !AutoSpinner.FitsContext(ctx, c, left, right)));
-
-                    foreach (var c in ordered)
+                    // порядок: «Моя база» → чаще всего выбираемые вами → GoldBase → DICT.DBF
+                    foreach (var c in cands)
                     {
                         string display = TextCase.ApplyCase(baseText, c.Text);
                         if (!present.Add(display.Trim())) continue;
 
-                        bool fits = AutoSpinner.FitsContext(ctx, c, left, right);
                         bool check;
-                        if (_target.IsConstruct || !fits) check = false;               // готовую конструкцию не трогаем, сомнительное не отмечаем
+                        if (_target.IsConstruct) check = false;                         // готовую конструкцию не трогаем — только предлагаем
                         else if (hasUser) check = c.Source == SynonymSource.User;
                         else check = c.Source != SynonymSource.Dict && autoChecks > 0;
                         if (check && !hasUser) autoChecks--;
 
-                        var item = AddVariantItem(display, check, c, false);
+                        var item = AddVariantItem(display, check, c, false, c.UsageCount);
                         if (check) item.Name = AutoCheckedMark;
-                        if (!fits) item.Font = LvStrikeFont;
                     }
                 }
 
@@ -929,16 +924,13 @@ namespace FastGen
         }
 
         private const string AutoCheckedMark = "auto";
-        private Font _lvStrikeFont;
 
-        private Font LvStrikeFont
+        private ListViewItem AddVariantItem(string text, bool check, SynonymCandidate cand, bool isOriginal, int usage = 0)
         {
-            get { return _lvStrikeFont ?? (_lvStrikeFont = new Font(lvVariants.Font, FontStyle.Strikeout)); }
-        }
-
-        private ListViewItem AddVariantItem(string text, bool check, SynonymCandidate cand, bool isOriginal)
-        {
-            var item = new ListViewItem(text) { Checked = check, Tag = cand };
+            var item = new ListViewItem(text) { Checked = check, Tag = cand, UseItemStyleForSubItems = false };
+            var countCell = item.SubItems.Add(usage > 0 ? "×" + usage : string.Empty);
+            countCell.ForeColor = Color.DimGray;
+            if (usage > 0 && cand == null && !isOriginal) item.Font = LvBoldFont;
             if (isOriginal)
             {
                 item.Font = LvBoldFont;
@@ -1144,6 +1136,17 @@ namespace FastGen
             {
                 _store.RegisterUsage(variants[0], variants.Skip(1).Where(v => v.IndexOfAny(new[] { '{', '}', '[', ']' }) < 0));
                 try { _store.SaveUsage(); } catch { /* не критично */ }
+
+                // ваш ручной выбор сразу пополняет GoldBase — F5 и список справа будут его предлагать
+                try
+                {
+                    if (_store.AddGoldSet(variants))
+                        SetHint("GoldBase пополнена: " + string.Join(" | ", variants.Select(v => v.Trim()).Where(v => v.Length > 0)));
+                }
+                catch (Exception ex)
+                {
+                    SetHint("Не удалось дописать GoldBase.txt: " + ex.Message);
+                }
             }
 
             int start = _target.Start;

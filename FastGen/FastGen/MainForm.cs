@@ -55,7 +55,8 @@ namespace FastGen
                 GoldPath = Path.Combine(AppDir, "GoldBase.txt"),
                 UserPath = Path.Combine(AppDir, "UserBase.txt"),
                 UsagePath = Path.Combine(AppDir, "syn_usage.txt"),
-                RejectedPath = Path.Combine(AppDir, "syn_rejected.txt")
+                RejectedPath = Path.Combine(AppDir, "syn_rejected.txt"),
+                GoldAutoPath = Path.Combine(AppDir, "GoldBase_manual.txt")
             };
 
             InitializeComponent();

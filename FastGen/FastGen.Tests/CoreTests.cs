@@ -635,4 +635,48 @@ namespace FastGen.Tests
             Directory.Delete(dir, true);
         }
     }
+
+    public class ManualGoldTests
+    {
+        [Fact]
+        public void ManualChoiceIsAppendedToGoldAndSurvivesReload()
+        {
+            string dir = Path.Combine(Path.GetTempPath(), "fastgen-mg-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(dir);
+            var store = new SynonymStore { GoldPath = Path.Combine(dir, "GoldBase.txt"), GoldAutoPath = Path.Combine(dir, "GoldBase_manual.txt") };
+            File.WriteAllText(store.GoldPath, "посвященный|предназначенный"); // без перевода строки в конце
+            store.LoadGold();
+
+            Assert.True(store.AddGoldSet(new[] { "посвященный", "Который посвящен", "{x|y}", "" }));
+            Assert.False(store.AddGoldSet(new[] { "Посвященный", "который посвящен" }));   // уже есть — не дублируем
+            Assert.Contains("который посвящен", store.GetCandidates("посвященный", false).Select(c => c.Text));
+
+            Assert.Equal(new[] { "посвященный|предназначенный", "посвященный|который посвящен" }, File.ReadAllLines(store.GoldPath));
+            Assert.Equal(new[] { "посвященный|который посвящен" }, File.ReadAllLines(store.GoldAutoPath));
+
+            var again = new SynonymStore { GoldPath = store.GoldPath };
+            again.LoadGold();
+            Assert.Equal(new[] { "предназначенный", "который посвящен" }, again.GetCandidates("посвященный", false).Select(c => c.Text));
+            Assert.Equal(new[] { "посвященный" }, again.GetCandidates("который посвящен", false).Select(c => c.Text));
+            Directory.Delete(dir, true);
+        }
+
+        [Fact]
+        public void FrequentChoicesComeFirstAndPassContextCheck()
+        {
+            string path = Path.Combine(Path.GetTempPath(), "fastgen-fq-" + Guid.NewGuid().ToString("N") + ".txt");
+            File.WriteAllLines(path, new[] { "собирать|складывать|копить" });
+            var store = new SynonymStore { GoldPath = path };
+            store.LoadGold();
+            File.Delete(path);
+            store.RegisterUsage("собирать", new[] { "копить" });
+            store.RegisterUsage("собирать", new[] { "копить" });
+
+            Assert.Equal("копить", store.GetCandidates("собирать", false)[0].Text);
+
+            var ctx = ContextIndex.Build(new[] { "научиться складывать кубик" });
+            var r = AutoSpinner.Spin("научиться собирать кубик", store, new SpinOptions { Context = ctx });
+            Assert.Equal("научиться {собирать|копить|складывать} кубик", r.Text);
+        }
+    }
 }

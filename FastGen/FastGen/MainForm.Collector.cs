@@ -233,6 +233,9 @@ namespace FastGen
                     if (append && File.Exists(goldPath))
                         b.AddExistingLines(File.ReadLines(goldPath, new UTF8Encoding(false)));
                     b.AddTemplateText(File.ReadAllText(resultPath, new UTF8Encoding(false)));
+                    // наборы, которые вы выбрали вручную, при пересборке не теряются
+                    if (File.Exists(_store.GoldAutoPath))
+                        b.AddExistingLines(File.ReadLines(_store.GoldAutoPath, new UTF8Encoding(false)));
                     SynonymStore.WriteAllLinesSafe(goldPath, b.Lines);
 
                     // заодно пересобираем пары соседних слов

@@ -342,6 +342,7 @@ namespace FastGen.Core
         public static bool FitsContext(ContextIndex ctx, SynonymCandidate c, string left, string right)
         {
             if (ctx == null || c.Source == SynonymSource.User) return true;
+            if (c.UsageCount >= 2) return true; // вы сами выбирали этот синоним хотя бы дважды
             var w = Words(c.Text);
             if (w.Count == 0) return false;
             if (left == null && right == null)
