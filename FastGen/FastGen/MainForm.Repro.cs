@@ -206,7 +206,7 @@ namespace FastGen
             txtReproEditor.MouseUp += TxtReproEditor_MouseUp;
             txtReproEditor.MouseDown += TxtReproEditor_MouseDown;
 
-            split.Controls.Add(HostEditor(txtReproEditor), 0, 0);
+            split.Controls.Add(txtReproEditor, 0, 0);
             split.Controls.Add(BuildVariantsPanel(), 1, 0);
 
             // ---- строка состояния ----
@@ -215,7 +215,7 @@ namespace FastGen
             lblTemplateInfo.Click += (s, e) => GoToTemplateError();
             lblDictStatus = new Label { AutoSize = true, Margin = new Padding(0, 4, 20, 0) };
             lblContextStatus = new Label { AutoSize = true, Margin = new Padding(0, 4, 20, 0) };
-            lblHint = new Label { AutoSize = true, Margin = new Padding(0, 4, 0, 0), ForeColor = Color.DimGray, Tag = "muted" };
+            lblHint = new Label { AutoSize = true, Margin = new Padding(0, 4, 0, 0), ForeColor = Color.DimGray };
             statusRow.Controls.AddRange(new Control[] { lblTemplateInfo, lblDictStatus, lblContextStatus, lblHint });
 
             layout.Controls.Add(fileRow, 0, 0);
@@ -295,7 +295,6 @@ namespace FastGen
             {
                 AutoSize = true,
                 ForeColor = Color.DimGray,
-                Tag = "muted",
                 Margin = new Padding(0, 3, 0, 0),
                 Text = "✓ — войдёт в шаблон · жирный — вы уже выбирали\r\nзелёный — «Моя база» · серый — DICT.DBF\r\nзачёркнутый — не встречался рядом с этими соседями"
             };
@@ -347,13 +346,11 @@ namespace FastGen
             if (lblHint != null) lblHint.Text = text;
         }
 
-        private void SetContextStatus(string text, StatusKind kind)
+        private void SetContextStatus(string text, Color color)
         {
-            _contextStatusText = text;
-            _contextStatusKind = kind;
             if (lblContextStatus == null) return;
             lblContextStatus.Text = text;
-            lblContextStatus.ForeColor = _theme.Status(kind);
+            lblContextStatus.ForeColor = color;
         }
 
         private ContextIndex ActiveContext
@@ -361,12 +358,9 @@ namespace FastGen
             get { return chkUseContext != null && chkUseContext.Checked ? _context : null; }
         }
 
-        private void SetDictStatus(string text, StatusKind kind)
+        private void SetDictStatus(string text, Color color)
         {
-            _dictStatusText = text;
-            _dictStatusKind = kind;
             if (lblDictStatus == null) return;
-            Color color = _theme.Status(kind);
             lblDictStatus.Text = text;
             lblDictStatus.ForeColor = color;
             if (lblQuickDictStatus != null)
@@ -534,9 +528,7 @@ namespace FastGen
                 "  Shift+End — Вариант 2 (и, или)\r\n" +
                 "  Shift+PgDn — ротация «a и b» → {a и b|b и a}\r\n" +
                 "  Правый щелчок по варианту в {…} — стереть его: {1|2|3} → {1|3}\r\n" +
-                "  Ctrl+Z / Ctrl+Y — отменить / вернуть;  Ctrl+S — сохранить сейчас\r\n" +
-                "  Ctrl++ / Ctrl+− / Ctrl+0 — крупнее / мельче / обычный размер текста\r\n\r\n" +
-                "Оформление (классическое, светлое, тёмное) — справа вверху окна.\r\n" +
+                "  Ctrl+Z / Ctrl+Y — отменить / вернуть;  Ctrl+S — сохранить сейчас\r\n\r\n" +
                 "Строка состояния внизу показывает число вариантов текста и ошибки скобок\r\n" +
                 "(щелчок по ошибке — перейти к ней).";
             MessageBox.Show(this, help, "Горячие клавиши — Размножение", MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -846,7 +838,7 @@ namespace FastGen
             };
         }
 
-        private Color UserColor { get { return _theme.ListUser; } }
+        private static readonly Color UserColor = Color.FromArgb(0, 120, 60);
 
         private void PopulateVariants()
         {
@@ -950,13 +942,13 @@ namespace FastGen
             if (isOriginal)
             {
                 item.Font = LvBoldFont;
-                item.ForeColor = _theme.ListOriginalFore;
-                item.BackColor = _theme.ListOriginalBack;
+                item.ForeColor = Color.Blue;
+                item.BackColor = Color.FromArgb(235, 242, 255);
             }
             else if (cand != null)
             {
                 if (cand.UsageCount > 0) item.Font = LvBoldFont;
-                if (cand.Source == SynonymSource.Dict) item.ForeColor = _theme.ListDict;
+                if (cand.Source == SynonymSource.Dict) item.ForeColor = Color.Gray;
                 else if (cand.Source == SynonymSource.User) item.ForeColor = UserColor;
             }
             lvVariants.Items.Add(item);
@@ -1473,13 +1465,13 @@ namespace FastGen
             {
                 _templateErrorPos = v.ErrorPosition;
                 int line = text.Take(v.ErrorPosition).Count(c => c == '\n') + 1;
-                lblTemplateInfo.ForeColor = _theme.Error;
+                lblTemplateInfo.ForeColor = Color.Red;
                 lblTemplateInfo.Text = "Ошибка скобок: " + v.Message + " (строка " + line + ") — щёлкните, чтобы перейти";
                 return;
             }
 
             _templateErrorPos = -1;
-            lblTemplateInfo.ForeColor = _theme.Ok;
+            lblTemplateInfo.ForeColor = Color.DarkGreen;
             lblTemplateInfo.Text = "Конструкций: " + constructs + " · вариантов текста: " +
                                    SpinSyntax.FormatCount(SpinSyntax.CountVariants(text)) + " · скобки в порядке";
         }
@@ -1522,8 +1514,8 @@ namespace FastGen
                     ReadOnly = true,
                     ScrollBars = ScrollBars.Vertical,
                     Dock = DockStyle.Fill,
-                    Font = new Font(_theme.IsClassic ? "Segoe UI" : _theme.EditorFontFamily, 12F),
-                    BackColor = _theme.IsClassic ? Color.White : _theme.Card
+                    Font = new Font("Segoe UI", 12F),
+                    BackColor = Color.White
                 };
 
                 var bottom = new FlowLayoutPanel { Dock = DockStyle.Bottom, AutoSize = true, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(5) };
@@ -1544,22 +1536,7 @@ namespace FastGen
                 dlg.Controls.Add(bottom);
                 dlg.CancelButton = btnClose;
                 gen();
-                if (!_theme.IsClassic)
-                {
-                    ApplyThemeTree(dlg);
-                    box.BorderStyle = BorderStyle.None;
-                    btnNext.Tag = ButtonRole.Accent;
-                    StyleButton(btnNext, _theme);
-                    TryWinApi(() => SetDarkTitleBar(dlg.Handle, _theme.IsDark));
-                }
-                try
-                {
-                    dlg.ShowDialog(this);
-                }
-                finally
-                {
-                    ForgetSnapshots(dlg);
-                }
+                dlg.ShowDialog(this);
             }
         }
 
@@ -1679,26 +1656,26 @@ namespace FastGen
             if (error != null)
             {
                 lblReproStatus.Text = "Не сохранено: " + error;
-                lblReproStatus.ForeColor = _theme.Error;
+                lblReproStatus.ForeColor = Color.Red;
                 return;
             }
 
             if (!ReproPathIsFile(out _))
             {
                 lblReproStatus.Text = "Файл не выбран — текст не сохраняется";
-                lblReproStatus.ForeColor = _theme.Error;
+                lblReproStatus.ForeColor = Color.Red;
                 return;
             }
 
             if (_lastSavedText != null && _lastSavedText == txtReproEditor.Text && _lastSavedPath == txtReproFilePath.Text.Trim())
             {
                 lblReproStatus.Text = "Сохранено " + DateTime.Now.ToString("HH:mm:ss");
-                lblReproStatus.ForeColor = _theme.Saved;
+                lblReproStatus.ForeColor = Color.Green;
             }
             else
             {
                 lblReproStatus.Text = "Автосохранение";
-                lblReproStatus.ForeColor = _theme.Saved;
+                lblReproStatus.ForeColor = Color.Green;
             }
         }
 

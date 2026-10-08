@@ -62,7 +62,6 @@ namespace FastGen
             KeyPreview = false;
 
             LoadSmallBases();
-            ApplyTheme(Theme.FromKey(_settings.GetString("Theme", Theme.Light.Key)));
 
             Shown += MainForm_Shown;
             FormClosing += MainForm_FormClosing;
@@ -107,8 +106,6 @@ namespace FastGen
             tabControl.SelectedTab = tabRepro;
 
             Controls.Add(tabControl);
-            Controls.Add(BuildHeader());
-            tabControl.BringToFront(); // вкладки занимают место под верхней полосой
         }
 
         private void MainForm_Shown(object sender, EventArgs e)
@@ -139,11 +136,11 @@ namespace FastGen
             string dbfPath = Path.Combine(AppDir, "DICT.DBF");
             if (!File.Exists(dbfPath))
             {
-                SetDictStatus("DICT.DBF не найден — работают GoldBase и «Моя база»", StatusKind.Warn);
+                SetDictStatus("DICT.DBF не найден — работают GoldBase и «Моя база»", Color.DarkOrange);
                 return;
             }
 
-            SetDictStatus("DICT.DBF: загрузка…", StatusKind.Muted);
+            SetDictStatus("DICT.DBF: загрузка…", Color.DimGray);
 
             Task.Run(() =>
             {
@@ -155,13 +152,13 @@ namespace FastGen
                         int percent = total > 0 ? (int)(read * 100L / total) : 100;
                         if (percent == lastPercent) return;
                         lastPercent = percent;
-                        PostToUi(() => SetDictStatus("DICT.DBF: загрузка " + percent + "%", StatusKind.Muted));
+                        PostToUi(() => SetDictStatus("DICT.DBF: загрузка " + percent + "%", Color.DimGray));
                     });
 
                     PostToUi(() =>
                     {
                         _store.SetDict(dict);
-                        SetDictStatus("DICT.DBF: " + dict.Count.ToString("N0") + " слов", StatusKind.Ok);
+                        SetDictStatus("DICT.DBF: " + dict.Count.ToString("N0") + " слов", Color.DarkGreen);
 
                         // не сбрасываем список, если в нём сейчас работают
                         if (chkUseDict.Checked && !lvVariants.ContainsFocus && !txtAddVariant.Focused)
@@ -172,7 +169,7 @@ namespace FastGen
                 {
                     PostToUi(() =>
                     {
-                        SetDictStatus("DICT.DBF: ошибка", StatusKind.Error);
+                        SetDictStatus("DICT.DBF: ошибка", Color.Red);
                         ShowWarning("Не удалось загрузить DICT.DBF.\r\n" + ex.Message +
                                     "\r\n\r\nПрограмма работает с GoldBase.txt и UserBase.txt.");
                     });
@@ -194,11 +191,11 @@ namespace FastGen
             string templates = ResultDbPath;
             if (!File.Exists(ContextPath) && !File.Exists(templates))
             {
-                SetContextStatus("Контекст: нет ResultDB.txt — проверка соседей выключена (вкладка «Сборщик» → Анализ)", StatusKind.Warn);
+                SetContextStatus("Контекст: нет ResultDB.txt — проверка соседей выключена (вкладка «Сборщик» → Анализ)", Color.DarkOrange);
                 return;
             }
 
-            SetContextStatus("Контекст: подготовка…", StatusKind.Muted);
+            SetContextStatus("Контекст: подготовка…", Color.DimGray);
             _contextLoading = true;
             Task.Run(() =>
             {
@@ -212,7 +209,7 @@ namespace FastGen
                     PostToUi(() =>
                     {
                         _contextLoading = false;
-                        SetContextStatus("Контекст: ошибка — " + ex.Message, StatusKind.Error);
+                        SetContextStatus("Контекст: ошибка — " + ex.Message, Color.Red);
                     });
                 }
             });
@@ -224,10 +221,10 @@ namespace FastGen
             _contextLoading = false;
             if (ctx == null)
             {
-                SetContextStatus("Контекст: нет данных", StatusKind.Warn);
+                SetContextStatus("Контекст: нет данных", Color.DarkOrange);
                 return;
             }
-            SetContextStatus("Контекст: " + ctx.Count.ToString("N0") + " пар слов", StatusKind.Ok);
+            SetContextStatus("Контекст: " + ctx.Count.ToString("N0") + " пар слов", Color.DarkGreen);
             if (!lvVariants.ContainsFocus && !txtAddVariant.Focused)
                 RefreshReproTarget(force: true);
         }
@@ -252,22 +249,6 @@ namespace FastGen
 
         protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
         {
-            switch (keyData)
-            {
-                case Keys.Control | Keys.Oemplus:
-                case Keys.Control | Keys.Add:
-                    ChangeEditorFontSize(+1);
-                    return true;
-                case Keys.Control | Keys.OemMinus:
-                case Keys.Control | Keys.Subtract:
-                    ChangeEditorFontSize(-1);
-                    return true;
-                case Keys.Control | Keys.D0:
-                case Keys.Control | Keys.NumPad0:
-                    ChangeEditorFontSize(0);
-                    return true;
-            }
-
             if (tabControl.SelectedTab == tabRepro && HandleReproCmdKey(keyData))
                 return true;
 
@@ -339,7 +320,7 @@ namespace FastGen
                 bool plainText = text.All(ch => ch >= ' ' || ch == '\n' || ch == '\t');
                 if (!_rtfHighlightBroken && plainText)
                 {
-                    box.Rtf = RtfBuilder.Build(text, box.Font.Name, box.Font.SizeInPoints, _theme.Palette, _theme.LineSpacing);
+                    box.Rtf = RtfBuilder.Build(text, box.Font.Name, box.Font.SizeInPoints);
                     string got = box.Text;
                     if (got != text && text.EndsWith("\n") && got + "\n" == text)
                     {
@@ -362,7 +343,7 @@ namespace FastGen
                 }
 
                 if (!done)
-                    HighlightBySelection(box, text, _theme.Palette);
+                    HighlightBySelection(box, text);
 
                 box.Select(Math.Min(selStart, box.TextLength), Math.Min(selLength, Math.Max(0, box.TextLength - selStart)));
                 SetScrollPos(box, scroll);
@@ -403,13 +384,13 @@ namespace FastGen
         }
 
         /// <summary>Запасной способ подсветки (медленный): только скобки и разделители.</summary>
-        private static void HighlightBySelection(RichTextBox box, string text, RtfPalette pal)
+        private static void HighlightBySelection(RichTextBox box, string text)
         {
             using (var regular = new Font(box.Font, FontStyle.Regular))
             using (var bold = new Font(box.Font, FontStyle.Bold))
             {
                 box.Select(0, text.Length);
-                box.SelectionColor = FromRgb(pal.Text);
+                box.SelectionColor = Color.Black;
                 box.SelectionFont = regular;
 
                 int depth = 0;
@@ -419,7 +400,7 @@ namespace FastGen
                     if (c == '{' || c == '}' || c == '|' || c == '[' || c == ']')
                     {
                         box.Select(i, 1);
-                        box.SelectionColor = FromRgb(c == '[' || c == ']' ? pal.Perm : c == '|' ? pal.Pipe : pal.Brace);
+                        box.SelectionColor = (c == '[' || c == ']') ? Color.Magenta : Color.Red;
                         box.SelectionFont = c == '|' ? regular : bold;
                         if (c == '{') depth++;
                         else if (c == '}' && depth > 0) depth--;
@@ -457,7 +438,6 @@ namespace FastGen
                 b.ForeColor = Color.White;
             }
             if (onClick != null) b.Click += onClick;
-            b.Tag = RoleFromClassicColor(back); // роль кнопки для новых тем
             return b;
         }
     }

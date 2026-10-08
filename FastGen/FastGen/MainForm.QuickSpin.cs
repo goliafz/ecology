@@ -91,15 +91,14 @@ namespace FastGen
             {
                 AutoSize = true,
                 ForeColor = Color.DimGray,
-                Tag = "muted",
                 Margin = new Padding(10, 6, 0, 0),
                 Text = "Правый щелчок по варианту в {…} — удалить его. «Вернуть» — оставить исходное слово."
             };
             middle.Controls.Add(lblQuickInfo);
 
-            textLayout.Controls.Add(HostEditor(txtEditorSource), 0, 0);
+            textLayout.Controls.Add(txtEditorSource, 0, 0);
             textLayout.Controls.Add(middle, 0, 1);
-            textLayout.Controls.Add(HostEditor(txtEditorResult), 0, 2);
+            textLayout.Controls.Add(txtEditorResult, 0, 2);
 
             mainLayout.Controls.Add(topRow, 0, 0);
             mainLayout.Controls.Add(textLayout, 0, 1);
