@@ -209,27 +209,10 @@ namespace FastGen
             string text = txtEditorResult.Text;
             if (text.Length == 0) return;
 
-            int index = txtEditorResult.GetCharIndexFromPosition(location);
-            if (index < 0 || index >= text.Length) return;
-            if (!SpinSyntax.TryGetInnermostConstruct(text, index, out var range)) return;
-            if (index == range.Start || index == range.End - 1) return; // щелчок по скобке
-
-            var variants = SpinSyntax.GetVariants(text.Substring(range.Start, range.Length));
-            if (variants.Count < 2) return;
-
-            // какой вариант под курсором
-            int pos = range.Start + 1;
-            int clicked = -1;
-            for (int i = 0; i < variants.Count; i++)
-            {
-                int vEnd = pos + variants[i].Length;
-                if (index >= pos && index < vEnd) { clicked = i; break; }
-                pos = vEnd + 1; // + '|'
-            }
-            if (clicked < 0) return; // щелчок по '|'
-
-            variants.RemoveAt(clicked);
-            string replacement = SpinSyntax.BuildConstruct(variants);
+            int index = CharIndexAtPoint(txtEditorResult, location);
+            if (!SpinSyntax.TryRemoveVariantAt(text, index, out var removal)) return;
+            var range = removal.Construct;
+            string replacement = removal.Replacement;
 
             int selStart = txtEditorResult.SelectionStart;
             _adjustingSelection = true;

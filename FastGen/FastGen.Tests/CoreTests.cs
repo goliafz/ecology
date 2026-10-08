@@ -41,6 +41,32 @@ namespace FastGen.Tests
             Assert.Equal(new[] { "качестве {HD|Full HD}", "качестве", "[<,> a | b ]" }, v);
         }
 
+        [Theory]
+        [InlineData("a {1|2|3} b", "2", "a {1|3} b")]
+        [InlineData("a {1|2|3} b", "1", "a {2|3} b")]
+        [InlineData("a {1|2|3} b", "3", "a {1|2} b")]
+        [InlineData("a {один|два} b", "два", "a один b")]
+        [InlineData("{удобная навигация|навигация по сайту|меню}", "по", "{удобная навигация|меню}")]
+        [InlineData("x {a|{b|c}|d} y", "c", "x {a|b|d} y")]
+        [InlineData("x {a|{b|c}|d} y", "d", "x {a|{b|c}} y")]
+        public void RemoveVariantUnderClick(string text, string clickOn, string expected)
+        {
+            int idx = text.LastIndexOf(clickOn);
+            Assert.True(SpinSyntax.TryRemoveVariantAt(text, idx, out var r));
+            string result = text.Substring(0, r.Construct.Start) + r.Replacement + text.Substring(r.Construct.End);
+            Assert.Equal(expected, result);
+        }
+
+        [Fact]
+        public void RemoveVariantIgnoresBracesPipesAndPlainText()
+        {
+            string t = "a {1|2} b";
+            Assert.False(SpinSyntax.TryRemoveVariantAt(t, 0, out _));             // обычный текст
+            Assert.False(SpinSyntax.TryRemoveVariantAt(t, t.IndexOf('{'), out _)); // скобка
+            Assert.False(SpinSyntax.TryRemoveVariantAt(t, t.IndexOf('|'), out _)); // разделитель
+            Assert.False(SpinSyntax.TryRemoveVariantAt(t, -1, out _));
+        }
+
         [Fact]
         public void ValidateFindsErrors()
         {

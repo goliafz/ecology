@@ -356,6 +356,33 @@ namespace FastGen
             }
         }
 
+        /// <summary>
+        /// Символ под точкой щелчка. GetCharIndexFromPosition возвращает ближайший символ даже для щелчка
+        /// в пустом месте справа от строки — такие щелчки отбрасываем (-1).
+        /// </summary>
+        private static int CharIndexAtPoint(RichTextBox box, Point location)
+        {
+            int len = box.TextLength;
+            if (len == 0) return -1;
+
+            int index = box.GetCharIndexFromPosition(location);
+            if (index < 0 || index >= len) return -1;
+
+            Point p = box.GetPositionFromCharIndex(index);
+            int lineHeight = box.Font.Height;
+            if (location.Y < p.Y - 2 || location.Y > p.Y + lineHeight + 2) return -1;
+
+            int charWidth = Math.Max(4, (int)(box.Font.SizeInPoints * 1.4f));
+            int nextX = p.X + charWidth;
+            if (index + 1 < len)
+            {
+                Point n = box.GetPositionFromCharIndex(index + 1);
+                if (n.Y == p.Y && n.X > p.X) nextX = n.X;
+            }
+            if (location.X < p.X - 2 || location.X > nextX + 2) return -1;
+            return index;
+        }
+
         /// <summary>Запасной способ подсветки (медленный): только скобки и разделители.</summary>
         private static void HighlightBySelection(RichTextBox box, string text)
         {

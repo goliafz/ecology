@@ -204,6 +204,7 @@ namespace FastGen
             txtReproEditor.TextChanged += TxtReproEditor_TextChanged;
             txtReproEditor.KeyUp += TxtReproEditor_KeyUp;
             txtReproEditor.MouseUp += TxtReproEditor_MouseUp;
+            txtReproEditor.MouseDown += TxtReproEditor_MouseDown;
 
             split.Controls.Add(txtReproEditor, 0, 0);
             split.Controls.Add(BuildVariantsPanel(), 1, 0);
@@ -526,6 +527,7 @@ namespace FastGen
                 "  Shift+Delete — Вариант 1 [<,> a | b | c ]\r\n" +
                 "  Shift+End — Вариант 2 (и, или)\r\n" +
                 "  Shift+PgDn — ротация «a и b» → {a и b|b и a}\r\n" +
+                "  Правый щелчок по варианту в {…} — стереть его: {1|2|3} → {1|3}\r\n" +
                 "  Ctrl+Z / Ctrl+Y — отменить / вернуть;  Ctrl+S — сохранить сейчас\r\n\r\n" +
                 "Строка состояния внизу показывает число вариантов текста и ошибки скобок\r\n" +
                 "(щелчок по ошибке — перейти к ней).";
@@ -594,9 +596,53 @@ namespace FastGen
             }
         }
 
+        private void TxtReproEditor_MouseDown(object sender, MouseEventArgs e)
+        {
+            if (e.Button != MouseButtons.Right) return;
+            RemoveReproVariantAt(CharIndexAtPoint(txtReproEditor, e.Location));
+        }
+
+        /// <summary>
+        /// Правый щелчок по варианту в {…} стирает его: {1|2|3} → {1|3}. Остался один вариант — скобки убираются.
+        /// Отменяется Ctrl+Z. Удалённый синоним запоминается и больше не предлагается для этого слова.
+        /// </summary>
+        private bool RemoveReproVariantAt(int charIndex)
+        {
+            string text = txtReproEditor.Text;
+            if (!SpinSyntax.TryRemoveVariantAt(text, charIndex, out var r)) return false;
+
+            int selStart = txtReproEditor.SelectionStart;
+            int selEnd = selStart + txtReproEditor.SelectionLength;
+            Point scroll = GetScrollPos(txtReproEditor);
+
+            ReplaceRepro(r.Construct.Start, r.Construct.Length, r.Replacement);
+            HighlightSynConstructions(txtReproEditor);
+
+            // выделение до конструкции не трогаем, после — сдвигаем, на ней — выделяем новую конструкцию
+            int delta = r.Replacement.Length - r.Construct.Length;
+            if (selEnd <= r.Construct.Start) SelectRepro(selStart, selEnd - selStart);
+            else if (selStart >= r.Construct.End) SelectRepro(selStart + delta, selEnd - selStart);
+            else SelectRepro(r.Construct.Start, r.Replacement.Length);
+            SetScrollPos(txtReproEditor, scroll);
+
+            string first = r.FirstVariant.Trim();
+            if (r.RemovedIndex > 0 && r.Removed.Trim().Length > 0 && first.Length > 0 &&
+                first.IndexOfAny(new[] { '{', '}', '|', '[', ']' }) < 0)
+            {
+                _store.RegisterRejected(first, new[] { r.Removed });
+                try { _store.SaveRejected(); } catch { /* не критично */ }
+            }
+
+            RefreshReproTarget(force: true);
+            UpdateTemplateInfo();
+            SetHint("Стёрто: «" + Shorten(r.Removed.Trim(), 40) + "». Ctrl+Z — вернуть");
+            return true;
+        }
+
         private void TxtReproEditor_MouseUp(object sender, MouseEventArgs e)
         {
             if (_adjustingSelection) return;
+            if (e.Button == MouseButtons.Right) return; // правая кнопка обработана в MouseDown
 
             // подрезаем пробелы в конце выделения (двойной щелчок захватывает пробел)
             int start = txtReproEditor.SelectionStart;

@@ -164,6 +164,52 @@ namespace FastGen.Core
             return SplitTopLevel(construct.Substring(1, construct.Length - 2));
         }
 
+        public sealed class VariantRemoval
+        {
+            public TextRange Construct;     // где стояла конструкция (со скобками)
+            public string Replacement;      // чем её заменить
+            public string Removed;          // удалённый вариант
+            public int RemovedIndex;        // его номер (0 — исходный)
+            public string FirstVariant;     // исходный вариант до удаления
+        }
+
+        /// <summary>
+        /// Удаление варианта, на котором стоит символ charIndex, из самой внутренней конструкции:
+        /// {1|2|3} → удалить 2 → {1|3}; удалить 1 → {2|3}; из {1|2} → просто 1.
+        /// false — символ вне конструкции, на скобке или на «|».
+        /// </summary>
+        public static bool TryRemoveVariantAt(string text, int charIndex, out VariantRemoval result)
+        {
+            result = null;
+            if (string.IsNullOrEmpty(text) || charIndex < 0 || charIndex >= text.Length) return false;
+            if (!TryGetInnermostConstruct(text, charIndex, out var range)) return false;
+            if (charIndex == range.Start || charIndex == range.End - 1) return false;
+
+            var variants = GetVariants(text.Substring(range.Start, range.Length));
+            if (variants.Count < 2) return false;
+
+            int pos = range.Start + 1;
+            int clicked = -1;
+            for (int i = 0; i < variants.Count; i++)
+            {
+                int vEnd = pos + variants[i].Length;
+                if (charIndex >= pos && charIndex < vEnd) { clicked = i; break; }
+                pos = vEnd + 1; // + '|'
+            }
+            if (clicked < 0) return false;
+
+            result = new VariantRemoval
+            {
+                Construct = range,
+                Removed = variants[clicked],
+                RemovedIndex = clicked,
+                FirstVariant = variants[0]
+            };
+            variants.RemoveAt(clicked);
+            result.Replacement = BuildConstruct(variants);
+            return true;
+        }
+
         /// <summary>Собирает конструкцию из вариантов. Один вариант — возвращается без скобок.</summary>
         public static string BuildConstruct(IList<string> variants)
         {
