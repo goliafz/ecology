@@ -224,9 +224,11 @@ namespace FastGen.Core
         }
 
         /// <summary>
-        /// Поправляет выделение мышью: убирает пробелы по краям, а если выделение выходит за пределы
-        /// конструкции {…} или […], расширяет его до её скобок. Выделение внутри одной конструкции
-        /// (часть варианта) не трогается.
+        /// Поправляет выделение мышью:
+        ///  1) убирает по краям пробелы и «висящие» запятые / точки с запятой;
+        ///  2) начало или конец посреди слова — захватывает слово целиком («елодрамы … мистик» → «мелодрамы … мистика»);
+        ///  3) выделение выходит за пределы конструкции {…} или […] — расширяет его до её скобок.
+        /// Выделение внутри одной конструкции расширяется только до целых слов.
         /// </summary>
         public static TextRange SnapSelection(string text, int start, int end)
         {
@@ -234,9 +236,13 @@ namespace FastGen.Core
             start = Math.Max(0, Math.Min(start, text.Length));
             end = Math.Max(start, Math.Min(end, text.Length));
 
-            while (start < end && char.IsWhiteSpace(text[start])) start++;
-            while (end > start && char.IsWhiteSpace(text[end - 1])) end--;
+            while (start < end && IsEdgeJunk(text[start])) start++;
+            while (end > start && IsEdgeJunk(text[end - 1])) end--;
             if (end <= start) return new TextRange(start, start);
+
+            // слова целиком (с дефисом: «онлайн-кинотеатр»)
+            if (IsWordChar(text[start])) start = Math.Min(start, WordAt(text, start).Start);
+            if (IsWordChar(text[end - 1])) end = Math.Max(end, WordAt(text, end - 1).End);
 
             var blocks = GetBlocks(text);
 
@@ -257,6 +263,11 @@ namespace FastGen.Core
             }
 
             return new TextRange(start, end);
+        }
+
+        private static bool IsEdgeJunk(char c)
+        {
+            return char.IsWhiteSpace(c) || c == ',' || c == ';';
         }
 
         /// <summary>Следующая конструкция {…} верхнего уровня, начинающаяся не раньше from.</summary>

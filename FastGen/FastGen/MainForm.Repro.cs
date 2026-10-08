@@ -650,7 +650,7 @@ namespace FastGen
             if (_adjustingSelection) return;
             if (e.Button == MouseButtons.Right) return; // правая кнопка обработана в MouseDown
 
-            // пробелы по краям убираем, конструкции {…} захватываем целиком — со скобками
+            // пробелы по краям убираем, слова и конструкции {…} захватываем целиком
             int start = txtReproEditor.SelectionStart;
             int length = txtReproEditor.SelectionLength;
             if (length > 0)
