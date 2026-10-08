@@ -54,7 +54,8 @@ namespace FastGen
             {
                 GoldPath = Path.Combine(AppDir, "GoldBase.txt"),
                 UserPath = Path.Combine(AppDir, "UserBase.txt"),
-                UsagePath = Path.Combine(AppDir, "syn_usage.txt")
+                UsagePath = Path.Combine(AppDir, "syn_usage.txt"),
+                RejectedPath = Path.Combine(AppDir, "syn_rejected.txt")
             };
 
             InitializeComponent();
@@ -73,6 +74,9 @@ namespace FastGen
 
             try { _store.LoadUser(); }
             catch (Exception ex) { ShowWarning("Не удалось прочитать UserBase.txt:\r\n" + ex.Message); }
+
+            try { _store.LoadRejected(); }
+            catch (Exception ex) { ShowWarning("Не удалось прочитать syn_rejected.txt:\r\n" + ex.Message); }
 
             try { _store.LoadUsage(); }
             catch (Exception ex) { ShowWarning("Не удалось прочитать syn_usage.txt:\r\n" + ex.Message); }
@@ -107,6 +111,7 @@ namespace FastGen
         private void MainForm_Shown(object sender, EventArgs e)
         {
             RestoreReproSession();
+            StartContextLoad();
             StartDictLoad();
             txtReproEditor.Focus();
         }
@@ -170,6 +175,58 @@ namespace FastGen
                     });
                 }
             });
+        }
+
+        // ------------------------------------------------------------------
+        // Индекс контекста (пары соседних слов из ваших шаблонов)
+        // ------------------------------------------------------------------
+
+        private volatile ContextIndex _context;
+        private bool _contextLoading;
+
+        private string ContextPath { get { return Path.Combine(AppDir, "Context.bin"); } }
+
+        private void StartContextLoad()
+        {
+            string templates = ResultDbPath;
+            if (!File.Exists(ContextPath) && !File.Exists(templates))
+            {
+                SetContextStatus("Контекст: нет ResultDB.txt — проверка соседей выключена (вкладка «Сборщик» → Анализ)", Color.DarkOrange);
+                return;
+            }
+
+            SetContextStatus("Контекст: подготовка…", Color.DimGray);
+            _contextLoading = true;
+            Task.Run(() =>
+            {
+                try
+                {
+                    var ctx = ContextIndex.LoadOrBuild(ContextPath, templates);
+                    PostToUi(() => OnContextReady(ctx));
+                }
+                catch (Exception ex)
+                {
+                    PostToUi(() =>
+                    {
+                        _contextLoading = false;
+                        SetContextStatus("Контекст: ошибка — " + ex.Message, Color.Red);
+                    });
+                }
+            });
+        }
+
+        private void OnContextReady(ContextIndex ctx)
+        {
+            _context = ctx;
+            _contextLoading = false;
+            if (ctx == null)
+            {
+                SetContextStatus("Контекст: нет данных", Color.DarkOrange);
+                return;
+            }
+            SetContextStatus("Контекст: " + ctx.Count.ToString("N0") + " пар слов", Color.DarkGreen);
+            if (!lvVariants.ContainsFocus && !txtAddVariant.Focused)
+                RefreshReproTarget(force: true);
         }
 
         /// <summary>Выполнить действие в UI-потоке (из фонового потока).</summary>

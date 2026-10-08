@@ -24,6 +24,15 @@ namespace FastGen.Core
         /// <summary>Фразы из BadWord.txt — внутри них ничего не трогаем.</summary>
         public List<string> BadPhrases = new List<string>();
 
+        /// <summary>
+        /// Пары соседних слов из ваших шаблонов. Если задано — синоним берётся, только если он уже стоял
+        /// рядом с теми же соседями (иначе «собирать кубик» превращается в «копить кубик»).
+        /// </summary>
+        public ContextIndex Context;
+
+        /// <summary>Не трогать слова с заглавной буквы в середине предложения (имена, названия) и АББРЕВИАТУРЫ.</summary>
+        public bool SkipProperNouns = true;
+
         /// <summary>Исключения из Exceptions.txt: «рф=РФ».</summary>
         public Dictionary<string, string> Exceptions = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
@@ -31,7 +40,10 @@ namespace FastGen.Core
         {
             "в", "во", "на", "за", "под", "над", "из", "к", "ко", "о", "об", "обо", "по", "с", "со", "у",
             "для", "до", "без", "при", "про", "через", "от", "ото", "из-за", "из-под",
-            "и", "а", "но", "или", "либо", "да", "ни", "не", "же", "ли", "бы", "ведь", "то", "что", "как"
+            "и", "а", "но", "или", "либо", "да", "ни", "не", "же", "ли", "бы", "ведь", "то", "что", "как",
+            "кто", "который", "которая", "которое", "которые", "которого", "которой", "которых", "которым",
+            "я", "ты", "он", "она", "оно", "мы", "вы", "они", "его", "ее", "её", "их", "им", "ему", "ей", "нас", "вас",
+            "уже", "лишь", "тоже", "так"
         };
 
         public static List<string> LoadBadPhrases(string path)
@@ -123,13 +135,15 @@ namespace FastGen.Core
                     if (Intersects(blocked, start, end)) continue;
 
                     string phrase = text.Substring(start, end - start);
-                    if (n == 1 && !IsSpinnableWord(phrase, opt)) break;
+                    if (n == 1 && !IsSpinnableWord(text, start, phrase, opt)) break;
+                    if (n > 1 && opt.SkipProperNouns && HasProperNoun(text, words, k, n)) continue;
 
                     string lookup = phrase;
                     if (n == 1 && opt.Exceptions.TryGetValue(phrase.ToLowerInvariant(), out var canon))
                         lookup = canon;
 
-                    var cands = PickCandidates(store, lookup, opt);
+                    GetNeighbors(text, start, end, out string left, out string right);
+                    var cands = PickCandidates(store, lookup, opt, left, right);
                     if (cands.Count > 0)
                     {
                         bestCount = n;
@@ -188,12 +202,153 @@ namespace FastGen.Core
             return text.Substring(r.Start, r.Length);
         }
 
-        private static bool IsSpinnableWord(string word, SpinOptions opt)
+        private static bool IsSpinnableWord(string text, int start, string word, SpinOptions opt)
         {
             if (!TextNav.HasLetter(word)) return false;           // числа не трогаем
             if (word.Length < 2) return false;
             if (opt.StopWords.Contains(word)) return false;
+            if (opt.SkipProperNouns)
+            {
+                if (word.Any(char.IsDigit)) return false;          // 2х2, 1080p, mp3
+                if (TextCase.IsAllUpper(word)) return false;       // ТОП, РФ, SEO
+                if (TextCase.StartsWithUpper(word) && !IsSentenceStart(text, start)) return false; // Фишер, Москва
+                if (word.Any(c => c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z')) return false;      // латиница
+            }
             return true;
+        }
+
+        private static bool HasProperNoun(string text, List<TextRange> words, int k, int n)
+        {
+            for (int i = k; i < k + n; i++)
+            {
+                string w = words[i].ToStringIn(text);
+                if (TextCase.IsAllUpper(w) && w.Length > 1) return true;
+                if (TextCase.StartsWithUpper(w) && (i > k || !IsSentenceStart(text, words[i].Start))) return true;
+            }
+            return false;
+        }
+
+        /// <summary>Слово стоит в начале предложения (или текста / строки).</summary>
+        public static bool IsSentenceStart(string text, int pos)
+        {
+            int i = pos - 1;
+            while (i >= 0 && (text[i] == ' ' || text[i] == '\t' || text[i] == '\u00A0')) i--;
+            if (i < 0) return true;
+            char c = text[i];
+            if (c == '\n' || c == '\r' || c == '.' || c == '!' || c == '?' || c == '…') return true;
+            // «Слово» после тега или конструкции в начале строки: <p>Слово, {Здесь|Тут}
+            if (c == '>' || c == '}' || c == ']') return IsSentenceStartBefore(text, i);
+            return false;
+        }
+
+        private static bool IsSentenceStartBefore(string text, int closePos)
+        {
+            int open;
+            if (text[closePos] == '>') open = text.LastIndexOf('<', closePos);
+            else open = SpinSyntax.FindMatchingOpen(text, closePos);
+            if (open < 0) return false;
+            if (text[closePos] == '}' || text[closePos] == ']')
+            {
+                // внутри конструкции — смотрим, с большой ли буквы её первый вариант
+                var inner = text.Substring(open + 1, closePos - open - 1);
+                return TextCase.StartsWithUpper(inner);
+            }
+            return IsSentenceStart(text, open);
+        }
+
+        /// <summary>
+        /// Соседние слова слева и справа от [start, end) — если между ними только пробелы.
+        /// Соседняя конструкция {…} заменяется своим первым (исходным) вариантом.
+        /// </summary>
+        public static void GetNeighbors(string text, int start, int end, out string left, out string right)
+        {
+            left = null;
+            right = null;
+
+            int i = start - 1;
+            while (i >= 0 && (text[i] == ' ' || text[i] == '\u00A0')) i--;
+            if (i >= 0)
+            {
+                if (TextNav.IsWordChar(text[i]))
+                {
+                    var w = TextNav.WordAt(text, i);
+                    left = text.Substring(w.Start, w.Length).ToLowerInvariant();
+                }
+                else if (text[i] == '}')
+                {
+                    int open = SpinSyntax.FindMatchingOpen(text, i);
+                    if (open >= 0) left = LastWord(SpinSyntax.GetVariants(text.Substring(open, i - open + 1))[0]);
+                }
+            }
+
+            int j = end;
+            while (j < text.Length && (text[j] == ' ' || text[j] == '\u00A0')) j++;
+            if (j < text.Length)
+            {
+                if (TextNav.IsWordChar(text[j]))
+                {
+                    var w = TextNav.WordAt(text, j);
+                    right = text.Substring(w.Start, w.Length).ToLowerInvariant();
+                }
+                else if (text[j] == '{')
+                {
+                    int close = SpinSyntax.FindMatchingClose(text, j);
+                    if (close > j) right = FirstWord(SpinSyntax.GetVariants(text.Substring(j, close - j + 1))[0]);
+                }
+            }
+
+            // слова вплотную (без пробела) — это не соседи, а части другого токена
+            if (start > 0 && TextNav.IsWordChar(text[start - 1])) left = null;
+            if (end < text.Length && TextNav.IsWordChar(text[end])) right = null;
+        }
+
+        private static List<string> Words(string s)
+        {
+            var res = new List<string>();
+            int i = 0;
+            while (i < s.Length)
+            {
+                if (TextNav.IsWordChar(s[i]))
+                {
+                    var w = TextNav.WordAt(s, i);
+                    res.Add(s.Substring(w.Start, w.Length).ToLowerInvariant());
+                    i = w.End;
+                }
+                else i++;
+            }
+            return res;
+        }
+
+        private static string FirstWord(string s)
+        {
+            string t = s.TrimStart();
+            if (t.Length == 0 || !TextNav.IsWordChar(t[0])) return null;
+            var w = Words(t);
+            return w.Count > 0 ? w[0] : null;
+        }
+
+        private static string LastWord(string s)
+        {
+            string t = s.TrimEnd();
+            if (t.Length == 0 || !TextNav.IsWordChar(t[t.Length - 1])) return null;
+            var w = Words(t);
+            return w.Count > 0 ? w[w.Count - 1] : null;
+        }
+
+        /// <summary>
+        /// Подходит ли синоним к соседям по индексу контекста. «Моя база» не проверяется.
+        /// Без индекса проверка не выполняется (всё подходит).
+        /// </summary>
+        public static bool FitsContext(ContextIndex ctx, SynonymCandidate c, string left, string right)
+        {
+            if (ctx == null || c.Source == SynonymSource.User) return true;
+            var w = Words(c.Text);
+            if (w.Count == 0) return false;
+            if (left == null && right == null)
+                return c.Source == SynonymSource.Frequent && c.UsageCount >= 2; // проверить не с чем — только проверенные вами
+            bool okLeft = left == null || ctx.HasPair(left, w[0]);
+            bool okRight = right == null || ctx.HasPair(w[w.Count - 1], right);
+            return okLeft && okRight;
         }
 
         /// <summary>Слова k..k+n-1 разделены только одиночными пробелами.</summary>
@@ -209,7 +364,8 @@ namespace FastGen.Core
         }
 
         /// <summary>Синонимы для автоматического размножения: моя база важнее всего.</summary>
-        public static List<SynonymCandidate> PickCandidates(SynonymStore store, string phrase, SpinOptions opt)
+        public static List<SynonymCandidate> PickCandidates(SynonymStore store, string phrase, SpinOptions opt,
+                                                            string left = null, string right = null)
         {
             var all = store.GetCandidates(phrase, opt.IncludeDict);
             if (all.Count == 0) return all;
@@ -221,8 +377,16 @@ namespace FastGen.Core
 
             return chosen
                 .Where(c => c.Text.IndexOf('|') < 0 && c.Text.IndexOf('{') < 0 && c.Text.IndexOf('}') < 0)
+                .Where(c => c.Source == SynonymSource.User || !OnlyStopWords(c.Text, opt))   // «для тех» → «для» — нельзя
+                .Where(c => FitsContext(opt.Context, c, left, right))
                 .Take(Math.Max(1, opt.MaxSynonyms))
                 .ToList();
+        }
+
+        private static bool OnlyStopWords(string text, SpinOptions opt)
+        {
+            var w = Words(text);
+            return w.Count == 0 || w.All(x => opt.StopWords.Contains(x));
         }
 
         public static List<TextRange> FindBlockedSpans(string text, List<string> phrases)

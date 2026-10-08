@@ -50,6 +50,7 @@
   <ItemGroup>
     <Compile Include="Core\AppSettings.cs" />
     <Compile Include="Core\AutoSpinner.cs" />
+    <Compile Include="Core\ContextIndex.cs" />
     <Compile Include="Core\GoldBaseBuilder.cs" />
     <Compile Include="Core\RtfBuilder.cs" />
     <Compile Include="Core\SpinSyntax.cs" />

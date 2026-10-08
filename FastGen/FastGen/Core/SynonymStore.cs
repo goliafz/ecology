@@ -36,10 +36,12 @@ namespace FastGen.Core
         private Dictionary<string, List<string>> _user = NewDict<List<string>>();
         private volatile Dictionary<string, string[]> _dict;
         private readonly Dictionary<string, Dictionary<string, int>> _usage = NewDict<Dictionary<string, int>>();
+        private readonly Dictionary<string, HashSet<string>> _rejected = NewDict<HashSet<string>>();
 
         public string GoldPath { get; set; }
         public string UserPath { get; set; }
         public string UsagePath { get; set; }
+        public string RejectedPath { get; set; }
 
         public int GoldCount { get { return _gold.Count; } }
         public int UserCount { get { return _user.Count; } }
@@ -267,10 +269,14 @@ namespace FastGen.Core
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { key };
             _usage.TryGetValue(key, out var usage);
 
+            _rejected.TryGetValue(key, out var rejected);
+
             Action<string, SynonymSource> add = (s, src) =>
             {
                 string t = (s ?? string.Empty).Trim();
                 if (t.Length == 0) return;
+                // отклонённые вами пары больше не предлагаются (кроме записанных в «Мою базу»)
+                if (src != SynonymSource.User && rejected != null && rejected.Contains(Normalize(t))) return;
                 if (!seen.Add(Normalize(t))) return;
                 int cnt = 0;
                 if (usage != null) usage.TryGetValue(Normalize(t), out cnt);
@@ -312,6 +318,8 @@ namespace FastGen.Core
                 if (!list.Contains(t, StringComparer.OrdinalIgnoreCase)) list.Add(t);
             }
             _user[key] = list;
+            if (_rejected.TryGetValue(key, out var rej))
+                foreach (var t in list) rej.Remove(Normalize(t));
         }
 
         public bool RemoveUserEntry(string phrase)
@@ -335,7 +343,70 @@ namespace FastGen.Core
                 if (syn.Length == 0 || syn == key || syn.IndexOf('|') >= 0 || syn.IndexOf('{') >= 0) continue;
                 d.TryGetValue(syn, out int c);
                 d[syn] = c + 1;
+                if (_rejected.TryGetValue(key, out var rej)) rej.Remove(syn);
             }
+        }
+
+        /// <summary>
+        /// Запоминает синонимы, которые вы убрали из конструкции: в этом слове они больше не предлагаются
+        /// автоматически, а их «частота» обнуляется.
+        /// </summary>
+        public void RegisterRejected(string baseWord, IEnumerable<string> synonyms)
+        {
+            string key = Normalize(baseWord);
+            if (key.Length == 0) return;
+            if (!_rejected.TryGetValue(key, out var set))
+            {
+                set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                _rejected[key] = set;
+            }
+            _usage.TryGetValue(key, out var usage);
+            foreach (var s in synonyms)
+            {
+                string syn = Normalize(s);
+                if (syn.Length == 0 || syn == key || syn.IndexOfAny(new[] { '|', '{', '}' }) >= 0) continue;
+                set.Add(syn);
+                if (usage != null) usage.Remove(syn);
+            }
+        }
+
+        public bool IsRejected(string baseWord, string synonym)
+        {
+            return _rejected.TryGetValue(Normalize(baseWord), out var set) && set.Contains(Normalize(synonym));
+        }
+
+        /// <summary>syn_rejected.txt: «слово|синоним».</summary>
+        public void LoadRejected()
+        {
+            _rejected.Clear();
+            if (string.IsNullOrEmpty(RejectedPath) || !File.Exists(RejectedPath)) return;
+            foreach (var line in File.ReadLines(RejectedPath, Utf8NoBom))
+            {
+                var parts = line.Split('|');
+                if (parts.Length != 2) continue;
+                RegisterRejectedRaw(Normalize(parts[0]), Normalize(parts[1]));
+            }
+        }
+
+        private void RegisterRejectedRaw(string key, string syn)
+        {
+            if (key.Length == 0 || syn.Length == 0) return;
+            if (!_rejected.TryGetValue(key, out var set))
+            {
+                set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                _rejected[key] = set;
+            }
+            set.Add(syn);
+        }
+
+        public void SaveRejected()
+        {
+            if (string.IsNullOrEmpty(RejectedPath)) return;
+            var lines = new List<string>();
+            foreach (var kv in _rejected.OrderBy(k => k.Key, StringComparer.Ordinal))
+                foreach (var syn in kv.Value.OrderBy(x => x, StringComparer.Ordinal))
+                    lines.Add(kv.Key + "|" + syn);
+            WriteAllLinesSafe(RejectedPath, lines);
         }
 
         // ------------------------------------------------------------------

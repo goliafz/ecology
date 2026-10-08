@@ -234,6 +234,11 @@ namespace FastGen
                         b.AddExistingLines(File.ReadLines(goldPath, new UTF8Encoding(false)));
                     b.AddTemplateText(File.ReadAllText(resultPath, new UTF8Encoding(false)));
                     SynonymStore.WriteAllLinesSafe(goldPath, b.Lines);
+
+                    // заодно пересобираем пары соседних слов
+                    var ctx = ContextIndex.Build(File.ReadLines(resultPath, new UTF8Encoding(false)));
+                    try { ctx.Save(ContextPath); } catch (IOException) { }
+                    PostToUi(() => OnContextReady(ctx));
                     return b;
                 });
 

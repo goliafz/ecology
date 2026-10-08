@@ -496,4 +496,117 @@ namespace FastGen.Tests
             return sb.ToString();
         }
     }
+
+    public class ReadabilityTests
+    {
+        private static SynonymStore Store(params string[] goldLines)
+        {
+            string path = Path.Combine(Path.GetTempPath(), "fastgen-gold-" + Guid.NewGuid().ToString("N") + ".txt");
+            File.WriteAllLines(path, goldLines);
+            var s = new SynonymStore { GoldPath = path };
+            s.LoadGold();
+            File.Delete(path);
+            return s;
+        }
+
+        [Fact]
+        public void ContextIndexCollectsPairsAcrossConstructs()
+        {
+            var ctx = ContextIndex.Build(new[] { "Мы {любим|обожаем} {собирать|складывать} кубик, а потом {|быстро }решаем." });
+            Assert.True(ctx.HasPair("любим", "собирать"));
+            Assert.True(ctx.HasPair("обожаем", "складывать"));
+            Assert.True(ctx.HasPair("складывать", "кубик"));
+            Assert.True(ctx.HasPair("мы", "обожаем"));
+            Assert.True(ctx.HasPair("потом", "решаем"));   // пустой вариант пропускает соседа
+            Assert.True(ctx.HasPair("быстро", "решаем"));
+            Assert.False(ctx.HasPair("кубик", "а"));       // через запятую пар нет
+            Assert.False(ctx.HasPair("собирать", "любим"));
+        }
+
+        [Fact]
+        public void ContextIndexSaveLoad()
+        {
+            string path = Path.Combine(Path.GetTempPath(), "fastgen-ctx-" + Guid.NewGuid().ToString("N") + ".bin");
+            ContextIndex.Build(new[] { "удобная навигация" }).Save(path);
+            var loaded = ContextIndex.Load(path);
+            File.Delete(path);
+            Assert.True(loaded.HasPair("Удобная", "навигация"));
+            Assert.Equal(1, loaded.Count);
+        }
+
+        [Fact]
+        public void SpinRejectsSynonymsThatNeverStoodNextToNeighbours()
+        {
+            var store = Store("собирать|копить|складывать");
+            var ctx = ContextIndex.Build(new[] { "научиться складывать кубик", "копить деньги", "научиться копить" });
+            var r = AutoSpinner.Spin("Хочу научиться собирать кубик.", store, new SpinOptions { Context = ctx });
+            Assert.Equal("Хочу научиться {собирать|складывать} кубик.", r.Text);
+
+            // без индекса — по-старому
+            r = AutoSpinner.Spin("Хочу научиться собирать кубик.", store, new SpinOptions());
+            Assert.Equal("Хочу научиться {собирать|копить|складывать} кубик.", r.Text);
+        }
+
+        [Fact]
+        public void VariantOfOnlyStopWordsIsDropped()
+        {
+            var store = Store("для тех|для|для всех");
+            var r = AutoSpinner.Spin("сайт для тех, кто", store, new SpinOptions());
+            Assert.Equal("сайт {для тех|для всех}, кто", r.Text);
+        }
+
+        [Fact]
+        public void UserBaseIgnoresContext()
+        {
+            var store = Store("собирать|копить");
+            store.SetUserEntry("собирать", new[] { "копить" });
+            var ctx = ContextIndex.Build(new[] { "что-то другое" });
+            var r = AutoSpinner.Spin("научиться собирать кубик", store, new SpinOptions { Context = ctx });
+            Assert.Equal("научиться {собирать|копить} кубик", r.Text);
+        }
+
+        [Fact]
+        public void ProperNounsAbbreviationsAndDigitsAreSkipped()
+        {
+            var store = Store("куба|страна", "фридрих|богатый", "топ|рейтинг", "2х2|2 на 2", "кубик|куб", "здесь|тут");
+            var r = AutoSpinner.Spin("Здесь куба Фишера, метод Фридрих и ТОП кубиков 2х2. Кубик здесь.", store, new SpinOptions());
+            Assert.Equal("{Здесь|Тут} {куба|страна} Фишера, метод Фридрих и ТОП кубиков 2х2. {Кубик|Куб} {здесь|тут}.", r.Text);
+        }
+
+        [Fact]
+        public void NeighboursSeeThroughConstructs()
+        {
+            string t = "{Удобная|Комфортная} навигация помогает";
+            AutoSpinner.GetNeighbors(t, t.IndexOf("навигация"), t.IndexOf("навигация") + "навигация".Length, out var l, out var r);
+            Assert.Equal("удобная", l);
+            Assert.Equal("помогает", r);
+            AutoSpinner.GetNeighbors("кубик, а", 0, 5, out l, out r);
+            Assert.Null(l);
+            Assert.Null(r);
+        }
+
+        [Fact]
+        public void RejectedPairsAreNotSuggestedAndPersist()
+        {
+            string dir = Path.Combine(Path.GetTempPath(), "fastgen-rej-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(dir);
+            var store = new SynonymStore { GoldPath = Path.Combine(dir, "g.txt"), RejectedPath = Path.Combine(dir, "r.txt"), UsagePath = Path.Combine(dir, "u.txt") };
+            File.WriteAllLines(store.GoldPath, new[] { "материалы|статьи|пиломатериалы" });
+            store.LoadGold();
+            store.RegisterUsage("материалы", new[] { "пиломатериалы" });
+            store.RegisterRejected("Материалы", new[] { "Пиломатериалы" });
+            store.SaveRejected();
+
+            var again = new SynonymStore { GoldPath = store.GoldPath, RejectedPath = store.RejectedPath };
+            again.LoadGold();
+            again.LoadRejected();
+            Assert.Equal(new[] { "статьи" }, again.GetCandidates("материалы", false).Select(c => c.Text));
+            Assert.Equal(0, store.GetUsage("материалы", "пиломатериалы"));
+
+            // записали в «Мою базу» — снова разрешено
+            again.SetUserEntry("материалы", new[] { "пиломатериалы" });
+            Assert.Contains("пиломатериалы", again.GetCandidates("материалы", false).Select(c => c.Text));
+            Directory.Delete(dir, true);
+        }
+    }
 }

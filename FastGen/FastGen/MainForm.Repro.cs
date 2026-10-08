@@ -26,6 +26,8 @@ namespace FastGen
 
         private NumericUpDown numMaxSynonyms;
         private CheckBox chkUseDict;
+        private CheckBox chkUseContext;
+        private Label lblContextStatus;
         private Label lblTemplateInfo;
         private Label lblDictStatus;
         private Label lblHint;
@@ -155,11 +157,22 @@ namespace FastGen
                 Margin = new Padding(5, 6, 10, 0)
             };
             chkUseDict.CheckedChanged += (s, e) => RefreshReproTarget(force: true);
+            chkUseContext = new CheckBox
+            {
+                Text = "Проверять соседей",
+                AutoSize = true,
+                Checked = _settings.GetBool("UseContext", true),
+                Margin = new Padding(0, 6, 10, 0)
+            };
+            chkUseContext.CheckedChanged += (s, e) => RefreshReproTarget(force: true);
+            new ToolTip().SetToolTip(chkUseContext,
+                "Брать синоним, только если в ваших шаблонах (ResultDB.txt) он уже стоял рядом с теми же соседними словами.\r\n" +
+                "Сильно повышает читаемость: «собирать кубик» не превратится в «копить кубик».");
             new ToolTip().SetToolTip(chkUseDict, "Брать синонимы из большой базы DICT.DBF (и для F5, и в списке справа)");
 
             buttonsRow.Controls.AddRange(new Control[]
             {
-                btnSpinAll, btnTrial, lblMax, numMaxSynonyms, chkUseDict,
+                btnSpinAll, btnTrial, lblMax, numMaxSynonyms, chkUseDict, chkUseContext,
                 MakeButton("Вариант 1 ( , ; )", (s, e) => ReproEnumVariant(false)),
                 MakeButton("Вариант 2 (и, или)", (s, e) => ReproEnumVariant(true)),
                 MakeButton("Ротация", (s, e) => ReproRotate()),
@@ -200,8 +213,9 @@ namespace FastGen
             lblTemplateInfo = new Label { AutoSize = true, Margin = new Padding(0, 4, 20, 0), Cursor = Cursors.Hand };
             lblTemplateInfo.Click += (s, e) => GoToTemplateError();
             lblDictStatus = new Label { AutoSize = true, Margin = new Padding(0, 4, 20, 0) };
+            lblContextStatus = new Label { AutoSize = true, Margin = new Padding(0, 4, 20, 0) };
             lblHint = new Label { AutoSize = true, Margin = new Padding(0, 4, 0, 0), ForeColor = Color.DimGray };
-            statusRow.Controls.AddRange(new Control[] { lblTemplateInfo, lblDictStatus, lblHint });
+            statusRow.Controls.AddRange(new Control[] { lblTemplateInfo, lblDictStatus, lblContextStatus, lblHint });
 
             layout.Controls.Add(fileRow, 0, 0);
             layout.Controls.Add(buttonsRow, 0, 1);
@@ -281,7 +295,7 @@ namespace FastGen
                 AutoSize = true,
                 ForeColor = Color.DimGray,
                 Margin = new Padding(0, 3, 0, 0),
-                Text = "✓ — войдёт в шаблон · жирный — вы уже выбирали\r\nзелёный — «Моя база» · серый — DICT.DBF"
+                Text = "✓ — войдёт в шаблон · жирный — вы уже выбирали\r\nзелёный — «Моя база» · серый — DICT.DBF\r\nзачёркнутый — не встречался рядом с этими соседями"
             };
 
             panel.Controls.Add(lblTarget, 0, 0);
@@ -329,6 +343,18 @@ namespace FastGen
         private void SetHint(string text)
         {
             if (lblHint != null) lblHint.Text = text;
+        }
+
+        private void SetContextStatus(string text, Color color)
+        {
+            if (lblContextStatus == null) return;
+            lblContextStatus.Text = text;
+            lblContextStatus.ForeColor = color;
+        }
+
+        private ContextIndex ActiveContext
+        {
+            get { return chkUseContext != null && chkUseContext.Checked ? _context : null; }
         }
 
         private void SetDictStatus(string text, Color color)
@@ -808,19 +834,28 @@ namespace FastGen
                     var cands = _store.GetCandidates(baseText, chkUseDict.Checked);
                     bool hasUser = cands.Any(c => c.Source == SynonymSource.User);
                     int autoChecks = (int)numMaxSynonyms.Value; // столько же, сколько берёт F5
+                    var ctx = ActiveContext;
+                    AutoSpinner.GetNeighbors(txtReproEditor.Text, _target.Start, _target.End, out string left, out string right);
 
-                    foreach (var c in cands)
+                    // сначала подходящие по соседям, потом остальные
+                    var ordered = cands.Where(c => AutoSpinner.FitsContext(ctx, c, left, right))
+                                       .Concat(cands.Where(c => !AutoSpinner.FitsContext(ctx, c, left, right)));
+
+                    foreach (var c in ordered)
                     {
                         string display = TextCase.ApplyCase(baseText, c.Text);
                         if (!present.Add(display.Trim())) continue;
 
+                        bool fits = AutoSpinner.FitsContext(ctx, c, left, right);
                         bool check;
-                        if (_target.IsConstruct) check = false;                         // конструкция уже собрана — только предлагаем
+                        if (_target.IsConstruct || !fits) check = false;               // готовую конструкцию не трогаем, сомнительное не отмечаем
                         else if (hasUser) check = c.Source == SynonymSource.User;
                         else check = c.Source != SynonymSource.Dict && autoChecks > 0;
                         if (check && !hasUser) autoChecks--;
 
-                        AddVariantItem(display, check, c, false);
+                        var item = AddVariantItem(display, check, c, false);
+                        if (check) item.Name = AutoCheckedMark;
+                        if (!fits) item.Font = LvStrikeFont;
                     }
                 }
 
@@ -845,6 +880,14 @@ namespace FastGen
         private Font LvBoldFont
         {
             get { return _lvBoldFont ?? (_lvBoldFont = new Font(lvVariants.Font, FontStyle.Bold)); }
+        }
+
+        private const string AutoCheckedMark = "auto";
+        private Font _lvStrikeFont;
+
+        private Font LvStrikeFont
+        {
+            get { return _lvStrikeFont ?? (_lvStrikeFont = new Font(lvVariants.Font, FontStyle.Strikeout)); }
         }
 
         private ListViewItem AddVariantItem(string text, bool check, SynonymCandidate cand, bool isOriginal)
@@ -1049,6 +1092,7 @@ namespace FastGen
             if (variants.Count == 0) return;
 
             string newText = SpinSyntax.BuildConstruct(variants);
+            RememberRejected(variants);
 
             if (variants.Count > 1 && variants[0].IndexOfAny(new[] { '{', '}', '|' }) < 0)
             {
@@ -1078,6 +1122,33 @@ namespace FastGen
             txtReproEditor.Focus();
         }
 
+        /// <summary>
+        /// Варианты, которые были в конструкции (или отмечены автоматически), а вы их сняли, —
+        /// запоминаются и больше не предлагаются для этого слова.
+        /// </summary>
+        private void RememberRejected(List<string> finalVariants)
+        {
+            if (_target == null || finalVariants.Count == 0) return;
+            string baseWord = finalVariants[0];
+            if (baseWord.IndexOfAny(new[] { '{', '}', '|', '[', ']' }) >= 0) return;
+
+            var kept = new HashSet<string>(finalVariants.Select(v => v.Trim()), StringComparer.OrdinalIgnoreCase);
+            var rejected = new List<string>();
+
+            if (_target.IsConstruct)
+                rejected.AddRange(SpinSyntax.GetVariants(_target.Raw).Skip(1).Where(v => v.Trim().Length > 0 && !kept.Contains(v.Trim())));
+
+            for (int i = 1; i < lvVariants.Items.Count; i++)
+            {
+                var it = lvVariants.Items[i];
+                if (it.Name == AutoCheckedMark && !it.Checked && !kept.Contains(it.Text.Trim())) rejected.Add(it.Text);
+            }
+
+            if (rejected.Count == 0) return;
+            _store.RegisterRejected(baseWord, rejected);
+            try { _store.SaveRejected(); } catch { /* не критично */ }
+        }
+
         private void ApplyFrequentSynonyms()
         {
             if (_target == null || lvVariants.Items.Count < 2) return;
@@ -1088,6 +1159,7 @@ namespace FastGen
                 var cand = lvVariants.Items[i].Tag as SynonymCandidate;
                 bool frequent = cand != null && cand.UsageCount > 0;
                 if (frequent) added++;
+                lvVariants.Items[i].Name = string.Empty; // «только частые» — это не отказ от остальных
 
                 // у готовой конструкции её варианты оставляем, частые только добавляем
                 if (_target.IsConstruct) { if (frequent) lvVariants.Items[i].Checked = true; }
@@ -1266,6 +1338,7 @@ namespace FastGen
             {
                 MaxSynonyms = (int)numMaxSynonyms.Value,
                 IncludeDict = includeDict,
+                Context = ActiveContext,
                 BadPhrases = SpinOptions.LoadBadPhrases(Path.Combine(AppDir, "BadWord.txt")),
                 Exceptions = SpinOptions.LoadExceptions(Path.Combine(AppDir, "Exceptions.txt"))
             };
@@ -1279,6 +1352,12 @@ namespace FastGen
             if (text.Trim().Length == 0)
             {
                 SetHint("Вставьте текст, затем F5");
+                return;
+            }
+            if (_contextLoading && chkUseContext.Checked)
+            {
+                SystemSounds.Beep.Play();
+                SetHint("Подождите пару секунд: готовится проверка соседних слов (строка состояния внизу)");
                 return;
             }
 
@@ -1767,6 +1846,7 @@ namespace FastGen
             _settings.Set("LastFile", ReproPathIsFile(out string p) ? p : string.Empty);
             _settings.Set("MaxSynonyms", (int)numMaxSynonyms.Value);
             _settings.Set("UseDict", chkUseDict.Checked);
+            _settings.Set("UseContext", chkUseContext.Checked);
             _settings.Set("QuickUseDict", rbBigBase != null && rbBigBase.Checked);
         }
     }
