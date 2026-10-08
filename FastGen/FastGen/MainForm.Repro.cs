@@ -515,6 +515,7 @@ namespace FastGen
                 "  F3 / Shift+F3 — следующая / предыдущая конструкция {…}\r\n" +
                 "  Ctrl+→ / Ctrl+← — следующее / предыдущее слово или конструкция\r\n" +
                 "  Ctrl+Enter — записать отмеченные варианты и перейти дальше\r\n" +
+                "  (Ctrl+→ / Ctrl+← / F3 тоже записывают отмеченное, если вы что-то меняли)\r\n" +
                 "  F4 — снять конструкцию (оставить исходное слово)\r\n" +
                 "  F9 — пробная генерация случайного текста\r\n\r\n" +
                 "СПИСОК ВАРИАНТОВ (справа)\r\n" +
@@ -1124,10 +1125,48 @@ namespace FastGen
                 return;
             }
 
+            int after;
+            if (!CommitTarget(false, out after)) return;
+
+            var next = TextNav.NextToken(txtReproEditor.Text, after);
+            if (next.IsValid)
+            {
+                GoToToken(next);
+            }
+            else
+            {
+                SelectRepro(after, 0);
+                RefreshReproTarget(force: true);
+                SetHint("Конец текста");
+            }
+            txtReproEditor.Focus();
+        }
+
+        /// <summary>
+        /// Ctrl+→ / Ctrl+← / F3: если в списке отметили или сняли варианты — сначала записываем их в шаблон
+        /// (как Ctrl+Enter), потом переходим. Если ничего не меняли — просто переходим.
+        /// </summary>
+        private void CommitPendingTarget()
+        {
+            if (_target == null || lvVariants.Items.Count == 0 || !TargetStillValid()) return;
             var variants = CollectCheckedVariants();
-            if (variants.Count == 0) return;
+            if (variants.Count == 0 || SpinSyntax.BuildConstruct(variants) == _target.Raw) return;
+            CommitTarget(true, out _);
+        }
+
+        /// <summary>
+        /// Записывает отмеченные варианты на место текущего слова/конструкции, считает частоту,
+        /// пополняет GoldBase и запоминает отказы. after — позиция сразу за вставленным текстом.
+        /// После записи _target указывает на новый текст.
+        /// </summary>
+        private bool CommitTarget(bool onlyIfChanged, out int after)
+        {
+            after = _target != null ? _target.End : 0;
+            var variants = CollectCheckedVariants();
+            if (variants.Count == 0) return false;
 
             string newText = SpinSyntax.BuildConstruct(variants);
+            if (onlyIfChanged && newText == _target.Raw) return false;
             RememberRejected(variants);
 
             if (variants.Count > 1 && variants[0].IndexOfAny(new[] { '{', '}', '|' }) < 0)
@@ -1150,23 +1189,22 @@ namespace FastGen
             int start = _target.Start;
             if (newText != _target.Raw)
             {
+                Point scroll = GetScrollPos(txtReproEditor);
                 ReplaceRepro(start, _target.End - start, newText);
                 HighlightSynConstructions(txtReproEditor);
+                SetScrollPos(txtReproEditor, scroll);
             }
 
-            int after = start + newText.Length;
-            var next = TextNav.NextToken(txtReproEditor.Text, after);
-            if (next.IsValid)
+            after = start + newText.Length;
+            _target = new ReproTarget
             {
-                GoToToken(next);
-            }
-            else
-            {
-                SelectRepro(after, 0);
-                RefreshReproTarget(force: true);
-                SetHint("Конец текста");
-            }
-            txtReproEditor.Focus();
+                Start = start,
+                End = after,
+                Raw = newText,
+                Original = variants[0],
+                IsConstruct = variants.Count > 1
+            };
+            return true;
         }
 
         /// <summary>
@@ -1280,6 +1318,7 @@ namespace FastGen
 
         private void NavigateToken(bool forward)
         {
+            CommitPendingTarget();
             string text = txtReproEditor.Text;
             TextToken tok;
             if (forward)
@@ -1304,6 +1343,7 @@ namespace FastGen
 
         private void GoToConstruct(bool forward)
         {
+            CommitPendingTarget();
             string text = txtReproEditor.Text;
             var blocks = TextNav.GetBlocks(text);
             TextToken tok;
