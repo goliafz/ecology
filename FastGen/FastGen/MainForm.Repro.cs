@@ -1190,16 +1190,8 @@ namespace FastGen
                 _store.RegisterUsage(variants[0], variants.Skip(1).Where(v => v.IndexOfAny(new[] { '{', '}', '[', ']' }) < 0));
                 try { _store.SaveUsage(); } catch { /* не критично */ }
 
-                // ваш ручной выбор сразу пополняет GoldBase — F5 и список справа будут его предлагать
-                try
-                {
-                    if (_store.AddGoldSet(variants))
-                        SetHint("GoldBase пополнена: " + string.Join(" | ", variants.Select(v => v.Trim()).Where(v => v.Length > 0)));
-                }
-                catch (Exception ex)
-                {
-                    SetHint("Не удалось дописать GoldBase.txt: " + ex.Message);
-                }
+                // синоним, выбранный уже GoldMinUses раз, сам попадает в GoldBase.txt
+                PromoteFrequent(variants[0]);
             }
 
             int start = _target.Start;
@@ -1221,6 +1213,31 @@ namespace FastGen
                 IsConstruct = variants.Count > 1
             };
             return true;
+        }
+
+        /// <summary>Сколько раз нужно выбрать синоним, чтобы он сам попал в GoldBase (FastGen.ini: GoldMinUses).</summary>
+        private int GoldMinUses
+        {
+            get { return Math.Max(1, _settings.GetInt("GoldMinUses", 6)); }
+        }
+
+        /// <summary>Дописывает в GoldBase.txt пары, выбранные не меньше GoldMinUses раз.</summary>
+        private void PromoteFrequent(string baseWord)
+        {
+            try
+            {
+                var added = _store.PromoteFrequentToGold(GoldMinUses, baseWord);
+                if (added.Count == 0) return;
+                if (baseWord == null)
+                    SetHint("GoldBase пополнена частыми синонимами: " + added.Count + " пар (выбраны " + GoldMinUses + "+ раз)");
+                else
+                    SetHint("GoldBase пополнена: " + string.Join(", ", added.Select(p => p[0] + " → " + p[1])) +
+                            " (выбран " + GoldMinUses + "+ раз)");
+            }
+            catch (Exception ex)
+            {
+                SetHint("Не удалось дописать GoldBase.txt: " + ex.Message);
+            }
         }
 
         /// <summary>
@@ -1455,6 +1472,17 @@ namespace FastGen
                 SystemSounds.Beep.Play();
                 SetHint("Подождите пару секунд: готовится проверка соседних слов (строка состояния внизу)");
                 return;
+            }
+            if (chkUseContext.Checked && _context == null)
+            {
+                // раньше в этом случае проверка молча не работала и F5 брал первые синонимы подряд
+                var answer = MessageBox.Show(this,
+                    "Галочка «Проверять соседей» стоит, но проверять не по чему:\r\n" +
+                    "рядом с программой нет файла шаблонов\r\n" + ResultDbPath + "\r\n\r\n" +
+                    "Положите туда ResultDB.txt (или соберите его: вкладка «Сборщик» → Анализ) и перезапустите программу.\r\n\r\n" +
+                    "Размножить сейчас без проверки соседей?",
+                    "Проверка соседей недоступна", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+                if (answer != DialogResult.Yes) return;
             }
 
             int start = 0, length = text.Length;

@@ -112,6 +112,7 @@ namespace FastGen
         private void MainForm_Shown(object sender, EventArgs e)
         {
             RestoreReproSession();
+            PromoteFrequent(null); // пары, накопившие нужное число выборов раньше, — сразу в GoldBase
             StartContextLoad();
             StartDictLoad();
             txtReproEditor.Focus();

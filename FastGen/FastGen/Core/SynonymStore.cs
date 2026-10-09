@@ -351,6 +351,41 @@ namespace FastGen.Core
         }
 
         /// <summary>
+        /// Пары «слово|синоним», которые вы выбрали не меньше minUses раз и которых ещё нет в GoldBase,
+        /// дописываются в GoldBase.txt. baseWord — только для этого слова (null — по всем словам).
+        /// Возвращает добавленные пары.
+        /// </summary>
+        public List<string[]> PromoteFrequentToGold(int minUses, string baseWord = null)
+        {
+            var added = new List<string[]>();
+            if (minUses <= 0) return added;
+
+            IEnumerable<KeyValuePair<string, Dictionary<string, int>>> source;
+            if (baseWord != null)
+            {
+                string key = Normalize(baseWord);
+                source = _usage.TryGetValue(key, out var d)
+                    ? new[] { new KeyValuePair<string, Dictionary<string, int>>(key, d) }
+                    : new KeyValuePair<string, Dictionary<string, int>>[0];
+            }
+            else
+            {
+                source = _usage.ToList();
+            }
+
+            foreach (var kv in source)
+            {
+                foreach (var syn in kv.Value.Where(x => x.Value >= minUses).Select(x => x.Key).ToList())
+                {
+                    if (IsRejected(kv.Key, syn)) continue;
+                    var pair = new[] { kv.Key, syn };
+                    if (AddGoldSet(pair)) added.Add(pair);
+                }
+            }
+            return added;
+        }
+
+        /// <summary>
         /// Пополняет GoldBase набором, который вы собрали вручную ({слово|синоним|синоним}):
         /// дописывает строку в GoldBase.txt и в журнал ручных наборов и сразу учитывает в памяти.
         /// false — набор уже целиком есть в базе (ничего не записано).

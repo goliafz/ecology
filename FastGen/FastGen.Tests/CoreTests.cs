@@ -691,7 +691,7 @@ namespace FastGen.Tests
         }
 
         [Fact]
-        public void FrequentChoicesComeFirstAndPassContextCheck()
+        public void FrequentChoicesComeFirstButStillNeedContext()
         {
             string path = Path.Combine(Path.GetTempPath(), "fastgen-fq-" + Guid.NewGuid().ToString("N") + ".txt");
             File.WriteAllLines(path, new[] { "собирать|складывать|копить" });
@@ -704,8 +704,34 @@ namespace FastGen.Tests
             Assert.Equal("копить", store.GetCandidates("собирать", false)[0].Text);
 
             var ctx = ContextIndex.Build(new[] { "научиться складывать кубик" });
+            // проверка соседей главнее счётчика: «копить кубик» не встречалось — не берём
             var r = AutoSpinner.Spin("научиться собирать кубик", store, new SpinOptions { Context = ctx });
-            Assert.Equal("научиться {собирать|копить|складывать} кубик", r.Text);
+            Assert.Equal("научиться {собирать|складывать} кубик", r.Text);
+        }
+
+        [Fact]
+        public void SynonymChosenEnoughTimesIsPromotedToGold()
+        {
+            string dir = Path.Combine(Path.GetTempPath(), "fastgen-pr-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(dir);
+            var store = new SynonymStore { GoldPath = Path.Combine(dir, "GoldBase.txt"), GoldAutoPath = Path.Combine(dir, "m.txt") };
+            File.WriteAllText(store.GoldPath, "");
+            store.LoadGold();
+
+            for (int i = 0; i < 5; i++) store.RegisterUsage("даже", new[] { "также", "в том числе" });
+            Assert.Empty(store.PromoteFrequentToGold(6, "даже"));          // 5 раз — ещё рано
+            store.RegisterUsage("даже", new[] { "также" });
+            var added = store.PromoteFrequentToGold(6, "даже");               // 6-й раз — в базу
+            Assert.Single(added);
+            Assert.Equal(new[] { "даже|также" }, File.ReadAllLines(store.GoldPath));
+            Assert.Empty(store.PromoteFrequentToGold(6));                     // повторно не пишется
+
+            // отклонённое не продвигается
+            for (int i = 0; i < 6; i++) store.RegisterUsage("быстро", new[] { "мигом" });
+            store.RegisterRejected("быстро", new[] { "мигом" });
+            for (int i = 0; i < 6; i++) store.RegisterUsage("быстро", new[] { "оперативно" });
+            Assert.Equal("быстро|оперативно", string.Join("|", store.PromoteFrequentToGold(6).Single()));
+            Directory.Delete(dir, true);
         }
     }
 }
