@@ -55,6 +55,7 @@
     <Compile Include="Core\RtfBuilder.cs" />
     <Compile Include="Core\SpinSyntax.cs" />
     <Compile Include="Core\SynonymStore.cs" />
+    <Compile Include="Core\TemplateArchive.cs" />
     <Compile Include="Core\TextCase.cs" />
     <Compile Include="Core\TextNav.cs" />
     <Compile Include="MainForm.cs">

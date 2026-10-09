@@ -1913,6 +1913,7 @@ namespace FastGen
                 }
 
                 FlushReproAutoSave();
+                if (ReproPathIsFile(out _)) AddReproTextToResultDb();
                 try
                 {
                     LoadReproFile(dlg.FileName);
@@ -1924,10 +1925,67 @@ namespace FastGen
             }
         }
 
+        /// <summary>
+        /// Закрытие программы. Файл выбран — шаблон дописывается в ResultDB.txt (для проверки соседей и «Сборки»).
+        /// Не выбран — спрашиваем: сохранить, закрыть без сохранения (в ResultDB не попадёт) или вернуться.
+        /// </summary>
+        private bool ConfirmCloseRepro()
+        {
+            if (txtReproEditor.Text.Trim().Length == 0) return true;
+
+            if (!ReproPathIsFile(out _))
+            {
+                var answer = MessageBox.Show(this,
+                    "Файл для шаблона не выбран — текст не сохранён.\r\n\r\n" +
+                    "Да — выбрать файл и сохранить (шаблон добавится в ResultDB.txt)\r\n" +
+                    "Нет — закрыть без сохранения (в ResultDB.txt ничего не добавится)\r\n" +
+                    "Отмена — вернуться к тексту",
+                    "Закрыть без сохранения?", MessageBoxButtons.YesNoCancel, MessageBoxIcon.Warning,
+                    MessageBoxDefaultButton.Button3);
+
+                if (answer == DialogResult.No) return true;
+                if (answer == DialogResult.Cancel) return false;
+
+                BtnReproBrowse_Click(this, EventArgs.Empty);
+                if (!ReproPathIsFile(out _)) return false;      // окно выбора закрыли — остаёмся
+                FlushReproAutoSave();
+            }
+
+            AddReproTextToResultDb();
+            return true;
+        }
+
+        /// <summary>
+        /// Дописывает текущий (сохранённый в файл) шаблон в ResultDB.txt и сразу добавляет его пары соседних
+        /// слов в индекс проверки. Шаблон с ошибкой скобок и уже добавленный текст пропускаются.
+        /// </summary>
+        private void AddReproTextToResultDb()
+        {
+            string text = txtReproEditor.Text;
+            if (text.IndexOf('{') < 0 || !SpinSyntax.Validate(text).IsValid) return;
+
+            try
+            {
+                if (!TemplateArchive.Append(ResultDbPath, text)) return;
+                SetHint("Шаблон добавлен в " + Path.GetFileName(ResultDbPath));
+
+                // индекс ещё грузится — он сам пересоберётся при следующем запуске (ResultDB новее Context.bin)
+                if (_contextLoading) return;
+                var ctx = ContextIndex.Merge(_context, ContextIndex.Build(TemplateArchive.TemplateLines(text)));
+                _context = ctx;
+                try { ctx.Save(ContextPath); } catch (IOException) { /* пересоберётся при запуске */ }
+            }
+            catch (Exception ex)
+            {
+                SetHint("Не удалось дописать " + Path.GetFileName(ResultDbPath) + ": " + ex.Message);
+            }
+        }
+
         private void BtnReproClear_Click(object sender, EventArgs e)
         {
-            // сначала дописываем текущий файл, потом отвязываемся от него
+            // сначала дописываем текущий файл (и шаблон — в ResultDB), потом отвязываемся от него
             FlushReproAutoSave();
+            if (ReproPathIsFile(out _)) AddReproTextToResultDb();
 
             txtReproFilePath.Text = GetDefaultReproDirectory() + Path.DirectorySeparatorChar;
             _lastSavedText = null;

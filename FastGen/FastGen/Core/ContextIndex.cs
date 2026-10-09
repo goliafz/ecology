@@ -60,6 +60,24 @@ namespace FastGen.Core
             return new ContextIndex(arr);
         }
 
+        /// <summary>Объединение двух индексов (для дописанного шаблона — без пересборки всего ResultDB).</summary>
+        public static ContextIndex Merge(ContextIndex a, ContextIndex b)
+        {
+            if (a == null) return b;
+            if (b == null) return a;
+            var merged = new long[a._sorted.Length + b._sorted.Length];
+            int i = 0, j = 0, k = 0;
+            while (i < a._sorted.Length || j < b._sorted.Length)
+            {
+                long next;
+                if (j >= b._sorted.Length || (i < a._sorted.Length && a._sorted[i] <= b._sorted[j])) next = a._sorted[i++];
+                else next = b._sorted[j++];
+                if (k == 0 || merged[k - 1] != next) merged[k++] = next;
+            }
+            Array.Resize(ref merged, k);
+            return new ContextIndex(merged);
+        }
+
         public static ContextIndex FromPairs(IEnumerable<KeyValuePair<string, string>> pairs)
         {
             var set = new HashSet<long>();

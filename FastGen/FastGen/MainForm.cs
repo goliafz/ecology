@@ -123,6 +123,13 @@ namespace FastGen
             // таймер мог не успеть сохранить последние правки
             FlushReproAutoSave();
 
+            // файл не выбран — спрашиваем; сохранённый шаблон дописываем в ResultDB.txt
+            if (e.CloseReason != CloseReason.WindowsShutDown && !ConfirmCloseRepro())
+            {
+                e.Cancel = true;
+                return;
+            }
+
             try { _store.SaveUsage(); } catch { /* не критично */ }
 
             SaveReproSettings();

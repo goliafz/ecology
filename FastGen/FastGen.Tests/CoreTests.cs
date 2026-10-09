@@ -665,6 +665,35 @@ namespace FastGen.Tests
         }
     }
 
+    public class TemplateArchiveTests
+    {
+        [Fact]
+        public void AppendsOnceAndOnlyTemplatesWithConstructs()
+        {
+            string dir = Path.Combine(Path.GetTempPath(), "fastgen-ar-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(dir);
+            string db = Path.Combine(dir, "ResultDB.txt");
+            File.WriteAllText(db, "{старый|прежний} шаблон");                 // без перевода строки в конце
+
+            Assert.True(TemplateArchive.Append(db, "{Хороший|Отличный} сайт\n\n{для всех|для тех}, кто"));
+            Assert.False(TemplateArchive.Append(db, "{Хороший|Отличный} сайт\r\n{для всех|для тех}, кто")); // тот же текст
+            Assert.False(TemplateArchive.Append(db, "просто текст без конструкций"));
+            Assert.Equal(new[] { "{старый|прежний} шаблон", "{Хороший|Отличный} сайт", "{для всех|для тех}, кто" }, File.ReadAllLines(db));
+            Directory.Delete(dir, true);
+        }
+
+        [Fact]
+        public void ContextMergeAddsNewPairs()
+        {
+            var a = ContextIndex.Build(new[] { "собирать кубик" });
+            var b = ContextIndex.Build(new[] { "{Хороший|Отличный} сайт", "собирать кубик" });
+            var m = ContextIndex.Merge(a, b);
+            Assert.True(m.HasPair("собирать", "кубик"));
+            Assert.True(m.HasPair("отличный", "сайт"));
+            Assert.Equal(3, m.Count);
+        }
+    }
+
     public class ManualGoldTests
     {
         [Fact]
