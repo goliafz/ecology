@@ -58,7 +58,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 @Composable
-fun EventsScreen() {
+fun EventsTab() {
     val ctx = LocalContext.current
     val log = remember { LogStore.get(ctx) }
     val scope = rememberCoroutineScope()
@@ -75,12 +75,16 @@ fun EventsScreen() {
                 runCatching { ctx.contentResolver.openOutputStream(uri)?.use { log.exportZip(it) } }.isSuccess
             }
             busy = false
-            Toast.makeText(ctx, if (ok) "Журнал сохранён" else "Не удалось сохранить", Toast.LENGTH_SHORT).show()
+            Toast.makeText(ctx, if (ok) "Файл сохранён" else "Не получилось сохранить файл", Toast.LENGTH_SHORT).show()
         }
     }
 
     Column(Modifier.fillMaxSize()) {
-        Text("События и отчёт", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, modifier = Modifier.padding(16.dp, 16.dp, 16.dp, 8.dp))
+        Text(
+            "Отчёт расскажет, когда включали белые списки и когда пропадал VPN. Файл с журналом можно сохранить или отправить разработчику.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(16.dp, 12.dp, 16.dp, 8.dp),
+        )
         Row(Modifier.padding(horizontal = 16.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(enabled = !busy, onClick = {
                 scope.launch {
@@ -88,18 +92,18 @@ fun EventsScreen() {
                     report = withContext(Dispatchers.IO) { log.report() }
                     busy = false
                 }
-            }) { Text("Отчёт") }
+            }) { Text("Показать отчёт") }
             OutlinedButton(enabled = !busy, onClick = {
                 val stamp = DateTimeFormatter.ofPattern("yyyyMMdd-HHmm").withZone(ZoneId.systemDefault()).format(Instant.now())
                 saveLauncher.launch("wltester-$stamp.zip")
-            }) { Text("Сохранить ZIP") }
+            }) { Text("Сохранить файл") }
             OutlinedButton(enabled = !busy, onClick = {
                 scope.launch {
                     busy = true
                     val file = withContext(Dispatchers.IO) { runCatching { log.exportFile() }.getOrNull() }
                     busy = false
                     if (file == null) {
-                        Toast.makeText(ctx, "Не удалось подготовить файл", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(ctx, "Не получилось подготовить файл", Toast.LENGTH_SHORT).show()
                         return@launch
                     }
                     val uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.files", file)
@@ -109,16 +113,11 @@ fun EventsScreen() {
                         putExtra(Intent.EXTRA_SUBJECT, "Журнал WL Tester")
                         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     }
-                    ctx.startActivity(Intent.createChooser(send, "Отправить журнал"))
+                    ctx.startActivity(Intent.createChooser(send, "Куда отправить журнал"))
                 }
-            }) { Text("Поделиться") }
+            }) { Text("Отправить") }
         }
-        Text(
-            "ZIP содержит отчёт с выводами, CSV-таблицы (открываются в Excel) и исходные данные.",
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(16.dp, 6.dp),
-        )
-        if (events.isEmpty()) Text("Событий пока нет.", modifier = Modifier.padding(16.dp))
+        if (events.isEmpty()) Text("Событий пока нет. Здесь будет видно, когда включали белые списки, пропадал VPN или менялась сеть.", modifier = Modifier.padding(16.dp))
         LazyColumn(contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             items(events) { e -> EventItem(e) }
         }
@@ -159,7 +158,7 @@ private fun ReportDialog(text: String, onClose: () -> Unit) {
             Column {
                 Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("Отчёт", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f).padding(start = 8.dp))
-                    TextButton(onClick = { wrap = !wrap }) { Text(if (wrap) "Без переноса" else "Перенос") }
+                    TextButton(onClick = { wrap = !wrap }) { Text(if (wrap) "Таблицей" else "Текстом") }
                     TextButton(onClick = { clipboard.setText(AnnotatedString(text)) }) { Text("Копировать") }
                     TextButton(onClick = onClose) { Text("Закрыть") }
                 }

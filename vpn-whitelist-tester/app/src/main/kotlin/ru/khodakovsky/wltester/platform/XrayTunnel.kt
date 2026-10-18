@@ -23,7 +23,7 @@ class XrayTunnelFactory(private val ctx: Context) : TunnelFactory {
     fun available(): Boolean = binary.exists()
 
     override fun start(profiles: List<VlessProfile>, addresses: Map<Int, String>): TunnelSession {
-        if (!available()) throw IOException("ядро xray не найдено (${binary.path})")
+        if (!available()) throw IOException("модуль проверки VPN не найден (${binary.path})")
         val ports = freePorts(profiles.size)
         val dir = File(ctx.filesDir, "xray").apply { mkdirs() }
         val cfg = File(dir, "config.json")
@@ -59,7 +59,7 @@ class XrayTunnelFactory(private val ctx: Context) : TunnelFactory {
         if (!ready) {
             val tail = synchronized(log) { log.joinToString(" | ") }
             proc.destroy()
-            throw IOException(if (!proc.isAlive) "xray завершился: $tail" else "xray не открыл порты за 8 с: $tail")
+            throw IOException(if (!proc.isAlive) "модуль проверки VPN закрылся с ошибкой: $tail" else "модуль проверки VPN не запустился за 8 с: $tail")
         }
 
         return object : TunnelSession {

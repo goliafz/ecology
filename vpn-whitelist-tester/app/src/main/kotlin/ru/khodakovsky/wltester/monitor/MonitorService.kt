@@ -51,7 +51,7 @@ class MonitorService : Service() {
         when (intent?.action) {
             ACTION_DISABLE -> {
                 SettingsStore.get(this).update { it.copy(monitoringEnabled = false) }
-                LogStore.get(this).event(EventType.SERVICE, "Мониторинг выключен из уведомления")
+                LogStore.get(this).event(EventType.SERVICE, "Автопроверки выключены из уведомления")
                 Scheduler.schedule(this)
                 stopNow()
             }
@@ -73,7 +73,7 @@ class MonitorService : Service() {
             try {
                 MonitorRunner.run(applicationContext, reason)
             } catch (e: Throwable) {
-                LogStore.get(applicationContext).event(EventType.ERROR, "Ошибка цикла проверки", e.toString().take(500))
+                LogStore.get(applicationContext).event(EventType.ERROR, "Проверка завершилась с ошибкой", e.toString().take(500))
             } finally {
                 Scheduler.schedule(applicationContext)
                 if (wl.isHeld) wl.release()
@@ -91,7 +91,7 @@ class MonitorService : Service() {
             if (store.state().windowActive) {
                 store.updateState { it.copy(windowActive = false) }
                 if (s.monitoringEnabled) {
-                    LogStore.get(this).event(EventType.SERVICE, "Окно мониторинга завершено", "Следующий запуск: ${MonitorRunner.fmt(store.state().nextRunAt)}")
+                    LogStore.get(this).event(EventType.SERVICE, "Проверки по расписанию закончились", "Следующие начнутся ${MonitorRunner.fmt(store.state().nextRunAt)}")
                 }
             }
             stopNow()
@@ -142,15 +142,15 @@ object Notifier {
         val s = store.get()
         val st = store.state()
         val mode = when (s.scheduleMode) {
-            ScheduleMode.WINDOW -> "Окно ${MonitorRunner.hhmm(s.windowStart)}–${MonitorRunner.hhmm(s.windowEnd)}, каждые ${s.fullIntervalMin} мин"
-            ScheduleMode.ALWAYS -> if (st.phase == Phase.ALERT) "Подробные проверки каждые ${s.fullIntervalMin} мин (VPN пропадал)" else "Слежение за VPN каждые ${s.watchIntervalMin} мин"
+            ScheduleMode.WINDOW -> "По расписанию с ${MonitorRunner.hhmm(s.windowStart)} до ${MonitorRunner.hhmm(s.windowEnd)}, раз в ${s.fullIntervalMin} мин"
+            ScheduleMode.ALWAYS -> if (st.phase == Phase.ALERT) "VPN пропадал, проверяю раз в ${s.fullIntervalMin} мин" else "Слежу за VPN раз в ${s.watchIntervalMin} мин"
         }
         val last = LogStore.get(ctx).lastCycle()?.let { c ->
-            val vpn = if (c.summary.vpnTested) (if (c.summary.vpnAny) ", VPN ✓" else ", VPN ✗") else ""
-            " · ${c.summary.verdict.ru}$vpn"
+            val vpn = if (c.summary.vpnTested) (if (c.summary.vpnAny) ", VPN работает" else ", VPN не работает") else ""
+            ". Сейчас: ${c.summary.verdict.ru.lowercase()}$vpn"
         } ?: ""
-        val next = if (running) "идёт проверка…" else st.nextRunAt.takeIf { it > 0 }?.let { "след. ${MonitorRunner.fmt(it).substringAfter(' ').take(5)}" } ?: ""
-        return "$mode · $next$last"
+        val next = if (running) "идёт проверка" else st.nextRunAt.takeIf { it > 0 }?.let { "следующая в ${MonitorRunner.fmt(it).substringAfter(' ').take(5)}" } ?: ""
+        return "$mode, $next$last"
     }
 
     fun monitor(ctx: Context, text: String): Notification {
@@ -163,14 +163,14 @@ object Notifier {
         )
         return NotificationCompat.Builder(ctx, WlApp.CH_MONITOR)
             .setSmallIcon(R.drawable.ic_stat)
-            .setContentTitle("WL Tester: мониторинг")
+            .setContentTitle("WL Tester проверяет интернет")
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setContentIntent(open)
             .addAction(0, "Проверить сейчас", run)
-            .addAction(0, "Выключить", stop)
+            .addAction(0, "Выключить проверки", stop)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             .build()
     }
@@ -196,7 +196,7 @@ object Notifier {
         val n = NotificationCompat.Builder(ctx, WlApp.CH_EVENTS)
             .setSmallIcon(R.drawable.ic_stat)
             .setContentTitle("Выключите Wi-Fi")
-            .setContentText("Проверки идут только через мобильный интернет — сейчас подключён Wi-Fi.")
+            .setContentText("Проверять нужно мобильный интернет, а сейчас подключён Wi-Fi.")
             .setAutoCancel(true)
             .setContentIntent(pi)
             .build()

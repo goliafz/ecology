@@ -108,3 +108,49 @@ private val dmhm = DateTimeFormatter.ofPattern("dd.MM HH:mm")
 fun fmtTime(ms: Long): String = hms.format(Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()))
 fun fmtDayTime(ms: Long): String = dmhm.format(Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()))
 fun hhmm(min: Int) = "%02d:%02d".format(min / 60, min % 60)
+
+/** Понятное название проверки вместо технической метки из журнала. */
+fun friendlyTarget(r: ru.khodakovsky.wltester.core.CheckResult): String {
+    val t = r.target
+    return when {
+        t == ru.khodakovsky.wltester.core.engine.CycleEngine.HEALTH_LABEL -> "Работает ли VPN"
+        t.startsWith("TCP ") -> "Подключение к серверу " + t.removePrefix("TCP ")
+        t.startsWith("TLS ") -> {
+            val rest = t.removePrefix("TLS ")
+            val sni = rest.substringAfter(" SNI=", "")
+            "Шифрование с сервером " + rest.substringBefore(" SNI=") + if (sni.isNotEmpty()) " под именем $sni" else ""
+        }
+        t.startsWith("DNS ") -> "Адрес сервера " + t.removePrefix("DNS ")
+        t.startsWith("PING ") -> "Пинг до сервера " + t.removePrefix("PING ")
+        t.endsWith("(UDP)") -> "DNS-сервер " + t.substringAfter("@ ").removeSuffix(" (UDP)")
+        t.startsWith("Загрузка") -> "Скачивание файла"
+        else -> t
+    }
+}
+
+/** Короткий итог для пользователя: открылся / не открылся и почему. */
+fun friendlyStatus(r: ru.khodakovsky.wltester.core.CheckResult): String {
+    val health = r.target == ru.khodakovsky.wltester.core.engine.CycleEngine.HEALTH_LABEL
+    return when {
+        r.status == ProbeStatus.OK -> if (health) "работает" else "открылся"
+        r.ok -> r.status.ru
+        health -> "не работает: " + r.status.ru
+        else -> "не открылся: " + r.status.ru
+    }
+}
+
+fun verdictTitle(v: Verdict): String = when (v) {
+    Verdict.NORMAL -> "Интернет работает как обычно"
+    Verdict.WHITELIST -> "Включены белые списки"
+    Verdict.PARTIAL -> "Часть сайтов не открывается"
+    Verdict.NO_INTERNET -> "Интернета нет"
+    Verdict.UNKNOWN -> "Пока непонятно"
+}
+
+fun verdictExplain(v: Verdict): String = when (v) {
+    Verdict.NORMAL -> "Открываются и российские, и зарубежные сайты."
+    Verdict.WHITELIST -> "Открываются только российские сайты из разрешённого списка, зарубежные нет."
+    Verdict.PARTIAL -> "Что-то открывается, что-то нет. Возможно, сеть нестабильна или ограничения включаются."
+    Verdict.NO_INTERNET -> "Не открываются ни российские, ни зарубежные сайты."
+    Verdict.UNKNOWN -> "Не хватило данных, чтобы сделать вывод."
+}

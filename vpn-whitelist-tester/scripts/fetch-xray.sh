@@ -4,7 +4,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-VER="${XRAY_VERSION:-v25.8.3}"
+# По умолчанию та же версия, что в панели Marzban на сервере.
+VER="${XRAY_VERSION:-v24.12.31}"
 OUT=app/src/main/jniLibs
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -13,11 +14,9 @@ fetch() {
   local asset="$1" abi="$2" required="$3"
   local url="https://github.com/XTLS/Xray-core/releases/download/$VER/$asset"
   if ! curl -fsSL --retry 3 -o "$TMP/$asset" "$url"; then
-    echo "Xray $VER: нет $asset, беру последний релиз"
-    if ! curl -fsSL --retry 3 -o "$TMP/$asset" "https://github.com/XTLS/Xray-core/releases/latest/download/$asset"; then
-      if [ "$required" = 1 ]; then echo "Не удалось скачать $asset" >&2; exit 1; fi
-      echo "Пропускаю $abi"; return 0
-    fi
+    # Другую версию ядра молча не подставляем: она должна совпадать с сервером.
+    if [ "$required" = 1 ]; then echo "Не удалось скачать $asset для Xray $VER" >&2; exit 1; fi
+    echo "Xray $VER: нет $asset, пропускаю $abi"; return 0
   fi
   mkdir -p "$OUT/$abi" "$TMP/$abi"
   unzip -o -q "$TMP/$asset" xray -d "$TMP/$abi"

@@ -11,7 +11,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -25,6 +24,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.dp
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -37,16 +38,20 @@ class MainActivity : ComponentActivity() {
 private data class Tab(val title: String, val icon: ImageVector)
 
 private val tabs = listOf(
-    Tab("Статус", Icons.Filled.Home),
+    Tab("Главная", Icons.Filled.Home),
     Tab("Журнал", Icons.AutoMirrored.Filled.List),
-    Tab("События", Icons.Filled.Notifications),
     Tab("Настройки", Icons.Filled.Settings),
-    Tab("О программе", Icons.Filled.Info),
+    Tab("Помощь", Icons.Filled.Info),
 )
+
+const val TAB_SETTINGS = 2
+const val TAB_HELP = 3
 
 @Composable
 fun AppRoot() {
     var tab by rememberSaveable { mutableIntStateOf(0) }
+    // Подписи меню не растут вместе с системным размером шрифта, иначе «Настройки» не влезают.
+    val labelSize = with(LocalDensity.current) { 12.dp.toSp() }
     Scaffold(
         bottomBar = {
             NavigationBar {
@@ -55,7 +60,7 @@ fun AppRoot() {
                         selected = tab == i,
                         onClick = { tab = i },
                         icon = { Icon(t.icon, contentDescription = t.title) },
-                        label = { Text(t.title, maxLines = 1) },
+                        label = { Text(t.title, maxLines = 1, softWrap = false, fontSize = labelSize) },
                     )
                 }
             }
@@ -63,11 +68,10 @@ fun AppRoot() {
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
             when (tab) {
-                0 -> StatusScreen(onOpenSettings = { tab = 3 })
-                1 -> LogScreen()
-                2 -> EventsScreen()
-                3 -> SettingsScreen()
-                else -> AboutScreen()
+                0 -> HomeScreen(onOpenSettings = { tab = TAB_SETTINGS }, onOpenHelp = { tab = TAB_HELP })
+                1 -> JournalScreen()
+                2 -> SettingsScreen()
+                else -> HelpScreen()
             }
         }
     }

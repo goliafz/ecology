@@ -71,7 +71,7 @@ object MonitorRunner {
 
         val st0 = store.state()
         if (s.scheduleMode == ScheduleMode.WINDOW && !st0.windowActive) {
-            log.event(EventType.SERVICE, "Начало окна мониторинга ${hhmm(s.windowStart)}–${hhmm(s.windowEnd)}", "Полная проверка каждые ${s.fullIntervalMin} мин")
+            log.event(EventType.SERVICE, "Начались проверки по расписанию, с ${hhmm(s.windowStart)} до ${hhmm(s.windowEnd)}", "Подробная проверка раз в ${s.fullIntervalMin} мин")
             store.updateState { it.copy(windowActive = true) }
             log.cleanup(s.retentionDays)
         }
@@ -90,8 +90,8 @@ object MonitorRunner {
                         if (fs >= s.failThreshold && store.get().monitoringEnabled) {
                             store.updateState { it.copy(phase = Phase.ALERT, failStreak = 0, okStreak = 0) }
                             log.event(
-                                EventType.PHASE_CHANGED, "VPN недоступен $fs проверки подряд — включены подробные проверки",
-                                "Полная проверка каждые ${s.fullIntervalMin} мин, пока VPN не вернётся",
+                                EventType.PHASE_CHANGED, "VPN не ответил $fs раза подряд, проверяю чаще",
+                                "Подробная проверка раз в ${s.fullIntervalMin} мин, пока VPN не вернётся",
                             )
                             trackRecovery(ctx, s, cycle(ctx, s, CycleKind.FULL, Trigger.ALERT))
                         }
@@ -111,7 +111,7 @@ object MonitorRunner {
         val st = store.updateState { if (failing) it.copy(okStreak = 0) else it.copy(okStreak = it.okStreak + 1) }
         if (!failing && st.okStreak >= RECOVERY_OK) {
             store.updateState { it.copy(phase = Phase.WATCH, okStreak = 0, failStreak = 0) }
-            LogStore.get(ctx).event(EventType.PHASE_CHANGED, "VPN снова работает — возврат к слежению", "Быстрая проверка каждые ${s.watchIntervalMin} мин")
+            LogStore.get(ctx).event(EventType.PHASE_CHANGED, "VPN снова работает, проверяю как обычно", "Проверка VPN раз в ${s.watchIntervalMin} мин")
         }
     }
 
@@ -126,7 +126,7 @@ object MonitorRunner {
         val store = SettingsStore.get(ctx)
         val log = LogStore.get(ctx)
         if (s.requireCellular) ensureCellular(ctx, s)
-        _progress.value = "${kind.ru} проверка…"
+        _progress.value = kind.ru.replaceFirstChar { it.uppercase() } + "…"
 
         val xray = XrayTunnelFactory(ctx)
         val engine = CycleEngine(AndroidPlatform(ctx), if (xray.available()) xray else null)
@@ -137,7 +137,7 @@ object MonitorRunner {
         val (events, mem) = EventDetector.detect(st.memory, rec, ::fmt)
         val all = events.toMutableList()
         if (rec.kind == CycleKind.SKIPPED && !st.lastWasSkipped) {
-            all += Event(rec.startedAt, EventType.SKIPPED, "Проверки приостановлены — нет мобильной сети", rec.notes.firstOrNull())
+            all += Event(rec.startedAt, EventType.SKIPPED, "Проверки на паузе: нет мобильного интернета", rec.notes.firstOrNull())
             if (rec.network.transport == "WIFI") Notifier.wifiWarning(ctx)
         }
         store.updateState { it.copy(memory = mem, lastWasSkipped = rec.kind == CycleKind.SKIPPED) }
@@ -161,7 +161,7 @@ object MonitorRunner {
         @Suppress("DEPRECATION")
         val ok = runCatching { ctx.applicationContext.getSystemService(WifiManager::class.java).setWifiEnabled(false) }.getOrDefault(false)
         if (!ok) return
-        LogStore.get(ctx).event(EventType.NETWORK_CHANGED, "Wi-Fi выключен приложением для проверки через мобильную сеть")
+        LogStore.get(ctx).event(EventType.NETWORK_CHANGED, "Приложение выключило Wi-Fi, чтобы проверить мобильный интернет")
         repeat(30) {
             delay(500)
             val c = cm.activeNetwork?.let { cm.getNetworkCapabilities(it) }

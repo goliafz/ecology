@@ -98,7 +98,7 @@ class HttpsProbe(
                 try {
                     s.connect(InetSocketAddress(InetAddress.getByName("127.0.0.1"), r.socksPort), connectTimeoutMs)
                 } catch (e: IOException) {
-                    throw SocksException("локальный прокси xray не отвечает: ${e.message}")
+                    throw SocksException("проверка VPN не отвечает: ${e.message}")
                 }
                 s.soTimeout = connectTimeoutMs + readTimeoutMs
                 Socks5.connect(s, host, port)
@@ -138,7 +138,7 @@ class HttpsProbe(
                 val leaf = session.peerCertificates.firstOrNull() as? X509Certificate
                 issuer = leaf?.let { runCatching { shortDn(it.issuerX500Principal.name) }.getOrNull() }
                 certMismatch = leaf == null || !HostnameCheck.matches(leaf, sni)
-                if (certMismatch) error = "сертификат не соответствует $sni"
+                if (certMismatch) error = "сертификат выдан не для $sni"
 
                 if (!r.http) {
                     status = if (certMismatch) ProbeStatus.CERT_ERROR else ProbeStatus.OK
@@ -205,20 +205,20 @@ class HttpsProbe(
                     } else if (r.download) {
                         status = if (stalled) ProbeStatus.STALLED else ProbeStatus.OK
                         info = buildString {
-                            append("получено ").append(kb(bodyBytes)).append(" КБ")
-                            if (stalled) append(", данные перестали идти")
-                            if (hitDeadline) append(", остановлено по лимиту времени")
+                            append("скачано ").append(kb(bodyBytes)).append(" КБ")
+                            if (stalled) append(", потом данные перестали приходить")
+                            if (hitDeadline) append(", остановлено: вышло время")
                         }
                     } else {
                         status = if (certMismatch) ProbeStatus.CERT_ERROR else ProbeStatus.OK
-                        if (stalled) info = "заголовки получены, тело оборвалось на ${kb(bodyBytes)} КБ"
+                        if (stalled) info = "сайт начал отвечать, но ответ оборвался на ${kb(bodyBytes)} КБ"
                     }
                 }
             }
         } catch (e: Throwable) {
             status = ErrorMapper.map(stage, e)
             error = ErrorMapper.describe(e)
-            if (r.download && bodyBytes > 0) info = "получено ${kb(bodyBytes)} КБ до ошибки"
+            if (r.download && bodyBytes > 0) info = "до ошибки скачано ${kb(bodyBytes)} КБ"
         } finally {
             runCatching { ssl?.close() }
             runCatching { raw?.close() }

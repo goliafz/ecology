@@ -30,12 +30,15 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -52,7 +55,9 @@ import ru.khodakovsky.wltester.core.CycleRecord
 import ru.khodakovsky.wltester.core.EventType
 import ru.khodakovsky.wltester.core.NetworkSnapshot
 import ru.khodakovsky.wltester.core.VlessLinks
+import ru.khodakovsky.wltester.data.AppSettings
 import ru.khodakovsky.wltester.data.LogStore
+import ru.khodakovsky.wltester.data.MonitorState
 import ru.khodakovsky.wltester.data.Phase
 import ru.khodakovsky.wltester.data.ScheduleMode
 import ru.khodakovsky.wltester.data.SettingsStore
@@ -61,11 +66,20 @@ import ru.khodakovsky.wltester.monitor.MonitorService
 import ru.khodakovsky.wltester.monitor.Scheduler
 import ru.khodakovsky.wltester.platform.AndroidPlatform
 import ru.khodakovsky.wltester.platform.XrayTunnelFactory
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
 
-private data class Warning(val text: String, val action: String? = null, val onClick: (() -> Unit)? = null)
+private data class Todo(
+    val text: String,
+    val action: String? = null,
+    /** false: необязательный совет, показывается спокойным цветом. */
+    val important: Boolean = true,
+    val onClick: (() -> Unit)? = null,
+)
 
 @Composable
-fun StatusScreen(onOpenSettings: () -> Unit) {
+fun HomeScreen(onOpenSettings: () -> Unit, onOpenHelp: () -> Unit) {
     val ctx = LocalContext.current
     val store = remember { SettingsStore.get(ctx) }
     val log = remember { LogStore.get(ctx) }
@@ -82,133 +96,209 @@ fun StatusScreen(onOpenSettings: () -> Unit) {
     }
 
     val permLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { resumeTick++ }
-    val warnings = remember(s, net, resumeTick) { buildWarnings(ctx, s.vlessLinks, s.requireCellular, net, onOpenSettings) { perm -> permLauncher.launch(perm) } }
+    val todos = remember(s, net, resumeTick) {
+        buildTodos(ctx, s.vlessLinks, s.requireCellular, net, onOpenSettings) { perm -> permLauncher.launch(perm) }
+    }
 
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text("WL Tester", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-
-        Card(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(16.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Мониторинг", style = MaterialTheme.typography.titleMedium)
-                        Text(
-                            if (s.monitoringEnabled) "включён" else "выключен",
-                            color = if (s.monitoringEnabled) Green else Gray,
-                        )
-                    }
-                    Switch(checked = s.monitoringEnabled, onCheckedChange = { setMonitoring(ctx, it) })
-                }
-                Spacer(Modifier.height(8.dp))
-                val modeText = when (s.scheduleMode) {
-                    ScheduleMode.WINDOW -> "По времени: ${hhmm(s.windowStart)}–${hhmm(s.windowEnd)}, полная проверка каждые ${s.fullIntervalMin} мин"
-                    ScheduleMode.ALWAYS -> "Постоянно: слежение за VPN каждые ${s.watchIntervalMin} мин; если VPN пропал — полная проверка каждые ${s.fullIntervalMin} мин"
-                }
-                Text(modeText, style = MaterialTheme.typography.bodyMedium)
-                Text("Профиль частоты: ${s.preset.ru}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                if (s.monitoringEnabled) {
-                    if (s.scheduleMode == ScheduleMode.ALWAYS) {
-                        val vpnBack = last?.summary?.let { it.vpnTested && it.vpnAny } == true
-                        when {
-                            st.phase != Phase.ALERT -> Text("Сейчас: слежение за VPN")
-                            vpnBack -> Text(
-                                "Режим подробных проверок: VPN снова работает, возврат к слежению после " +
-                                    "${MonitorRunner.RECOVERY_OK} успешных проверок подряд (есть ${st.okStreak})",
-                                color = Amber,
-                            )
-                            else -> Text("Сейчас: VPN недоступен — подробные проверки каждые ${s.fullIntervalMin} мин", color = Red)
-                        }
-                    } else if (!Scheduler.inWindow(s)) {
-                        Text("Сейчас вне окна — ожидание", color = Gray)
-                    }
-                    if (st.nextRunAt > 0) Text("Следующая проверка: ${fmtDayTime(st.nextRunAt)}")
-                }
-                if (progress != null) {
-                    Spacer(Modifier.height(8.dp))
-                    Text(progress ?: "", color = MaterialTheme.colorScheme.primary)
-                    LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 4.dp))
-                }
-                Spacer(Modifier.height(12.dp))
-                Row {
-                    Button(onClick = { MonitorService.start(ctx, MonitorService.ACTION_RUN_MANUAL) }, enabled = progress == null) {
-                        Text("Проверить сейчас")
-                    }
-                }
-            }
+        Column {
+            Text("WL Tester", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            Text("Проверка белых списков и VPN", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
 
-        warnings.forEach { w ->
-            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer), modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(12.dp)) {
-                    Text(w.text, color = MaterialTheme.colorScheme.onErrorContainer)
-                    if (w.action != null && w.onClick != null) {
-                        OutlinedButton(onClick = w.onClick, modifier = Modifier.padding(top = 6.dp)) { Text(w.action) }
-                    }
-                }
-            }
+        NowCard(last, progress)
+
+        AutoCard(s, st, last)
+
+        if (todos.isNotEmpty()) {
+            Text("Что нужно сделать", style = MaterialTheme.typography.titleMedium)
+            todos.forEach { TodoCard(it) }
         }
 
-        net?.let { n ->
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp)) {
-                    Text("Сеть сейчас", style = MaterialTheme.typography.titleMedium)
-                    Text(n.shortRu())
-                    n.mccMnc?.let { Text("MCC/MNC: $it" + (n.simOperator?.let { sim -> " · SIM: $sim" } ?: ""), style = MaterialTheme.typography.bodySmall) }
-                    if (n.vpnInSystem) {
-                        Text(
-                            if (n.ourTrafficViaVpn) "VPN в системе: трафик тестера идёт через VPN ✗" else "VPN в системе включён, тестер его обходит ✓",
-                            color = if (n.ourTrafficViaVpn) Red else Green, style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
-                }
-            }
-        }
+        DetailsCard(last, net)
 
-        LastCycleCard(last)
-
-        Text(
-            "Совет: на Xiaomi/Huawei/Samsung разрешите приложению автозапуск и работу в фоне «без ограничений», иначе система может остановить ночные проверки.",
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        TextButton(onClick = onOpenHelp) { Text("Как пользоваться приложением") }
     }
 }
 
 @Composable
-private fun LastCycleCard(c: CycleRecord?) {
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("Последняя проверка", style = MaterialTheme.typography.titleMedium)
-            if (c == null) {
-                Text("Ещё не было. Нажмите «Проверить сейчас».", color = Gray)
-                return@Column
-            }
+private fun NowCard(last: CycleRecord?, progress: String?) {
+    val ctx = LocalContext.current
+    val (color, title, explain) = when {
+        last == null -> Triple(Gray, "Проверок ещё не было", "Нажмите «Проверить сейчас». Проверка займёт около минуты.")
+        last.kind == CycleKind.SKIPPED -> Triple(Amber, "Последняя проверка не прошла", last.notes.firstOrNull() ?: "")
+        else -> Triple(verdictColor(last.summary.verdict), verdictTitle(last.summary.verdict), verdictExplain(last.summary.verdict))
+    }
+    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = color.copy(alpha = 0.12f))) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("Сейчас", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("${fmtDayTime(c.startedAt)} · ${c.kind.ru} · ${c.trigger.ru}", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-                if (c.kind != CycleKind.SKIPPED) Badge(c.summary.verdict.ru, verdictColor(c.summary.verdict))
+                Dot(color)
+                Spacer(Modifier.width(8.dp))
+                Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
             }
-            if (c.kind == CycleKind.SKIPPED) {
-                c.notes.forEach { Text(it, color = Amber) }
-                return@Column
-            }
-            val sm = c.summary
-            Text("РФ напрямую: ${sm.ruOk}/${sm.ruTotal}    Зарубежные: ${sm.foreignOk}/${sm.foreignTotal}")
-            if (sm.serverTcpTotal > 0) Text("Порты VPN-сервера (TCP): ${sm.serverTcpOk}/${sm.serverTcpTotal}")
-            sm.vpn.forEach { (name, ok) ->
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Dot(if (ok) Green else Red)
-                    Spacer(Modifier.width(6.dp))
-                    Text("VPN «$name»: ${if (ok) "работает" else "не работает"}")
+            if (explain.isNotEmpty()) Text(explain, style = MaterialTheme.typography.bodyMedium)
+
+            if (last != null && last.kind != CycleKind.SKIPPED) {
+                val vpn = last.summary.vpn
+                when {
+                    vpn.isEmpty() -> Text("VPN не проверялся: добавьте ссылку на VPN в настройках.", color = Gray)
+                    else -> vpn.forEach { (name, ok) ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Dot(if (ok) Green else Red)
+                            Spacer(Modifier.width(8.dp))
+                            val who = if (vpn.size > 1) "VPN «$name»" else "VPN"
+                            Text(
+                                if (ok) "$who работает" else "$who не работает",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = if (ok) Green else Red,
+                            )
+                        }
+                    }
                 }
             }
-            c.publicIpDirect?.let { Text("Внешний IP напрямую: $it", style = MaterialTheme.typography.bodySmall) }
-            c.publicIpVpn.forEach { (k, v) -> Text("IP через «$k»: $v", style = MaterialTheme.typography.bodySmall) }
-            Text("Сеть: ${c.network.shortRu()} · ${(c.finishedAt - c.startedAt) / 1000} с", style = MaterialTheme.typography.bodySmall)
-            c.notes.forEach { Text(it, color = Amber, style = MaterialTheme.typography.bodySmall) }
+            if (last != null) {
+                Text(
+                    "Проверено ${whenText(last.startedAt)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            if (progress != null) {
+                Text("Идёт проверка, это займёт около минуты", color = MaterialTheme.colorScheme.primary)
+                LinearProgressIndicator(Modifier.fillMaxWidth())
+            }
+            Button(
+                onClick = { MonitorService.start(ctx, MonitorService.ACTION_RUN_MANUAL) },
+                enabled = progress == null,
+                modifier = Modifier.padding(top = 4.dp),
+            ) { Text("Проверить сейчас") }
         }
     }
+}
+
+@Composable
+private fun AutoCard(s: AppSettings, st: MonitorState, last: CycleRecord?) {
+    val ctx = LocalContext.current
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Автоматические проверки", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        if (s.monitoringEnabled) "Включены" else "Выключены",
+                        color = if (s.monitoringEnabled) Green else Gray,
+                    )
+                }
+                Switch(checked = s.monitoringEnabled, onCheckedChange = { setMonitoring(ctx, it) })
+            }
+            if (!s.monitoringEnabled) {
+                Text("Включите, и телефон будет сам проверять интернет в фоне, даже когда приложение закрыто.", style = MaterialTheme.typography.bodyMedium)
+                return@Column
+            }
+            val plan = when (s.scheduleMode) {
+                ScheduleMode.WINDOW -> "Каждый день с ${hhmm(s.windowStart)} до ${hhmm(s.windowEnd)}, раз в ${minutes(s.fullIntervalMin)}."
+                ScheduleMode.ALWAYS -> "Весь день: раз в ${minutes(s.watchIntervalMin)} проверяю VPN. Если он пропадёт, проверяю всё подробно раз в ${minutes(s.fullIntervalMin)}."
+            }
+            Text(plan, style = MaterialTheme.typography.bodyMedium)
+            when {
+                s.scheduleMode == ScheduleMode.WINDOW && !Scheduler.inWindow(s) ->
+                    Text("Сейчас не время проверок. Начну в ${hhmm(s.windowStart)}.", color = Gray)
+                s.scheduleMode == ScheduleMode.ALWAYS && st.phase == Phase.ALERT -> {
+                    val vpnBack = last?.summary?.let { it.vpnTested && it.vpnAny } == true
+                    if (vpnBack) {
+                        val left = (MonitorRunner.RECOVERY_OK - st.okStreak).coerceAtLeast(1)
+                        Text(
+                            if (left == 1) "VPN снова отвечает. Ещё одна удачная проверка, и вернусь к обычному режиму."
+                            else "VPN снова отвечает. Ещё $left удачные проверки подряд, и вернусь к обычному режиму.",
+                            color = Amber,
+                        )
+                    } else {
+                        Text("VPN пропал, поэтому проверяю чаще, пока он не вернётся.", color = Red)
+                    }
+                }
+            }
+            if (st.nextRunAt > 0) Text("Следующая проверка ${whenText(st.nextRunAt)}", style = MaterialTheme.typography.bodySmall)
+        }
+    }
+}
+
+@Composable
+private fun TodoCard(t: Todo) {
+    val bg = if (t.important) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.surfaceVariant
+    val fg = if (t.important) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurfaceVariant
+    Card(colors = CardDefaults.cardColors(containerColor = bg), modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp)) {
+            Text(t.text, color = fg)
+            if (t.action != null && t.onClick != null) {
+                OutlinedButton(onClick = t.onClick, modifier = Modifier.padding(top = 6.dp)) { Text(t.action) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DetailsCard(c: CycleRecord?, net: NetworkSnapshot?) {
+    var open by rememberSaveable { mutableStateOf(false) }
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Подробности", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                TextButton(onClick = { open = !open }) { Text(if (open) "Скрыть" else "Показать") }
+            }
+            if (!open) return@Column
+            net?.let { n ->
+                Text("Сеть сейчас: ${n.shortRu()}")
+                if (n.vpnInSystem) {
+                    Text(
+                        if (n.ourTrafficViaVpn) "VPN на телефоне включён, и приложение ходит через него. Так проверки неточные."
+                        else "VPN на телефоне включён, приложение проверяет интернет мимо него. Так и должно быть.",
+                        color = if (n.ourTrafficViaVpn) Red else Green,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
+            if (c == null || c.kind == CycleKind.SKIPPED) return@Column
+            Spacer(Modifier.height(4.dp))
+            val sm = c.summary
+            Text("Последняя проверка: ${c.kind.ru}, ${c.trigger.ru}")
+            Text("Российские сайты: открылись ${sm.ruOk} из ${sm.ruTotal}")
+            Text("Зарубежные сайты: открылись ${sm.foreignOk} из ${sm.foreignTotal}")
+            if (sm.serverTcpTotal > 0) Text("Подключение к VPN-серверу: ${if (sm.serverTcpOk == sm.serverTcpTotal) "есть" else "нет"}")
+            c.publicIpDirect?.let { Text("Ваш IP-адрес без VPN: $it", style = MaterialTheme.typography.bodySmall) }
+            c.publicIpVpn.forEach { (k, v) -> Text("IP-адрес через VPN «$k»: $v", style = MaterialTheme.typography.bodySmall) }
+            Text("Проверка шла ${(c.finishedAt - c.startedAt) / 1000} с", style = MaterialTheme.typography.bodySmall)
+            c.notes.forEach { Text(it, color = Amber, style = MaterialTheme.typography.bodySmall) }
+            Text("Все сайты по отдельности видны в разделе «Журнал».", style = MaterialTheme.typography.bodySmall, color = Gray)
+        }
+    }
+}
+
+/** «сегодня в 11:35», «вчера в 23:10» или «18.10 в 02:15». */
+fun whenText(ms: Long): String {
+    val zone = ZoneId.systemDefault()
+    val d = Instant.ofEpochMilli(ms).atZone(zone)
+    val today = LocalDate.now(zone)
+    val time = "%02d:%02d".format(d.hour, d.minute)
+    return when (d.toLocalDate()) {
+        today -> "сегодня в $time"
+        today.minusDays(1) -> "вчера в $time"
+        today.plusDays(1) -> "завтра в $time"
+        else -> "%02d.%02d в %s".format(d.dayOfMonth, d.monthValue, time)
+    }
+}
+
+fun minutes(n: Int): String {
+    val word = when {
+        n % 10 == 1 && n % 100 != 11 -> "минуту"
+        n % 10 in 2..4 && n % 100 !in 12..14 -> "минуты"
+        else -> "минут"
+    }
+    return if (n == 1) "минуту" else "$n $word"
 }
 
 fun setMonitoring(ctx: Context, on: Boolean) {
@@ -216,57 +306,66 @@ fun setMonitoring(ctx: Context, on: Boolean) {
     val s = store.update { it.copy(monitoringEnabled = on) }
     if (on) store.updateState { it.copy(phase = Phase.WATCH, failStreak = 0, okStreak = 0, lastRunAt = 0, windowActive = false) }
     val mode = when (s.scheduleMode) {
-        ScheduleMode.WINDOW -> "окно ${hhmm(s.windowStart)}–${hhmm(s.windowEnd)}, каждые ${s.fullIntervalMin} мин"
-        ScheduleMode.ALWAYS -> "постоянно, слежение каждые ${s.watchIntervalMin} мин"
+        ScheduleMode.WINDOW -> "С ${hhmm(s.windowStart)} до ${hhmm(s.windowEnd)}, раз в ${minutes(s.fullIntervalMin)}"
+        ScheduleMode.ALWAYS -> "Весь день, VPN раз в ${minutes(s.watchIntervalMin)}"
     }
-    LogStore.get(ctx).event(EventType.SERVICE, if (on) "Мониторинг включён" else "Мониторинг выключен", if (on) mode else null)
+    LogStore.get(ctx).event(EventType.SERVICE, if (on) "Автопроверки включены" else "Автопроверки выключены", if (on) mode else null)
     Scheduler.schedule(ctx)
     if (!on && MonitorService.isRunning) MonitorService.start(ctx, MonitorService.ACTION_STOP)
 }
 
 @SuppressLint("BatteryLife")
-private fun buildWarnings(
+private fun buildTodos(
     ctx: Context,
     links: String,
     requireCellular: Boolean,
     net: NetworkSnapshot?,
     openSettings: () -> Unit,
     requestPermission: (String) -> Unit,
-): List<Warning> {
-    val out = mutableListOf<Warning>()
+): List<Todo> {
+    val out = mutableListOf<Todo>()
     val (profiles, errors) = VlessLinks.parseAll(links)
-    if (profiles.isEmpty()) out += Warning("Не добавлены VPN-профили — тест VPN выполняться не будет. Вставьте ссылки vless:// из подписки Marzban.", "Открыть настройки", openSettings)
-    if (errors.isNotEmpty()) out += Warning("Ошибки в ссылках VPN: ${errors.joinToString("; ")}", "Открыть настройки", openSettings)
-    if (!XrayTunnelFactory(ctx).available()) out += Warning("В этой сборке нет ядра xray — тест через VPN недоступен. Установите APK из GitHub Releases.")
-    if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-        out += Warning("Нет разрешения на уведомления — без него Android может остановить фоновую службу, и вы не увидите события.", "Разрешить") {
-            requestPermission(Manifest.permission.POST_NOTIFICATIONS)
-        }
+    if (profiles.isEmpty()) {
+        out += Todo("Добавьте ссылку на ваш VPN. Без неё приложение не сможет проверять, работает ли VPN.", "Добавить ссылку", onClick = openSettings)
     }
-    val pm = ctx.getSystemService(PowerManager::class.java)
-    if (!pm.isIgnoringBatteryOptimizations(ctx.packageName)) {
-        out += Warning("Включена оптимизация батареи — ночью система будет «усыплять» проверки и блокировать сеть.", "Отключить оптимизацию") {
-            ctx.startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:${ctx.packageName}")))
-        }
-    }
-    if (!Scheduler.canScheduleExact(ctx) && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-        out += Warning("Нет разрешения на точные будильники — проверки будут запускаться с опозданием.", "Разрешить") {
-            ctx.startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:${ctx.packageName}")))
-        }
-    }
-    if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) {
-        out += Warning("Чтобы записывать тип сети (4G/5G), разрешите доступ к состоянию телефона (необязательно).", "Разрешить") {
-            requestPermission(Manifest.permission.READ_PHONE_STATE)
-        }
+    if (errors.isNotEmpty()) out += Todo("В ссылке на VPN ошибка: ${errors.joinToString("; ")}", "Исправить", onClick = openSettings)
+    if (!XrayTunnelFactory(ctx).available()) {
+        out += Todo("В этой версии приложения нет модуля проверки VPN. Скачайте приложение заново со страницы релизов.")
     }
     if (requireCellular && net != null && net.transport == "WIFI") {
-        out += Warning("Подключён Wi-Fi. Проверки идут только через мобильный интернет — выключите Wi-Fi на время теста.", "Выключить Wi-Fi") {
+        out += Todo(
+            "Сейчас включён Wi-Fi. Белые списки бывают только на мобильном интернете, поэтому на время проверок выключите Wi-Fi.",
+            "Выключить Wi-Fi",
+        ) {
             val i = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) Intent(Settings.Panel.ACTION_WIFI) else Intent(Settings.ACTION_WIFI_SETTINGS)
             ctx.startActivity(i)
         }
     }
     if (net?.ourTrafficViaVpn == true) {
-        out += Warning("Трафик тестера идёт через VPN. Добавьте WL Tester в исключения NekoBox (обход для приложения), иначе прямые проверки недостоверны.")
+        out += Todo("Приложение сейчас ходит в интернет через VPN, и проверки получаются неточными. В NekoBox уберите WL Tester из списка приложений, которые идут через VPN.")
+    }
+    if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+        out += Todo("Разрешите уведомления. Без них Android может остановить проверки в фоне, а вы не узнаете, что пропал VPN.", "Разрешить") {
+            requestPermission(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+    val pm = ctx.getSystemService(PowerManager::class.java)
+    if (!pm.isIgnoringBatteryOptimizations(ctx.packageName)) {
+        out += Todo("Разрешите приложению работать в фоне без ограничений. Иначе ночью телефон «усыпит» проверки.", "Разрешить") {
+            ctx.startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:${ctx.packageName}")))
+        }
+    }
+    if (!Scheduler.canScheduleExact(ctx) && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        out += Todo("Разрешите будильники, чтобы проверки начинались вовремя.", "Разрешить") {
+            ctx.startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:${ctx.packageName}")))
+        }
+    }
+    if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) {
+        out += Todo(
+            "Необязательно: разрешите доступ к сведениям о сети, тогда в журнале будет видно, 4G у вас или 5G.",
+            "Разрешить",
+            important = false,
+        ) { requestPermission(Manifest.permission.READ_PHONE_STATE) }
     }
     return out
 }

@@ -6,40 +6,40 @@ import kotlinx.serialization.json.Json
 /** Что именно проверялось. */
 @Serializable
 enum class Category(val ru: String) {
-    RU("РФ напрямую"),
-    FOREIGN("Зарубежные напрямую"),
-    DNS("DNS"),
-    SERVER("Сервер VPN"),
-    VPN("Через VPN"),
-    DOWNLOAD("Загрузка"),
-    INFO("Инфо"),
+    RU("Российские сайты"),
+    FOREIGN("Зарубежные сайты"),
+    DNS("Поиск адресов сайтов (DNS)"),
+    SERVER("Ваш VPN-сервер"),
+    VPN("Сайты через VPN"),
+    DOWNLOAD("Скачивание файла"),
+    INFO("Сведения"),
 }
 
 /** На каком этапе соединения проверка завершилась. */
 @Serializable
-enum class Stage(val ru: String) { DNS("DNS"), TCP("TCP"), TLS("TLS"), HTTP("HTTP"), OTHER("—") }
+enum class Stage(val ru: String) { DNS("DNS"), TCP("TCP"), TLS("TLS"), HTTP("HTTP"), OTHER("-") }
 
 @Serializable
 enum class ProbeStatus(val ru: String, val stage: Stage, val reachable: Boolean) {
-    OK("OK", Stage.OTHER, true),
-    CERT_ERROR("TLS ок, сертификат не прошёл проверку", Stage.TLS, true),
-    DNS_FAIL("DNS: имя не разрешилось", Stage.DNS, false),
-    TCP_TIMEOUT("TCP: таймаут соединения", Stage.TCP, false),
-    TCP_REFUSED("TCP: соединение отклонено", Stage.TCP, false),
-    TCP_RESET("TCP: сброс соединения", Stage.TCP, false),
-    TCP_UNREACHABLE("TCP: сеть/хост недостижимы", Stage.TCP, false),
-    TCP_ERROR("TCP: ошибка", Stage.TCP, false),
-    TLS_TIMEOUT("TLS: таймаут рукопожатия", Stage.TLS, false),
-    TLS_RESET("TLS: сброс/обрыв при рукопожатии", Stage.TLS, false),
-    TLS_ERROR("TLS: ошибка рукопожатия", Stage.TLS, false),
-    HTTP_TIMEOUT("HTTP: нет ответа (таймаут)", Stage.HTTP, false),
-    HTTP_RESET("HTTP: обрыв соединения", Stage.HTTP, false),
-    HTTP_ERROR("HTTP: ошибка", Stage.HTTP, false),
-    DATA_CORRUPT("Данные повреждены в пути (ошибка расшифровки TLS)", Stage.HTTP, false),
-    STALLED("Загрузка зависла (данные перестали идти)", Stage.HTTP, false),
-    PROXY_ERROR("Ошибка локального прокси xray", Stage.TCP, false),
-    SKIPPED("Пропущено", Stage.OTHER, false),
-    ERROR("Ошибка", Stage.OTHER, false),
+    OK("открылся", Stage.OTHER, true),
+    CERT_ERROR("открылся, но сертификат не подтвердился", Stage.TLS, true),
+    DNS_FAIL("не нашёлся адрес сайта (DNS)", Stage.DNS, false),
+    TCP_TIMEOUT("сайт не отвечает (TCP, вышло время)", Stage.TCP, false),
+    TCP_REFUSED("сайт отказал в подключении (TCP)", Stage.TCP, false),
+    TCP_RESET("подключение сразу оборвали (TCP)", Stage.TCP, false),
+    TCP_UNREACHABLE("сайт недоступен из этой сети (TCP)", Stage.TCP, false),
+    TCP_ERROR("ошибка подключения (TCP)", Stage.TCP, false),
+    TLS_TIMEOUT("подключение зависло на шифровании (TLS)", Stage.TLS, false),
+    TLS_RESET("подключение оборвали на шифровании (TLS)", Stage.TLS, false),
+    TLS_ERROR("ошибка шифрования (TLS)", Stage.TLS, false),
+    HTTP_TIMEOUT("сайт не прислал ответ", Stage.HTTP, false),
+    HTTP_RESET("ответ сайта оборвался", Stage.HTTP, false),
+    HTTP_ERROR("сайт ответил непонятно", Stage.HTTP, false),
+    DATA_CORRUPT("данные пришли испорченными (TLS)", Stage.HTTP, false),
+    STALLED("скачивание зависло на полпути", Stage.HTTP, false),
+    PROXY_ERROR("внутренняя ошибка проверки VPN", Stage.TCP, false),
+    SKIPPED("пропущено", Stage.OTHER, false),
+    ERROR("ошибка", Stage.OTHER, false),
 }
 
 @Serializable
@@ -72,21 +72,21 @@ data class CheckResult(
 }
 
 @Serializable
-enum class CycleKind(val ru: String) { FULL("Полная"), QUICK("Быстрая"), SKIPPED("Пропуск") }
+enum class CycleKind(val ru: String) { FULL("полная проверка"), QUICK("быстрая проверка VPN"), SKIPPED("проверка пропущена") }
 
 @Serializable
 enum class Trigger(val ru: String) {
-    WINDOW("По расписанию"),
-    WATCH("Слежение за VPN"),
-    ALERT("VPN пропал — подробно"),
-    MANUAL("Вручную"),
+    WINDOW("по расписанию"),
+    WATCH("слежение за VPN"),
+    ALERT("VPN пропал, частые проверки"),
+    MANUAL("вручную"),
 }
 
 @Serializable
 enum class Verdict(val ru: String) {
-    NORMAL("Норма"),
+    NORMAL("Обычный интернет"),
     WHITELIST("Белые списки"),
-    PARTIAL("Частичные ограничения"),
+    PARTIAL("Есть сбои"),
     NO_INTERNET("Нет интернета"),
     UNKNOWN("Нет данных"),
 }
@@ -113,10 +113,10 @@ data class NetworkSnapshot(
     fun shortRu(): String = buildString {
         append(
             when (transport) {
-                "CELLULAR" -> "Моб. сеть"
+                "CELLULAR" -> "Мобильный интернет"
                 "WIFI" -> "Wi-Fi"
                 "ETHERNET" -> "Ethernet"
-                "NONE" -> "Нет сети"
+                "NONE" -> "Нет интернета"
                 else -> transport
             }
         )
@@ -159,13 +159,13 @@ data class CycleRecord(
 
 @Serializable
 enum class EventType(val ru: String) {
-    VERDICT_CHANGED("Смена режима сети"),
-    VPN_DOWN("VPN недоступен"),
-    VPN_UP("VPN восстановлен"),
-    NETWORK_CHANGED("Смена сети"),
-    PHASE_CHANGED("Режим мониторинга"),
-    SERVICE("Служба"),
-    SKIPPED("Пропуск проверки"),
+    VERDICT_CHANGED("Интернет"),
+    VPN_DOWN("VPN пропал"),
+    VPN_UP("VPN вернулся"),
+    NETWORK_CHANGED("Сеть"),
+    PHASE_CHANGED("Режим проверок"),
+    SERVICE("Приложение"),
+    SKIPPED("Проверка пропущена"),
     ERROR("Ошибка"),
 }
 

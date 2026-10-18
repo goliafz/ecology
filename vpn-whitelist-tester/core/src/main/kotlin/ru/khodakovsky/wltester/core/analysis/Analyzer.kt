@@ -67,26 +67,26 @@ object EventDetector {
 
         val op = c.network.operatorName?.takeIf { it.isNotBlank() }
         if (mem.transport != null && (mem.transport != c.network.transport || (op != null && mem.operator != null && op != mem.operator))) {
-            events += Event(ts, EventType.NETWORK_CHANGED, "Сеть: ${netName(mem.transport, mem.operator)} → ${netName(c.network.transport, op)}")
+            events += Event(ts, EventType.NETWORK_CHANGED, "Сеть сменилась: ${netName(mem.transport, mem.operator)} → ${netName(c.network.transport, op)}")
         }
         m = m.copy(transport = c.network.transport, operator = op ?: mem.operator)
 
         if (c.kind == CycleKind.SKIPPED) return events to m
 
         val s = c.summary
-        val counts = "РФ ${s.ruOk}/${s.ruTotal}, зарубежные ${s.foreignOk}/${s.foreignTotal}" +
-            if (s.vpnTested) ", VPN " + s.vpn.entries.joinToString { "${it.key}: ${if (it.value) "✓" else "✗"}" } else ""
+        val counts = "Российских сайтов открылось ${s.ruOk} из ${s.ruTotal}, зарубежных ${s.foreignOk} из ${s.foreignTotal}" +
+            if (s.vpnTested) ". VPN: " + s.vpn.entries.joinToString { "«${it.key}» ${if (it.value) "работает" else "не работает"}" } else ""
 
         if (c.kind == CycleKind.FULL && s.verdict != Verdict.UNKNOWN) {
             val prev = mem.lastVerdict
-            val between = mem.lastFullAt?.let { "Изменение произошло между ${fmt(it)} и ${fmt(ts)}. " } ?: ""
+            val between = mem.lastFullAt?.let { "Это произошло между ${fmt(it)} и ${fmt(ts)}. " } ?: ""
             when {
-                prev == null -> events += Event(ts, EventType.VERDICT_CHANGED, "Начальное состояние сети: ${s.verdict.ru}", counts)
+                prev == null -> events += Event(ts, EventType.VERDICT_CHANGED, "Первая проверка: ${s.verdict.ru.lowercase()}", counts)
                 prev != s.verdict -> {
                     val title = when {
-                        s.verdict == Verdict.WHITELIST -> "Включились белые списки (было: ${prev.ru})"
-                        prev == Verdict.WHITELIST -> "Белые списки отключились (теперь: ${s.verdict.ru})"
-                        else -> "Состояние сети: ${prev.ru} → ${s.verdict.ru}"
+                        s.verdict == Verdict.WHITELIST -> "Включились белые списки"
+                        prev == Verdict.WHITELIST -> "Белые списки отключились"
+                        else -> "Интернет: было «${prev.ru.lowercase()}», стало «${s.verdict.ru.lowercase()}»"
                     }
                     events += Event(ts, EventType.VERDICT_CHANGED, title, between + counts)
                 }
@@ -98,12 +98,12 @@ object EventDetector {
             s.vpn.forEach { (profile, ok) ->
                 val was = mem.vpn[profile]
                 if (was != null && was != ok) {
-                    val between = mem.vpnAt?.let { "Между ${fmt(it)} и ${fmt(ts)}. " } ?: ""
+                    val between = mem.vpnAt?.let { "Это произошло между ${fmt(it)} и ${fmt(ts)}. " } ?: ""
                     events += if (ok) {
                         Event(ts, EventType.VPN_UP, "VPN «$profile» снова работает", between + counts)
                     } else {
                         val reason = c.checks.firstOrNull { it.category == Category.VPN && it.route == profile && it.target == CycleEngine.HEALTH_LABEL }
-                        Event(ts, EventType.VPN_DOWN, "VPN «$profile» перестал работать", between + (reason?.status?.ru ?: "") + ". " + counts)
+                        Event(ts, EventType.VPN_DOWN, "VPN «$profile» перестал работать", between + (reason?.status?.ru?.let { "Причина: $it. " } ?: "") + counts)
                     }
                 }
             }
@@ -113,9 +113,9 @@ object EventDetector {
     }
 
     private fun netName(transport: String?, op: String?) = when (transport) {
-        "CELLULAR" -> "моб. сеть" + (op?.let { " ($it)" } ?: "")
+        "CELLULAR" -> "мобильный интернет" + (op?.let { " ($it)" } ?: "")
         "WIFI" -> "Wi-Fi"
-        "NONE" -> "нет сети"
+        "NONE" -> "нет интернета"
         else -> transport ?: "?"
     }
 }

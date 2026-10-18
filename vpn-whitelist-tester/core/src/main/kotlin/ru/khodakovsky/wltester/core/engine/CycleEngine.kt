@@ -81,9 +81,9 @@ class CycleEngine(
 
         if (cfg.requireCellular && !net.isCellular) {
             val why = if (net.transport == "NONE") {
-                "Нет подключения к интернету (мобильные данные выключены или нет сигнала) — проверка пропущена."
+                "Нет интернета: мобильные данные выключены или нет сигнала. Проверка пропущена."
             } else {
-                "Активна сеть «${net.shortRu()}» — проверки выполняются только через мобильный интернет. Выключите Wi-Fi."
+                "Телефон подключён к Wi-Fi, а проверять нужно мобильный интернет. Выключите Wi-Fi."
             }
             return@coroutineScope CycleRecord(
                 id = id, startedAt = started, finishedAt = clock(), kind = CycleKind.SKIPPED, trigger = trigger,
@@ -91,7 +91,7 @@ class CycleEngine(
             )
         }
         if (net.ourTrafficViaVpn) {
-            notes += "ВНИМАНИЕ: трафик тестера идёт через VPN — прямые проверки недостоверны. Добавьте тестер в исключения VPN-клиента."
+            notes += "Внимание: приложение ходит в интернет через VPN, поэтому проверки без VPN неточные. Уберите WL Tester из списка приложений, которые идут через VPN в NekoBox."
         }
 
         val probe = HttpsProbe(platform, cfg.connectTimeoutMs, cfg.readTimeoutMs, sslFactory)
@@ -120,15 +120,15 @@ class CycleEngine(
                 direct += async { listOf(io { DnsUdp.query(s, Defaults.DNS_TEST_NAME, cfg.connectTimeoutMs) }) }
             }
             direct += async {
-                val (check, ip) = io { publicIp(probe, Defaults.IP_DIRECT_URLS, CheckResult.DIRECT, null, "Внешний IP (напрямую)") }
+                val (check, ip) = io { publicIp(probe, Defaults.IP_DIRECT_URLS, CheckResult.DIRECT, null, "Ваш IP-адрес без VPN") }
                 publicIpDirect = ip
                 listOf(check)
             }
             if (cfg.downloadEnabled) {
-                listOf(cfg.downloadRuUrl to "РФ", cfg.downloadForeignUrl to "заруб.").forEach { (url, tag) ->
+                listOf(cfg.downloadRuUrl to "с российского сайта", cfg.downloadForeignUrl to "с зарубежного сайта").forEach { (url, tag) ->
                     val t = Target.parse(url) ?: return@forEach
                     direct += async {
-                        listOf(io { probe.run(downloadRequest(t, "Загрузка $tag напрямую", CheckResult.DIRECT, null, cfg)).result })
+                        listOf(io { probe.run(downloadRequest(t, "Скачивание $tag", CheckResult.DIRECT, null, cfg)).result })
                     }
                 }
             }
@@ -188,15 +188,15 @@ class CycleEngine(
         suspend fun <T> io(block: () -> T): T = sem.io(block)
         if (cfg.profiles.isEmpty()) return@coroutineScope emptyList()
         val factory = tunnels ?: return@coroutineScope cfg.profiles.map {
-            CheckResult(Category.VPN, HEALTH_LABEL, it.label, ProbeStatus.SKIPPED, error = "ядро xray отсутствует в сборке")
+            CheckResult(Category.VPN, HEALTH_LABEL, it.label, ProbeStatus.SKIPPED, error = "в этой версии приложения нет ядра для проверки VPN")
         }
         val addresses = cfg.profiles.withIndex().mapNotNull { (i, p) -> serverIp[p.host]?.hostAddress?.let { i to it } }.toMap()
         val session = try {
             withContext(Dispatchers.IO) { factory.start(cfg.profiles, addresses) }
         } catch (e: Exception) {
-            notes += "Не удалось запустить xray: ${e.message}"
+            notes += "Не получилось запустить проверку VPN: ${e.message}"
             return@coroutineScope cfg.profiles.map {
-                CheckResult(Category.VPN, HEALTH_LABEL, it.label, ProbeStatus.ERROR, error = "xray не запустился: ${e.message}")
+                CheckResult(Category.VPN, HEALTH_LABEL, it.label, ProbeStatus.ERROR, error = "проверка VPN не запустилась: ${e.message}")
             }
         }
         try {
@@ -209,7 +209,7 @@ class CycleEngine(
                         val sub = mutableListOf<kotlinx.coroutines.Deferred<List<CheckResult>>>()
                         sub += async {
                             io {
-                                val (check, ip) = publicIp(probe, Defaults.IP_VPN_URLS, p.label, port, "Внешний IP (через VPN)")
+                                val (check, ip) = publicIp(probe, Defaults.IP_VPN_URLS, p.label, port, "Ваш IP-адрес через VPN")
                                 if (ip != null) synchronized(publicIpVpn) { publicIpVpn[p.label] = ip }
                                 listOf(check)
                             }
@@ -218,7 +218,7 @@ class CycleEngine(
                             sub += async { io { listOf(probe.run(HttpsProbe.Request(Category.VPN, t, p.label, socksPort = port, maxBytes = SITE_BYTES)).result) } }
                         }
                         if (cfg.downloadEnabled) Target.parse(cfg.downloadForeignUrl)?.let { t ->
-                            sub += async { io { listOf(probe.run(downloadRequest(t, "Загрузка через VPN", p.label, port, cfg)).result) } }
+                            sub += async { io { listOf(probe.run(downloadRequest(t, "Скачивание через VPN", p.label, port, cfg)).result) } }
                         }
                         out += sub.awaitAll().flatten()
                     }
@@ -226,7 +226,7 @@ class CycleEngine(
                 }
             }.awaitAll().flatten()
             if (perProfile.any { it.target == HEALTH_LABEL && !it.ok }) {
-                session.diagnostics()?.takeIf { it.isNotBlank() }?.let { notes += "Лог xray: $it" }
+                session.diagnostics()?.takeIf { it.isNotBlank() }?.let { notes += "Технический журнал проверки VPN: $it" }
             }
             perProfile
         } finally {
@@ -248,15 +248,15 @@ class CycleEngine(
             val req = HttpsProbe.Request(Category.VPN, t, label, socksPort = port, maxBytes = 4096, label = HEALTH_LABEL)
             val r = sem.io { probe.run(req).result }
             if (r.ok) {
-                val info = "через ${t.host}" + if (failed.isNotEmpty()) "; не прошли: ${failed.joinToString("; ")}" else ""
+                val info = "ответил ${t.host}" + if (failed.isNotEmpty()) "; не ответили: ${failed.joinToString("; ")}" else ""
                 return r.copy(info = info)
             }
-            failed += "${t.host} — ${r.status.ru}"
+            failed += "${t.host} (${r.status.ru})"
             last = r
             delay(300)
         }
         return (last ?: CheckResult(Category.VPN, HEALTH_LABEL, label, ProbeStatus.SKIPPED))
-            .copy(info = "не прошли: ${failed.joinToString("; ")}")
+            .copy(info = "не ответил ни один адрес: ${failed.joinToString("; ")}")
     }
 
     /**
@@ -269,11 +269,11 @@ class CycleEngine(
         repeat(4) { attempt ->
             val ok = withContext(Dispatchers.IO) { runCatching { probe.resolveWithTimeout(cfg.warmupHost) }.isSuccess }
             if (ok) {
-                return if (attempt == 0) null else "Сеть была не готова: DNS ответил через ${(clock() - t0) / 1000} с"
+                return if (attempt == 0) null else "Интернет включился не сразу: ждали ${(clock() - t0) / 1000} с"
             }
             delay(2000)
         }
-        return "DNS не отвечал ${(clock() - t0) / 1000} с перед проверкой (${cfg.warmupHost})"
+        return "Интернет не отвечал ${(clock() - t0) / 1000} с перед проверкой (не нашёлся адрес ${cfg.warmupHost})"
     }
 
     private suspend fun <T> Semaphore.io(block: () -> T): T = withPermit { withContext(Dispatchers.IO) { block() } }
@@ -311,12 +311,12 @@ class CycleEngine(
         val stats = runCatching { platform.ping(addr) }.getOrNull()
         val total = HttpsProbe.msSince(t0)
         return when {
-            stats == null -> CheckResult(Category.SERVER, "PING $host", status = ProbeStatus.SKIPPED, ip = addr, totalMs = total, error = "ping недоступен")
+            stats == null -> CheckResult(Category.SERVER, "PING $host", status = ProbeStatus.SKIPPED, ip = addr, totalMs = total, error = "на телефоне нет команды ping")
             stats.received > 0 -> CheckResult(
                 Category.SERVER, "PING $host", status = ProbeStatus.OK, ip = addr, totalMs = total,
-                ttfbMs = stats.avgMs?.toLong(), info = "${stats.received}/${stats.sent} ответов, ср. ${stats.avgMs ?: "?"} мс",
+                ttfbMs = stats.avgMs?.toLong(), info = "ответов ${stats.received} из ${stats.sent}, в среднем ${stats.avgMs?.toLong() ?: "?"} мс",
             )
-            else -> CheckResult(Category.SERVER, "PING $host", status = ProbeStatus.TCP_TIMEOUT, ip = addr, totalMs = total, info = "0/${stats.sent} ответов")
+            else -> CheckResult(Category.SERVER, "PING $host", status = ProbeStatus.TCP_TIMEOUT, ip = addr, totalMs = total, info = "ответов 0 из ${stats.sent}")
         }
     }
 

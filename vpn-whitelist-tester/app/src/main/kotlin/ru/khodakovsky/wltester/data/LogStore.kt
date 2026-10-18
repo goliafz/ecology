@@ -110,13 +110,13 @@ class LogStore private constructor(private val ctx: Context) {
             put(
                 "README.txt",
                 """
-                WL Tester — экспорт журнала
-                report.txt  — готовый отчёт с выводами
-                cycles.csv  — одна строка на цикл проверки (итоги, сеть, оператор)
-                checks.csv  — одна строка на отдельную проверку (этапы DNS/TCP/TLS/HTTP, время, ошибка)
-                events.csv  — события: включение/отключение белых списков, пропадание VPN, смена сети
-                raw/*.jsonl — исходные данные, по одному JSON на строку
-                Разделитель CSV — точка с запятой, кодировка UTF-8.
+                Журнал WL Tester
+                report.txt: отчёт с выводами, его удобно читать первым.
+                cycles.csv: по строке на каждую проверку (итог, сеть, оператор).
+                checks.csv: по строке на каждый сайт в каждой проверке (этапы DNS, TCP, TLS, HTTP, время, ошибка).
+                events.csv: события (белые списки включили или отключили, VPN пропал или вернулся, сменилась сеть).
+                raw/*.jsonl: исходные данные, по одному JSON на строку.
+                CSV открываются в Excel: разделитель точка с запятой, кодировка UTF-8.
                 """.trimIndent(),
             )
             dir.listFiles().orEmpty().filter { it.name.endsWith(".jsonl") }.forEach { f ->

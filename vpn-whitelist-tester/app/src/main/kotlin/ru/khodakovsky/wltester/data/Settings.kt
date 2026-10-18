@@ -14,16 +14,16 @@ import ru.khodakovsky.wltester.core.engine.EngineConfig
 
 @Serializable
 enum class ScheduleMode(val ru: String) {
-    WINDOW("По времени (окно)"),
-    ALWAYS("Постоянно — следить за VPN"),
+    WINDOW("Ночью по расписанию"),
+    ALWAYS("Весь день, следить за VPN"),
 }
 
 @Serializable
 enum class Preset(val ru: String, val fullMin: Int, val watchMin: Int, val hint: String) {
-    ECONOMY("Экономия батареи", 15, 30, "полная проверка раз в 15 мин, слежение за VPN раз в 30 мин"),
-    BALANCED("Сбалансированный", 5, 15, "полная — раз в 5 мин, слежение — раз в 15 мин"),
-    DETAILED("Подробный", 2, 5, "полная — раз в 2 мин, слежение — раз в 5 мин (заметный расход батареи)"),
-    CUSTOM("Свой", 5, 15, "интервалы задаются вручную"),
+    ECONOMY("Реже, бережём батарею", 15, 30, "Подробно раз в 15 минут, VPN раз в 30 минут"),
+    BALANCED("Обычно", 5, 15, "Подробно раз в 5 минут, VPN раз в 15 минут"),
+    DETAILED("Часто", 2, 5, "Подробно раз в 2 минуты, VPN раз в 5 минут. Батарея садится заметно быстрее"),
+    CUSTOM("Свои интервалы", 5, 15, "Минуты задаются вручную"),
 }
 
 @Serializable

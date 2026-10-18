@@ -21,10 +21,13 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -50,7 +53,23 @@ import java.time.format.DateTimeFormatter
 private val dayLabel = DateTimeFormatter.ofPattern("dd.MM")
 
 @Composable
-fun LogScreen() {
+fun JournalScreen() {
+    var tab by rememberSaveable { mutableIntStateOf(0) }
+    Column(Modifier.fillMaxSize()) {
+        Text(
+            "Журнал", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(16.dp, 16.dp, 16.dp, 8.dp),
+        )
+        TabRow(selectedTabIndex = tab) {
+            Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("Проверки") })
+            Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("События и отчёт") })
+        }
+        if (tab == 0) ChecksTab() else EventsTab()
+    }
+}
+
+@Composable
+private fun ChecksTab() {
     val ctx = LocalContext.current
     val log = remember { LogStore.get(ctx) }
     val version by log.version.collectAsState()
@@ -63,11 +82,15 @@ fun LogScreen() {
     var onlyFailures by rememberSaveable { mutableStateOf(false) }
 
     Column(Modifier.fillMaxSize()) {
-        Text("Журнал проверок", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, modifier = Modifier.padding(16.dp, 16.dp, 16.dp, 4.dp))
         if (days.isEmpty()) {
-            Text("Записей пока нет.", modifier = Modifier.padding(16.dp))
+            Text("Здесь появятся проверки. Пока их не было.", modifier = Modifier.padding(16.dp))
             return@Column
         }
+        Text(
+            "Нажмите на проверку, чтобы увидеть каждый сайт отдельно.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(16.dp, 8.dp, 16.dp, 4.dp),
+        )
         LazyRow(contentPadding = PaddingValues(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             items(days) { d ->
                 FilterChip(selected = d == day, onClick = { selected = d }, label = { Text(dayLabel.format(d)) })
@@ -75,9 +98,8 @@ fun LogScreen() {
         }
         Row(Modifier.padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Checkbox(checked = onlyFailures, onCheckedChange = { onlyFailures = it })
-            Text("В деталях показывать только сбои", style = MaterialTheme.typography.bodySmall)
-            Spacer(Modifier.weight(1f))
-            Text("${cycles.size} циклов", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(end = 8.dp))
+            Text("Показывать только то, что не открылось", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+            Text("${cycles.size} пров.", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(end = 8.dp))
         }
         LazyColumn(contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(cycles, key = { it.id }) { c -> CycleItem(c, onlyFailures) }
@@ -91,32 +113,38 @@ private fun CycleItem(c: CycleRecord, onlyFailures: Boolean) {
     Card(Modifier.fillMaxWidth().clickable { expanded = !expanded }) {
         Column(Modifier.padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(fmtTime(c.startedAt), fontWeight = FontWeight.Bold)
+                Text(fmtTime(c.startedAt).take(5), fontWeight = FontWeight.Bold)
                 Spacer(Modifier.width(8.dp))
-                Text("${c.kind.ru} · ${c.trigger.ru}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
-                if (c.kind != CycleKind.SKIPPED) Badge(c.summary.verdict.ru, verdictColor(c.summary.verdict)) else Badge("пропуск", Gray)
+                Text("${c.kind.ru}, ${c.trigger.ru}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                if (c.kind != CycleKind.SKIPPED) Badge(c.summary.verdict.ru, verdictColor(c.summary.verdict)) else Badge("пропущена", Gray)
             }
             val s = c.summary
-            if (c.kind != CycleKind.SKIPPED) {
-                val vpn = s.vpn.entries.joinToString("  ") { "${it.key} ${if (it.value) "✓" else "✗"}" }
+            if (c.kind == CycleKind.SKIPPED) {
+                c.notes.firstOrNull()?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = Amber) }
+            } else {
                 Text(
-                    "РФ ${s.ruOk}/${s.ruTotal} · Заруб. ${s.foreignOk}/${s.foreignTotal}" + (if (vpn.isNotEmpty()) " · VPN: $vpn" else "") +
-                        " · ${(c.finishedAt - c.startedAt) / 1000} с",
+                    "Российские сайты: ${s.ruOk} из ${s.ruTotal}. Зарубежные: ${s.foreignOk} из ${s.foreignTotal}.",
                     style = MaterialTheme.typography.bodySmall,
                 )
+                s.vpn.forEach { (name, ok) ->
+                    Text(
+                        "VPN «$name»: ${if (ok) "работает" else "не работает"}",
+                        style = MaterialTheme.typography.bodySmall, color = if (ok) Green else Red,
+                    )
+                }
             }
             Text(c.network.shortRu(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            if (expanded) {
-                c.notes.forEach { Text(it, color = Amber, style = MaterialTheme.typography.bodySmall) }
-                c.publicIpDirect?.let { Text("IP напрямую: $it", style = MaterialTheme.typography.bodySmall) }
-                c.publicIpVpn.forEach { (k, v) -> Text("IP через «$k»: $v", style = MaterialTheme.typography.bodySmall) }
-                Category.entries.forEach { cat ->
-                    val list = c.checks.filter { it.category == cat && (!onlyFailures || !it.ok) }
-                    if (list.isNotEmpty()) {
-                        HorizontalDivider(Modifier.padding(vertical = 6.dp))
-                        Text(cat.ru, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-                        list.forEach { CheckRow(it) }
-                    }
+            if (!expanded) return@Column
+
+            c.notes.forEach { Text(it, color = Amber, style = MaterialTheme.typography.bodySmall) }
+            c.publicIpDirect?.let { Text("Ваш IP-адрес без VPN: $it", style = MaterialTheme.typography.bodySmall) }
+            c.publicIpVpn.forEach { (k, v) -> Text("IP-адрес через VPN «$k»: $v", style = MaterialTheme.typography.bodySmall) }
+            Category.entries.forEach { cat ->
+                val list = c.checks.filter { it.category == cat && (!onlyFailures || !it.ok) }
+                if (list.isNotEmpty()) {
+                    HorizontalDivider(Modifier.padding(vertical = 6.dp))
+                    Text(cat.ru, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                    list.forEach { CheckRow(it) }
                 }
             }
         }
@@ -129,21 +157,26 @@ private fun CheckRow(r: CheckResult) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Dot(statusColor(r.status))
             Spacer(Modifier.width(6.dp))
-            val route = if (r.route != CheckResult.DIRECT) "[${r.route}] " else ""
-            Text(route + r.target, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f), maxLines = 2)
-            Text("${r.totalMs} мс", style = MaterialTheme.typography.bodySmall)
+            val via = if (r.route != CheckResult.DIRECT) " (через «${r.route}»)" else ""
+            Text(friendlyTarget(r) + via, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f), maxLines = 2)
         }
-        val stages = listOfNotNull(
-            r.dnsMs?.let { "DNS $it" }, r.tcpMs?.let { "TCP $it" }, r.tlsMs?.let { "TLS $it" }, r.ttfbMs?.let { "ответ $it" },
-            r.httpCode?.let { "HTTP $it" }, r.bytes?.takeIf { it > 0 }?.let { "${it / 1024} КБ" }, r.speedKbps?.let { "$it кбит/с" },
+        Text(
+            friendlyStatus(r), fontSize = 12.sp, color = statusColor(r.status),
+            modifier = Modifier.padding(start = 16.dp),
+        )
+        val tech = listOfNotNull(
+            r.dnsMs?.let { "DNS $it мс" }, r.tcpMs?.let { "TCP $it мс" }, r.tlsMs?.let { "TLS $it мс" },
+            r.ttfbMs?.let { "ответ $it мс" }, r.httpCode?.let { "код $it" },
+            r.bytes?.takeIf { it > 0 }?.let { "${it / 1024} КБ" }, r.speedKbps?.let { "$it кбит/с" },
+            r.ip?.let { "IP $it" }, "всего ${r.totalMs} мс",
         ).joinToString(" · ")
-        val line = listOfNotNull(
-            r.status.ru.takeIf { r.status != ru.khodakovsky.wltester.core.ProbeStatus.OK },
-            stages.ifEmpty { null },
-            r.ip?.let { "IP $it" },
-            r.info,
-        ).joinToString(" · ")
-        if (line.isNotEmpty()) Text(line, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 16.dp))
-        r.error?.let { Text(it, fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = Red.copy(alpha = 0.8f), modifier = Modifier.padding(start = 16.dp), maxLines = 3) }
+        Text(tech, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 16.dp))
+        r.info?.let { Text(it, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 16.dp)) }
+        r.error?.let {
+            Text(
+                it, fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = Red.copy(alpha = 0.8f),
+                modifier = Modifier.padding(start = 16.dp), maxLines = 3,
+            )
+        }
     }
 }
