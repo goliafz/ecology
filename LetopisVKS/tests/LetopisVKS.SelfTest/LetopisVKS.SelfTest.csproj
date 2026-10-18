@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Автотесты логики программы. Запускаются на любой ОС с .NET 8 и ffmpeg в PATH:
+      dotnet run -c Release
+    Проверяют синхронизацию, выравнивание часов устройств, анализ звука,
+    команды FFmpeg, склейку частей и восстановление после сбоя.
+    Части, которым нужен настоящий Windows (захват экрана, WASAPI), здесь не участвуют.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <RootNamespace>LetopisVks.SelfTest</RootNamespace>
+    <NoWarn>CA1416;SYSLIB0014</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="NAudio.Wasapi" Version="2.2.1" />
+    <PackageReference Include="NAudio.Core" Version="2.2.1" />
+    <PackageReference Include="System.Drawing.Common" Version="8.0.10" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\..\src\LetopisVKS\Core\*.cs" Link="App\Core\%(Filename)%(Extension)" />
+    <Compile Include="..\..\src\LetopisVKS\Audio\*.cs" Link="App\Audio\%(Filename)%(Extension)" />
+    <Compile Include="..\..\src\LetopisVKS\Video\*.cs" Link="App\Video\%(Filename)%(Extension)" />
+    <Compile Include="..\..\src\LetopisVKS\Recording\*.cs" Link="App\Recording\%(Filename)%(Extension)" />
+    <Compile Include="..\..\src\LetopisVKS\Checks\*.cs" Link="App\Checks\%(Filename)%(Extension)" />
+  </ItemGroup>
+</Project>
