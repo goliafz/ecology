@@ -3,6 +3,7 @@ using System.Drawing;
 using System.Windows.Forms;
 using MasterVks.Checks;
 using MasterVks.Core;
+using MasterVks.Recording;
 
 namespace MasterVks.UI
 {
@@ -145,6 +146,7 @@ namespace MasterVks.UI
         private CardPanel BuildSourcesCard()
         {
             var card = new CardPanel("Что записываем") { Dock = DockStyle.Fill, Margin = new Padding(Theme.S(4)) };
+            card.Padding = new Padding(card.Padding.Left, Theme.S(42), card.Padding.Right, Theme.S(8));
             var table = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, AutoSize = false };
             table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
 
@@ -171,6 +173,21 @@ namespace MasterVks.UI
             AddRow(table, new FieldLabel("Звук собеседников · всё, что слышно из динамиков или телевизора"));
             AddRow(table, _outBox);
             AddRow(table, _sysMeter);
+            AddRow(table, new FieldLabel("Название ВКС · необязательно, войдёт в имя папки и файла"));
+            _nameBox = new TextBox
+            {
+                Dock = DockStyle.Fill,
+                Text = _settings.MeetingName ?? "",
+                MaxLength = RecordingNames.MaxNameLength,
+                BackColor = Color.White,
+                BorderStyle = BorderStyle.FixedSingle,
+                Margin = new Padding(0, Theme.S(1), 0, Theme.S(1))
+            };
+            _nameBox.TextChanged += (s, e) => OnMeetingNameChanged();
+            _nameBox.Leave += (s, e) => _settings.Save();
+            AddRow(table, _nameBox);
+            _tips.SetToolTip(_nameBox, "Например, «Планёрка». Тогда запись попадёт в папку «Планёрка_2026-10-18» и будет называться «Планёрка_2026-10-18_16-57_ВКС.mp4».\nЕсли поле пустое: папка «2026-10-18», файл «2026-10-18_16-57_ВКС.mp4».");
+
             AddRow(table, new FieldLabel("Папка для записей"));
 
             var folderRow = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Height = Theme.S(32), Margin = new Padding(0, Theme.S(2), 0, 0) };
@@ -191,7 +208,10 @@ namespace MasterVks.UI
             folderRow.Controls.Add(_folderButton, 1, 0);
             table.RowStyles.Add(new RowStyle(SizeType.Absolute, Theme.S(34)));
             table.Controls.Add(folderRow);
+            // Пустая последняя строка забирает лишнее место, иначе Windows растягивает строку с папкой.
             table.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            table.Controls.Add(new Panel { Dock = DockStyle.Fill, Margin = new Padding(0) });
+            table.RowCount = table.RowStyles.Count;
 
             card.Controls.Add(table);
             _tips.SetToolTip(_mic1Box, "Основной микрофон. Звук с него пишется в общую дорожку и отдельно.");

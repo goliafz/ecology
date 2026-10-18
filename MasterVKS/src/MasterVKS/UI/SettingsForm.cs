@@ -85,13 +85,13 @@ namespace MasterVks.UI
             _hotkeys = Check("Горячие клавиши: Ctrl+Alt+R начинает или останавливает запись, Ctrl+Alt+P ставит паузу", settings.HotkeysEnabled);
             _autostart = Check("Запускать программу вместе с Windows", settings.Autostart);
             _autostartMinimized = Check("При автозапуске сразу сворачивать окно", settings.StartMinimizedOnAutostart);
-            _keepMkv = Check("Оставлять исходный MKV-файл после создания MP4", settings.KeepMkvAfterConvert);
+            _keepMkv = Check("Сохранять исходный MKV рядом с MP4 (рекомендуется)", settings.KeepMkvAfterConvert);
             comfort.Controls.Add(_confirmStop);
             comfort.Controls.Add(_hotkeys);
             comfort.Controls.Add(_autostart);
             comfort.Controls.Add(_autostartMinimized);
             comfort.Controls.Add(_keepMkv);
-            comfort.Controls.Add(Note("MKV это исходная запись, она переживает даже внезапное выключение. После остановки из неё делается привычный MP4. Если MP4 проверен и совпадает по длительности, MKV удаляется, чтобы не занимать место дважды."));
+            comfort.Controls.Add(Note("MKV это исходная запись, она переживает даже внезапное выключение. После остановки из неё делается привычный MP4, и в папке с датой лежат оба файла. Если галочку снять, MKV будет удаляться, как только MP4 проверен и совпал по длительности: места занято вдвое меньше."));
             stack.Controls.Add(comfort);
 
             // --- FFmpeg ---

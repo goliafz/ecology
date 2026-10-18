@@ -211,7 +211,7 @@ namespace MasterVks.Recording
 
             Log.Info("MP4 готов: " + target + ", длительность " + Fmt.Timer(mp4Duration.Value) + (deleteMkv ? ", MKV удалён" : ", MKV сохранён"));
             string message = "Запись сохранена: " + Path.GetFileName(target) + " (" + Fmt.Timer(mp4Duration.Value) + ").";
-            if (!verified && !job.KeepMkv) message += " Исходный MKV оставлен на всякий случай.";
+            if (!deleteMkv) message += job.KeepMkv ? " Исходный MKV лежит рядом." : " Исходный MKV оставлен на всякий случай.";
             return new FinalizeResult { Success = true, Mp4Path = target, MkvKept = !deleteMkv, Message = message };
         }
 

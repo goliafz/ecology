@@ -72,6 +72,7 @@ namespace MasterVks.UI
         private ComboBox _screenBox, _mic1Box, _mic2Box, _outBox;
         private SourceMeter _mic1Meter, _mic2Meter, _sysMeter;
         private TextBox _folderBox;
+        private TextBox _nameBox;
         private ModernButton _folderButton;
         private SegmentedToggle _checkMode;
         private ModernButton _checkButton;
@@ -353,6 +354,12 @@ namespace MasterVks.UI
             _engine.OffsetMs = _settings.AudioOffsetMs;
         }
 
+        private void OnMeetingNameChanged()
+        {
+            if (_suppressEvents) return;
+            _settings.MeetingName = _nameBox.Text;
+        }
+
         private void ChooseFolder()
         {
             using (var dialog = new FolderBrowserDialog())
@@ -487,6 +494,7 @@ namespace MasterVks.UI
                 return;
             }
 
+            _settings.Save();
             var session = new RecordingSession(_settings, _engine, ffmpeg);
             _sessionStarting = true;
             _session = session;
@@ -749,6 +757,7 @@ namespace MasterVks.UI
             _checkButton.Text = _checking ? "Проверяю…" : "Проверить";
             _checkMode.Enabled = !_checking && !recording;
             _screenBox.Enabled = !recording;
+            _nameBox.ReadOnly = recording;
             _folderButton.Enabled = !recording;
 
             // Таймер и подписи

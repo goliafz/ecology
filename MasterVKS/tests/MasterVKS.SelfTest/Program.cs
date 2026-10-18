@@ -47,11 +47,14 @@ namespace MasterVks.SelfTest
             Run("Фрагмент записи: сведение каналов и ограничитель", TestSegmentMix);
             Run("Командная строка Windows: экранирование", TestQuoting);
             Run("Человеческие подписи", TestFmt);
+            Run("Имена папок и файлов с названием ВКС", TestNames);
+            Run("Старые настройки: MKV теперь сохраняется по умолчанию", TestSettingsMigration);
             if (_ffmpeg != null)
             {
                 Run("FFmpeg: запись по аргументам программы (видео + 6 каналов звука)", TestFfmpegRecording);
                 Run("FFmpeg: MKV → MP4, проверка и удаление MKV", TestFinalizeSingle);
                 Run("FFmpeg: склейка двух частей после сбоя", TestFinalizeMulti);
+                Run("FFmpeg: в папке остаются и MKV, и MP4", TestFinalizeKeepBoth);
                 Run("FFmpeg: восстановление оборванной записи (имитация синего экрана)", TestFinalizeTruncated);
             }
 
@@ -505,6 +508,33 @@ namespace MasterVks.SelfTest
             Check(Fmt.Size(1536L * 1024 * 1024).StartsWith("1,5"), "размер: " + Fmt.Size(1536L * 1024 * 1024));
         }
 
+        private static void TestNames()
+        {
+            var t = new DateTime(2026, 10, 18, 16, 57, 30);
+            Check(RecordingNames.FolderName("", t) == "2026-10-18" && RecordingNames.BaseName("  ", t) == "2026-10-18_16-57_ВКС",
+                "без названия: 2026-10-18 / 2026-10-18_16-57_ВКС");
+            Check(RecordingNames.FolderName("Планёрка", t) == "Планёрка_2026-10-18" && RecordingNames.BaseName("Планёрка", t) == "Планёрка_2026-10-18_16-57_ВКС",
+                "с названием: Планёрка_2026-10-18 / Планёрка_2026-10-18_16-57_ВКС");
+            string odd = RecordingNames.Sanitize("  Отдел: продажи/ВКС?*  ");
+            Check(odd == "Отдел_ продажи_ВКС__", "запрещённые в Windows символы заменены: «" + odd + "»");
+            Check(RecordingNames.Sanitize("Итоги...") == "Итоги", "точки в конце убраны (Windows их не любит)");
+            Check(RecordingNames.Sanitize(new string('а', 100)).Length == RecordingNames.MaxNameLength, "слишком длинное название обрезано");
+        }
+
+        private static void TestSettingsMigration()
+        {
+            string xml = "<?xml version=\"1.0\"?><AppSettings><OutputFolder>C:\\Записи</OutputFolder><KeepMkvAfterConvert>false</KeepMkvAfterConvert></AppSettings>";
+            var old = (AppSettings)new System.Xml.Serialization.XmlSerializer(typeof(AppSettings)).Deserialize(new StringReader(xml));
+            old.Normalize();
+            Check(old.KeepMkvAfterConvert && old.SettingsVersion == AppSettings.CurrentSettingsVersion, "у старых настроек включилось сохранение MKV");
+            old.KeepMkvAfterConvert = false;
+            old.Normalize();
+            Check(!old.KeepMkvAfterConvert, "если потом выключить вручную, выбор сохраняется");
+            var fresh = new AppSettings();
+            fresh.Normalize();
+            Check(fresh.KeepMkvAfterConvert && fresh.MeetingName == "", "новые настройки: MKV сохраняется, название пустое");
+        }
+
         // ===================== FFmpeg =====================
 
         private static void MkFifo(string path)
@@ -672,6 +702,15 @@ namespace MasterVks.SelfTest
             TimeSpan? d = r.Mp4Path != null ? Ffmpeg.ProbeDuration(_ffmpeg, r.Mp4Path) : null;
             Check(d.HasValue && Math.Abs(d.Value.TotalSeconds - 5) < 0.4, "общая длительность 2 + 3 = " + (d.HasValue ? d.Value.TotalSeconds.ToString("0.00") : "?") + " с");
             Check(File.Exists(p1) && File.Exists(p2), "с настройкой «оставлять MKV» исходники на месте");
+        }
+
+        private static void TestFinalizeKeepBoth()
+        {
+            string mkv = Record("both", 2);
+            var job = new PendingJournal { Mp4Path = Path.Combine(_work, "both.mp4"), Parts = new List<string> { mkv }, KeepMkv = true, Started = DateTime.Now };
+            FinalizeResult r = PostProcessor.Finalize(_ffmpeg, job);
+            Check(r.Success && File.Exists(Path.Combine(_work, "both.mp4")) && File.Exists(mkv), "рядом лежат both.mkv и both.mp4");
+            Check(r.Message.Contains("MKV лежит рядом"), "сообщение говорит, что исходник сохранён: " + r.Message);
         }
 
         private static void TestFinalizeTruncated()

@@ -63,6 +63,12 @@ namespace MasterVks.Core
 
         public string FfmpegPath { get; set; }
 
+        /// <summary>Название ВКС для имён папки и файла (необязательно).</summary>
+        public string MeetingName { get; set; }
+
+        /// <summary>Версия формата настроек: нужна, чтобы обновить значения по умолчанию у старых настроек.</summary>
+        public int SettingsVersion { get; set; }
+
         /// <summary>Устройства уже подобраны хотя бы один раз (первый запуск прошёл).</summary>
         public bool DevicesInitialized { get; set; }
 
@@ -78,15 +84,24 @@ namespace MasterVks.Core
             HotkeysEnabled = true;
             Autostart = false;
             StartMinimizedOnAutostart = true;
-            KeepMkvAfterConvert = false;
+            KeepMkvAfterConvert = true;
             MixMic1 = true;
             MixMic2 = true;
             MixSystem = true;
             AudioOffsetMs = 70;
         }
 
+        public const int CurrentSettingsVersion = 2;
+
         public void Normalize()
         {
+            if (SettingsVersion < 2)
+            {
+                // Версия 1.0.2: исходный MKV по умолчанию сохраняется рядом с MP4.
+                KeepMkvAfterConvert = true;
+            }
+            SettingsVersion = CurrentSettingsVersion;
+            if (MeetingName == null) MeetingName = "";
             if (FrameRate != 15 && FrameRate != 25 && FrameRate != 30 && FrameRate != 60) FrameRate = 30;
             if (AudioOffsetMs < -500 || AudioOffsetMs > 1000) AudioOffsetMs = 70;
             if (string.IsNullOrWhiteSpace(OutputFolder)) OutputFolder = AppPaths.DefaultRecordingsFolder;

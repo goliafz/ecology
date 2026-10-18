@@ -87,6 +87,7 @@ namespace MasterVks.Recording
         public readonly string Folder;
         public readonly string BaseName;
         public readonly string Mp4Path;
+        public readonly string MeetingName;
         public readonly DateTime StartedAt = DateTime.Now;
 
         public RecordingSession(AppSettings settings, AudioEngine engine, string ffmpegPath)
@@ -96,8 +97,9 @@ namespace MasterVks.Recording
             _ffmpegPath = ffmpegPath;
             _audioHandler = OnAudioBlock;
 
-            Folder = Path.Combine(_settings.OutputFolder, StartedAt.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
-            string baseName = StartedAt.ToString("yyyy-MM-dd_HH-mm", CultureInfo.InvariantCulture) + "_ВКС";
+            MeetingName = RecordingNames.Sanitize(_settings.MeetingName);
+            Folder = Path.Combine(_settings.OutputFolder, RecordingNames.FolderName(MeetingName, StartedAt));
+            string baseName = RecordingNames.BaseName(MeetingName, StartedAt);
             BaseName = baseName;
             int n = 2;
             while (NameTaken(BaseName))
@@ -300,7 +302,7 @@ namespace MasterVks.Recording
             if (!_paused) seg.Gate.Open(Clock.Now);
             try
             {
-                seg.Start(_ffmpegPath, _pump.Width, _pump.Height, _settings.FrameRate, _settings.Quality, "ВКС " + StartedAt.ToString("dd.MM.yyyy HH:mm", CultureInfo.InvariantCulture));
+                seg.Start(_ffmpegPath, _pump.Width, _pump.Height, _settings.FrameRate, _settings.Quality, (MeetingName.Length > 0 ? MeetingName + " · " : "ВКС ") + StartedAt.ToString("dd.MM.yyyy HH:mm", CultureInfo.InvariantCulture));
             }
             catch (Exception)
             {
