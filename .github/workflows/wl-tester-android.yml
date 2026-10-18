@@ -1,0 +1,66 @@
+name: WL Tester — сборка APK
+
+on:
+  push:
+    paths:
+      - 'vpn-whitelist-tester/**'
+      - '.github/workflows/wl-tester-android.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: wl-tester-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: vpn-whitelist-tester
+    env:
+      BUILD_NUMBER: ${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Тесты логики (core)
+        run: ./gradlew :core:test --no-daemon --stacktrace
+
+      - name: Ядро Xray для Android
+        run: bash scripts/fetch-xray.sh
+
+      - name: Сборка APK
+        run: ./gradlew :app:assembleRelease --no-daemon --stacktrace
+
+      - name: Подготовка файла
+        run: |
+          mkdir -p out
+          cp app/build/outputs/apk/release/app-release.apk "out/WL-Tester-1.0.${BUILD_NUMBER}.apk"
+          ls -la out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WL-Tester-1.0.${{ github.run_number }}
+          path: vpn-whitelist-tester/out/*.apk
+
+      - name: Публикация в Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: wl-tester-v1.0.${{ github.run_number }}
+          name: WL Tester 1.0.${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          make_latest: 'true'
+          files: vpn-whitelist-tester/out/*.apk
+          body: |
+            Тестер белых списков и VPN для Android (Android 8.0+).
+            Скачайте APK ниже и установите его на телефон. Новая версия ставится поверх старой, журнал сохраняется.
+            Разработчик: Ходаковский Александр.
