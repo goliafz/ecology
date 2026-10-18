@@ -271,12 +271,12 @@ namespace MasterVks.UI
             };
 
             // Две вкладки: оборудование для записи и здоровье самого ноутбука.
-            _checkTabs = new SegmentedToggle("Запись и звук", "Ноутбук")
+            _checkTabs = new SegmentedToggle("Запись и звук", "Состояние ПК")
             {
                 Dock = DockStyle.Top,
                 Height = Theme.S(32)
             };
-            _tips.SetToolTip(_checkTabs, "«Запись и звук»: экран, микрофоны, звук собеседников, место на диске.\n«Ноутбук»: питание, обновления Windows, процессор и память, диски, сбои Windows.");
+            _tips.SetToolTip(_checkTabs, "«Запись и звук»: экран, микрофоны, звук собеседников, место на диске.\n«Состояние ПК»: питание, обновления Windows, процессор и память, диски, сбои Windows.");
             var tabGap = new Panel { Dock = DockStyle.Top, Height = Theme.S(6) };
 
             _recordList = new Panel { Dock = DockStyle.Fill };

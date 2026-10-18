@@ -28,7 +28,7 @@ namespace MasterVks.Checks
         public CheckStatus Status = CheckStatus.Pending;
         public string Summary = "Ожидает проверки";
         public string Details = "";
-        /// <summary>Группа: «record» — запись и звук, «health» — здоровье ноутбука.</summary>
+        /// <summary>Группа: «record» — запись и звук, «health» — состояние ПК.</summary>
         public string Group = SystemCheck.GroupRecord;
         /// <summary>Проблему можно исправить по нажатию на строку.</summary>
         public bool CanFix;
@@ -174,7 +174,7 @@ namespace MasterVks.Checks
             Set(key, v.Status, v.Summary, v.Details);
         }
 
-        // ===================== Здоровье ноутбука =====================
+        // ===================== Состояние ПК =====================
 
         private void CheckPower()
         {
@@ -521,7 +521,7 @@ namespace MasterVks.Checks
             var problems = new List<KeyValuePair<string, string>>();
             if (dropouts > 2)
                 problems.Add(Problem("звук прерывается (" + dropouts + " " + Fmt.Plural(dropouts, "разрыв", "разрыва", "разрывов") + " за проверку)",
-                    "попробуйте другой USB-порт, лучше прямо в ноутбуке, без разветвителя"));
+                    "попробуйте другой USB-порт, лучше прямо в компьютере, без разветвителя"));
             if (a.ClipShare > 0.002)
                 problems.Add(Problem("слишком громко, звук хрипит", "уменьшите уровень микрофона в настройках звука Windows"));
             if (a.Hum)
@@ -614,7 +614,7 @@ namespace MasterVks.Checks
 
             var problems = new List<string>();
             if (drop1 > 2 || drop2 > 2)
-                problems.Add("при одновременной работе звук прерывается: подключите микрофон и камеру в разные USB-порты ноутбука, без разветвителя");
+                problems.Add("при одновременной работе звук прерывается: подключите микрофон и камеру в разные USB-порты компьютера, без разветвителя");
             if (a1.Hum || a2.Hum)
                 problems.Add("есть наводка (гул 50 Гц), проверьте кабели и питание");
 

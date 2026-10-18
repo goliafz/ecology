@@ -74,12 +74,12 @@ namespace MasterVks.Checks
                 ? "Часы активности Windows: с " + activeStart + ":00 до " + activeEnd + ":00."
                 : "Часы активности Windows не заданы.";
             string uptimeText = uptime.TotalDays >= 1
-                ? " Ноутбук работает без перезагрузки " + (int)uptime.TotalDays + " " + Fmt.Plural((long)uptime.TotalDays, "день", "дня", "дней") + "."
+                ? " Компьютер работает без перезагрузки " + (int)uptime.TotalDays + " " + Fmt.Plural((long)uptime.TotalDays, "день", "дня", "дней") + "."
                 : "";
 
             if (rebootPending)
                 return new HealthVerdict(CheckStatus.Warning, "Windows ждёт перезагрузки после обновлений",
-                    "Перезагрузите ноутбук заранее, до начала ВКС. Иначе Windows может перезагрузить его сама в неподходящий момент. " + hours + uptimeText,
+                    "Перезагрузите компьютер заранее, до начала ВКС. Иначе Windows может перезагрузить его сама в неподходящий момент. " + hours + uptimeText,
                     !noAutoRebootPolicy);
 
             if (noAutoRebootPolicy)
@@ -88,11 +88,11 @@ namespace MasterVks.Checks
 
             if (InActiveHours(activeStart, activeEnd, hourNow))
                 return new HealthVerdict(CheckStatus.Ok, "Сейчас часы активности: Windows сама не перезагрузится",
-                    hours + " Вне этих часов Windows может перезагрузиться для обновлений. Нажмите, чтобы защитить ноутбук полностью (один раз понадобится пароль администратора)." + uptimeText,
+                    hours + " Вне этих часов Windows может перезагрузиться для обновлений. Нажмите, чтобы защитить компьютер полностью (один раз понадобится пароль администратора)." + uptimeText,
                     true);
 
             return new HealthVerdict(CheckStatus.Warning, "Windows может перезагрузиться для обновлений",
-                hours + " Сейчас " + hourNow + " ч, это вне часов активности. Нажмите, чтобы защитить ноутбук от самопроизвольной перезагрузки (один раз понадобится пароль администратора)." + uptimeText,
+                hours + " Сейчас " + hourNow + " ч, это вне часов активности. Нажмите, чтобы защитить компьютер от самопроизвольной перезагрузки (один раз понадобится пароль администратора)." + uptimeText,
                 true);
         }
 
@@ -135,7 +135,7 @@ namespace MasterVks.Checks
 
             if (bad.Count > 0)
                 return new HealthVerdict(CheckStatus.Error, "Диск неисправен: " + bad[0].Name,
-                    "Windows сообщает, что диск может скоро отказать. Скопируйте важные записи на другой носитель и покажите ноутбук специалисту. " + list + ". " + speed);
+                    "Windows сообщает, что диск может скоро отказать. Скопируйте важные записи на другой носитель и покажите компьютер специалисту. " + list + ". " + speed);
             if (warn.Count > 0)
                 return new HealthVerdict(CheckStatus.Warning, "Диск предупреждает о проблемах: " + warn[0].Name,
                     "Windows видит признаки износа диска. Записи пока пишутся, но стоит регулярно копировать их в другое место. " + list + ". " + speed);
@@ -164,8 +164,8 @@ namespace MasterVks.Checks
 
             bool serious = blueScreens > 0 || hardwareErrors > 0 || unexpectedShutdowns >= 2;
             string advice = serious
-                ? " Ноутбук уже сбоил. Запись переживёт такой сбой (MKV и восстановление), но для важных ВКС держите включённым диктофон на телефоне и покажите ноутбук специалисту."
-                : " Одно выключение бывает, если ноутбук выключили кнопкой. Если вы этого не делали, держите включённым диктофон на телефоне.";
+                ? " Компьютер уже сбоил. Запись переживёт такой сбой (MKV и восстановление), но для важных ВКС держите включённым диктофон на телефоне и покажите компьютер специалисту."
+                : " Одно выключение бывает, если компьютер выключили кнопкой. Если вы этого не делали, держите включённым диктофон на телефоне.";
             return new HealthVerdict(serious ? CheckStatus.Warning : CheckStatus.Ok, "За 30 дней: " + string.Join(", ", parts), "По журналу Windows." + when + advice);
         }
 

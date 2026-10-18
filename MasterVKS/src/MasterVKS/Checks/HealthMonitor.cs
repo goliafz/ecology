@@ -113,7 +113,7 @@ namespace MasterVks.Checks
                     {
                         _throttleWarned = true;
                         notices.Add(new Notice("Процессор под нагрузкой сбросил частоту до " + (int)s.PerformancePercent.Value +
-                                               " %. Похоже на перегрев: проверьте, не закрыты ли вентиляционные отверстия, и поставьте ноутбук на твёрдую поверхность.", NoticeLevel.Warning));
+                                               " %. Похоже на перегрев: проверьте, не закрыты ли вентиляционные отверстия, а ноутбук поставьте на твёрдую поверхность.", NoticeLevel.Warning));
                     }
                 }
                 else
@@ -137,7 +137,7 @@ namespace MasterVks.Checks
                 if (s.TemperatureC.Value >= 95 && !_hotWarned)
                 {
                     _hotWarned = true;
-                    notices.Add(new Notice("Датчик температуры показывает " + (int)s.TemperatureC.Value + " °C. Проверьте вентиляцию ноутбука.", NoticeLevel.Warning));
+                    notices.Add(new Notice("Датчик температуры показывает " + (int)s.TemperatureC.Value + " °C. Проверьте вентиляцию компьютера.", NoticeLevel.Warning));
                 }
                 else if (s.TemperatureC.Value < 85)
                 {
@@ -163,7 +163,7 @@ namespace MasterVks.Checks
             if (s.RebootPending && !_rebootWarned)
             {
                 _rebootWarned = true;
-                notices.Add(new Notice("Windows установила обновления и ждёт перезагрузки. Перезагрузите ноутбук после ВКС, а не во время.", NoticeLevel.Warning));
+                notices.Add(new Notice("Windows установила обновления и ждёт перезагрузки. Перезагрузите компьютер после ВКС, а не во время.", NoticeLevel.Warning));
             }
             return notices;
         }
