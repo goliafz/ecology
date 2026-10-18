@@ -171,7 +171,7 @@ namespace MasterVks.Checks
             try
             {
                 Directory.CreateDirectory(folder);
-                string probe = Path.Combine(folder, ".letopis-proverka-" + Guid.NewGuid().ToString("N") + ".tmp");
+                string probe = Path.Combine(folder, ".mastervks-proverka-" + Guid.NewGuid().ToString("N") + ".tmp");
                 File.WriteAllBytes(probe, new byte[4096]);
                 File.Delete(probe);
             }

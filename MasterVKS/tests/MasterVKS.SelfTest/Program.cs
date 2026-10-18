@@ -27,7 +27,7 @@ namespace MasterVks.SelfTest
             CultureInfo.DefaultThreadCurrentCulture = CultureInfo.InvariantCulture;
             Log.Init();
             _ffmpeg = FindFfmpeg();
-            _work = Path.Combine(Path.GetTempPath(), "letopis-selftest-" + Guid.NewGuid().ToString("N").Substring(0, 8));
+            _work = Path.Combine(Path.GetTempPath(), "mastervks-selftest-" + Guid.NewGuid().ToString("N").Substring(0, 8));
             Directory.CreateDirectory(_work);
             Console.WriteLine("Рабочая папка: " + _work);
             Console.WriteLine("ffmpeg: " + (_ffmpeg ?? "не найден — тесты FFmpeg будут пропущены"));
