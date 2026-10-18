@@ -354,13 +354,14 @@ namespace MasterVks.UI
             _tips.SetToolTip(_preview, "Так сейчас выглядит записываемый экран");
             table.Controls.Add(_preview, 0, 0);
 
-            var info = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, Margin = new Padding(0) };
+            var info = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4, Margin = new Padding(0) };
             info.RowStyles.Add(new RowStyle(SizeType.Absolute, Theme.S(52)));
+            info.RowStyles.Add(new RowStyle(SizeType.Absolute, Theme.S(24)));
             info.RowStyles.Add(new RowStyle(SizeType.Absolute, Theme.S(24)));
             info.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             _timerLabel = new Label { Dock = DockStyle.Fill, Font = Theme.Timer, ForeColor = Theme.Text, Text = "00:00:00", TextAlign = ContentAlignment.MiddleLeft, UseMnemonic = false };
             _recordInfo = new Label { Dock = DockStyle.Fill, Font = Theme.Base, ForeColor = Theme.Muted, Text = "Запись не идёт", TextAlign = ContentAlignment.MiddleLeft, AutoEllipsis = true, UseMnemonic = false };
-            _hintLabel = new Label { Dock = DockStyle.Fill, Font = Theme.Small, ForeColor = Theme.Faint, Text = "", TextAlign = ContentAlignment.TopLeft, AutoEllipsis = true, UseMnemonic = false };
+            _hintLabel = new Label { Dock = DockStyle.Fill, Font = Theme.Base, ForeColor = Theme.Muted, Text = "", TextAlign = ContentAlignment.MiddleLeft, AutoEllipsis = true, UseMnemonic = false };
             info.Controls.Add(_timerLabel, 0, 0);
             info.Controls.Add(_recordInfo, 0, 1);
             info.Controls.Add(_hintLabel, 0, 2);

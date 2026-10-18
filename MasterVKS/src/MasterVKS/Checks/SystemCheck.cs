@@ -418,7 +418,10 @@ namespace MasterVks.Checks
                     details + ". Получится около " + (int)possibleFps + " кадров/с вместо " + _settings.FrameRate + ". Запись будет, просто менее плавной.");
                 return;
             }
-            Set(KeyScreen, notFound != null ? CheckStatus.Warning : CheckStatus.Ok, "Экран доступен", details);
+            if (notFound != null)
+                Set(KeyScreen, CheckStatus.Warning, "Выбранный экран не подключён, записываю основной", details);
+            else
+                Set(KeyScreen, CheckStatus.Ok, "Экран доступен", details);
         }
 
         // ===================== Звук =====================

@@ -262,10 +262,20 @@ namespace MasterVks.UI
                 if (screenIndex < 0 && _screenBox.Items.Count > 0)
                 {
                     screenIndex = 0;
-                    if (!string.IsNullOrEmpty(_settings.MonitorDevice) && _devicesLoaded)
-                        AddEvent(new Notice("Выбранный ранее экран не найден, поэтому выбран основной.", NoticeLevel.Warning));
+                    if (!string.IsNullOrEmpty(_settings.MonitorDevice))
+                        AddEvent(new Notice("Экран, выбранный в прошлый раз, сейчас не подключён. Буду записывать " + ((MonitorDesc)((ComboItem)_screenBox.Items[0]).Value).DisplayName + ".", NoticeLevel.Info));
                 }
-                if (screenIndex >= 0) _screenBox.SelectedIndex = screenIndex;
+                if (screenIndex >= 0)
+                {
+                    _screenBox.SelectedIndex = screenIndex;
+                    // Запоминаем то, что видно в списке: проверка и запись берут экран из настроек.
+                    var shown = (MonitorDesc)((ComboItem)_screenBox.Items[screenIndex]).Value;
+                    if (!string.Equals(shown.DeviceName, _settings.MonitorDevice, StringComparison.OrdinalIgnoreCase))
+                    {
+                        _settings.MonitorDevice = shown.DeviceName;
+                        _settings.Save();
+                    }
+                }
             }
             finally
             {
@@ -706,8 +716,18 @@ namespace MasterVks.UI
             {
                 case SourceState.Active:
                     bool silent = source.ZeroRunFrames > AudioEngine.Rate * 3;
-                    text = silent ? "Полная тишина" : "Работает";
-                    color = silent ? Theme.Yellow : Theme.Green;
+                    if (source.IsLoopback)
+                    {
+                        // Для звука компьютера тишина нормальна: просто сейчас ничего не играет.
+                        text = silent ? "Работает, сейчас тихо" : "Работает";
+                        color = Theme.Green;
+                    }
+                    else
+                    {
+                        // Микрофон присылает ровно нули: обычно он выключен или к нему запрещён доступ.
+                        text = silent ? "Нет звука, проверьте микрофон" : "Работает";
+                        color = silent ? Theme.Yellow : Theme.Green;
+                    }
                     break;
                 case SourceState.NotSelected:
                     text = "Не используется";
@@ -834,29 +854,27 @@ namespace MasterVks.UI
 
             // Таймер и подписи
             if (!recording) _timerLabel.Text = "00:00:00";
-            string info;
+            // Две строки под таймером: размер и место на диске, ниже параметры записи и имя файла.
+            string info, details;
             if (recording && !_sessionStarting)
             {
                 info = "Размер " + Fmt.Size(session.BytesWritten);
                 long free = session.FreeBytes >= 0 ? session.FreeBytes : _freeBytesIdle;
-                if (free >= 0)
-                {
-                    info += " · свободно " + Fmt.Size(free);
-                    TimeSpan? left = session.RemainingDiskTime;
-                    if (left.HasValue) info += " (≈ " + Fmt.Duration(left.Value) + ")";
-                }
-                if (session.PartCount > 1) info += " · частей: " + session.PartCount;
-                if (session.Width > 0) info += " · " + session.Width + "×" + session.Height + ", " + _settings.FrameRate + " к/с";
+                if (free >= 0) info += " · свободно " + Fmt.Size(free) + DiskTimeText(session.RemainingDiskTime);
+                details = session.Width > 0 ? session.Width + " × " + session.Height + ", " + _settings.FrameRate + " кадров/с" : "";
+                if (session.PartCount > 1) details += " · частей: " + session.PartCount;
+                details += (details.Length > 0 ? " · " : "") + Path.GetFileName(session.Mp4Path);
             }
             else
             {
                 info = _finalizing > 0 ? "Готовлю MP4 из последней записи…" : "Запись не идёт";
                 if (_freeBytesIdle >= 0) info += " · свободно " + Fmt.Size(_freeBytesIdle);
+                DateTime now = DateTime.Now;
+                details = "Файл будет называться " + RecordingNames.BaseName(_settings.MeetingName, now) + ".mp4";
             }
             _recordInfo.Text = info;
-            _hintLabel.Text = _settings.HotkeysEnabled
-                ? (_hotkeysRegistered ? "Ctrl+Alt+R: начать или остановить · Ctrl+Alt+P: пауза" : "Горячие клавиши заняты другой программой")
-                : "Горячие клавиши выключены в настройках";
+            _hintLabel.Text = details;
+            _tips.SetToolTip(_hintLabel, details);
 
             // Таблетка состояния
             if (_sessionStarting) _pill.SetState("Запускаю запись…", Theme.Accent, Theme.AccentSoft, Theme.Text, false);
@@ -881,6 +899,13 @@ namespace MasterVks.UI
             if (Text != title) Text = title;
 
             UpdateWindowIcon();
+        }
+
+        private static string DiskTimeText(TimeSpan? left)
+        {
+            if (!left.HasValue) return "";
+            string d = Fmt.Duration(left.Value);
+            return d.StartsWith("больше", StringComparison.Ordinal) ? ", хватит больше чем на 100 ч" : ", хватит примерно на " + d;
         }
 
         private static void SetButton(ModernButton button, string text, ButtonKind kind, Glyph glyph, bool enabled)
