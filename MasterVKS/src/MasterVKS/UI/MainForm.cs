@@ -854,27 +854,24 @@ namespace MasterVks.UI
 
             // Таймер и подписи
             if (!recording) _timerLabel.Text = "00:00:00";
-            // Две строки под таймером: размер и место на диске, ниже параметры записи и имя файла.
+            // Две строки под таймером: размер и свободное место, ниже на сколько хватит места.
             string info, details;
             if (recording && !_sessionStarting)
             {
                 info = "Размер " + Fmt.Size(session.BytesWritten);
                 long free = session.FreeBytes >= 0 ? session.FreeBytes : _freeBytesIdle;
-                if (free >= 0) info += " · свободно " + Fmt.Size(free) + DiskTimeText(session.RemainingDiskTime);
-                details = session.Width > 0 ? session.Width + " × " + session.Height + ", " + _settings.FrameRate + " кадров/с" : "";
-                if (session.PartCount > 1) details += " · частей: " + session.PartCount;
-                details += (details.Length > 0 ? " · " : "") + Path.GetFileName(session.Mp4Path);
+                if (free >= 0) info += " · свободно " + Fmt.Size(free);
+                if (session.PartCount > 1) info += " · частей: " + session.PartCount;
+                details = DiskTimeText(session.RemainingDiskTime);
             }
             else
             {
                 info = _finalizing > 0 ? "Готовлю MP4 из последней записи…" : "Запись не идёт";
                 if (_freeBytesIdle >= 0) info += " · свободно " + Fmt.Size(_freeBytesIdle);
-                DateTime now = DateTime.Now;
-                details = "Файл будет называться " + RecordingNames.BaseName(_settings.MeetingName, now) + ".mp4";
+                details = DiskTimeText(IdleDiskTime());
             }
             _recordInfo.Text = info;
             _hintLabel.Text = details;
-            _tips.SetToolTip(_hintLabel, details);
 
             // Таблетка состояния
             if (_sessionStarting) _pill.SetState("Запускаю запись…", Theme.Accent, Theme.AccentSoft, Theme.Text, false);
@@ -905,7 +902,18 @@ namespace MasterVks.UI
         {
             if (!left.HasValue) return "";
             string d = Fmt.Duration(left.Value);
-            return d.StartsWith("больше", StringComparison.Ordinal) ? ", хватит больше чем на 100 ч" : ", хватит примерно на " + d;
+            return d.StartsWith("больше", StringComparison.Ordinal) ? "Места хватит больше чем на 100 ч записи" : "Места хватит примерно на " + d + " записи";
+        }
+
+        /// <summary>На сколько хватит места, пока запись не идёт: по размеру выбранного экрана и качеству.</summary>
+        private TimeSpan? IdleDiskTime()
+        {
+            if (_freeBytesIdle < 0) return null;
+            var item = _screenBox.SelectedItem as ComboItem;
+            var monitor = item != null ? item.Value as MonitorDesc : null;
+            int w = monitor != null ? monitor.Bounds.Width : 1920, h = monitor != null ? monitor.Bounds.Height : 1080;
+            double rate = RecordingArgs.EstimateBytesPerSecond(w, h, _settings.FrameRate, _settings.Quality);
+            return rate > 0 ? TimeSpan.FromSeconds(Math.Min(_freeBytesIdle / rate, 360000)) : (TimeSpan?)null;
         }
 
         private static void SetButton(ModernButton button, string text, ButtonKind kind, Glyph glyph, bool enabled)

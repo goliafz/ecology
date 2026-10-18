@@ -22,9 +22,9 @@
     <Company>Ходаковский Александр</Company>
     <Authors>Ходаковский Александр</Authors>
     <Copyright>© 2026 Ходаковский Александр</Copyright>
-    <Version>1.1.2</Version>
-    <FileVersion>1.1.2.0</FileVersion>
-    <AssemblyVersion>1.1.2.0</AssemblyVersion>
+    <Version>1.1.3</Version>
+    <FileVersion>1.1.3.0</FileVersion>
+    <AssemblyVersion>1.1.3.0</AssemblyVersion>
     <NeutralLanguage>ru-RU</NeutralLanguage>
   </PropertyGroup>
 
