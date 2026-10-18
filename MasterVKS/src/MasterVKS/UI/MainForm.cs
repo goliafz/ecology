@@ -132,10 +132,28 @@ namespace MasterVks.UI
         protected override void OnLoad(EventArgs e)
         {
             base.OnLoad(e);
+            FitToWorkingArea();
             if (_launchedByAutostart && _settings.StartMinimizedOnAutostart) WindowState = FormWindowState.Minimized;
             _fastTimer.Start();
             _slowTimer.Start();
             StartPreviewThread();
+        }
+
+        /// <summary>На ноутбуке с крупным масштабом окно не должно выходить за экран и панель задач.</summary>
+        private void FitToWorkingArea()
+        {
+            try
+            {
+                Rectangle area = Screen.FromControl(this).WorkingArea;
+                int w = Math.Min(Width, area.Width);
+                int h = Math.Min(Height, area.Height);
+                MinimumSize = new Size(Math.Min(MinimumSize.Width, w), Math.Min(MinimumSize.Height, h));
+                Bounds = new Rectangle(area.X + (area.Width - w) / 2, area.Y + (area.Height - h) / 2, w, h);
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("Не удалось подогнать окно под экран", ex);
+            }
         }
 
         protected override void OnShown(EventArgs e)

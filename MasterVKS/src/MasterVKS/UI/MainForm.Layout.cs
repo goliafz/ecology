@@ -24,8 +24,8 @@ namespace MasterVks.UI
             ForeColor = Theme.Text;
             Text = WindowTitleBase;
             StartPosition = FormStartPosition.CenterScreen;
-            ClientSize = new Size(Theme.S(1000), Theme.S(640));
-            MinimumSize = new Size(Theme.S(900), Theme.S(600));
+            ClientSize = new Size(Theme.S(1000), Theme.S(680));
+            MinimumSize = new Size(Theme.S(900), Theme.S(620));
             DoubleBuffered = true;
             KeyPreview = true;
             _tips = new ToolTip { AutoPopDelay = 20000, InitialDelay = 400, ReshowDelay = 200, ShowAlways = true };
@@ -132,7 +132,7 @@ namespace MasterVks.UI
         private CardPanel BuildSourcesCard()
         {
             var card = new CardPanel("Что записываем") { Dock = DockStyle.Fill, Margin = new Padding(Theme.S(4)) };
-            card.Padding = new Padding(card.Padding.Left, Theme.S(42), card.Padding.Right, Theme.S(8));
+            card.Padding = new Padding(card.Padding.Left, Theme.S(42), card.Padding.Right, Theme.S(14));
             var table = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, AutoSize = false };
             table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
 
@@ -192,7 +192,7 @@ namespace MasterVks.UI
             _folderButton.Click += (s, e) => ChooseFolder();
             folderRow.Controls.Add(_folderBox, 0, 0);
             folderRow.Controls.Add(_folderButton, 1, 0);
-            table.RowStyles.Add(new RowStyle(SizeType.Absolute, Theme.S(34)));
+            table.RowStyles.Add(new RowStyle(SizeType.Absolute, Theme.S(38)));
             table.Controls.Add(folderRow);
             // Пустая последняя строка забирает лишнее место, иначе Windows растягивает строку с папкой.
             table.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
