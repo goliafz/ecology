@@ -35,6 +35,7 @@ enum class ProbeStatus(val ru: String, val stage: Stage, val reachable: Boolean)
     HTTP_TIMEOUT("HTTP: нет ответа (таймаут)", Stage.HTTP, false),
     HTTP_RESET("HTTP: обрыв соединения", Stage.HTTP, false),
     HTTP_ERROR("HTTP: ошибка", Stage.HTTP, false),
+    DATA_CORRUPT("Данные повреждены в пути (ошибка расшифровки TLS)", Stage.HTTP, false),
     STALLED("Загрузка зависла (данные перестали идти)", Stage.HTTP, false),
     PROXY_ERROR("Ошибка локального прокси xray", Stage.TCP, false),
     SKIPPED("Пропущено", Stage.OTHER, false),

@@ -252,6 +252,19 @@ class ReportBuilder(private val zone: ZoneId = ZoneId.systemDefault()) {
             if (dnsBad.isNotEmpty()) out += "При белых списках не отвечают DNS: ${dnsBad.joinToString()}. Используйте DNS провайдера или российский (77.88.8.8)."
         }
 
+        val corrupt = all.flatMap { c -> c.checks.filter { it.status == ProbeStatus.DATA_CORRUPT } }
+        corrupt.groupBy { it.route }.forEach { (route, list) ->
+            val targets = list.map { it.target }.distinct().joinToString()
+            out += if (route == CheckResult.DIRECT) {
+                "Напрямую у $targets данные приходят повреждёнными (ошибка расшифровки TLS, ${list.size} раз) — признак вмешательства в трафик по пути."
+            } else {
+                "Через VPN «$route» не открываются: $targets. TLS-рукопожатие с сайтом проходит, но данные приходят повреждёнными " +
+                    "(ошибка расшифровки TLS / BAD_DECRYPT, ${list.size} раз). Остальные сайты через профиль работают — туннель жив. " +
+                    "Обычно это несовместимость flow xtls-rprx-vision между версиями Xray на сервере и в клиенте: сверьте версию Xray в панели Marzban " +
+                    "с версией ядра тестера («О программе») и проверьте эти сайты через NekoBox."
+            }
+        }
+
         val stalls = all.flatMap { c -> c.checks.filter { it.status == ProbeStatus.STALLED } }
         val freeze = stalls.mapNotNull { it.bytes }.filter { it in 8 * 1024..64 * 1024 }
         if (freeze.size >= 2) {

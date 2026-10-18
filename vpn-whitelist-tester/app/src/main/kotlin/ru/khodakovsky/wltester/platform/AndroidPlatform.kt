@@ -54,10 +54,11 @@ class AndroidPlatform(private val ctx: Context) : EnginePlatform {
             runCatching { tm.signalStrength?.let { signalLevel = it.level } }
         }
 
+        val mccMnc = runCatching { tm.networkOperator }.getOrNull()?.takeIf { it.isNotBlank() }
         return NetworkSnapshot(
             transport = transport,
-            operatorName = runCatching { tm.networkOperatorName }.getOrNull()?.takeIf { it.isNotBlank() },
-            mccMnc = runCatching { tm.networkOperator }.getOrNull()?.takeIf { it.isNotBlank() },
+            operatorName = operatorName(runCatching { tm.networkOperatorName }.getOrNull(), mccMnc),
+            mccMnc = mccMnc,
             simOperator = runCatching { tm.simOperatorName }.getOrNull()?.takeIf { it.isNotBlank() },
             networkType = networkType(),
             signalDbm = signalDbm,
@@ -67,6 +68,17 @@ class AndroidPlatform(private val ctx: Context) : EnginePlatform {
             ourTrafficViaVpn = viaVpn,
             wifiConnected = wifi,
         )
+    }
+
+    /** Некоторые прошивки отдают сокращение вроде «б.» — тогда берём имя по коду сети. */
+    private fun operatorName(raw: String?, mccMnc: String?): String? {
+        val name = raw?.trim().orEmpty()
+        val known = OPERATORS[mccMnc]
+        return when {
+            name.length >= 3 -> name
+            known != null -> known
+            else -> name.ifEmpty { null }
+        }
     }
 
     @SuppressLint("MissingPermission")
@@ -102,5 +114,16 @@ class AndroidPlatform(private val ctx: Context) : EnginePlatform {
         } catch (e: Exception) {
             null
         }
+    }
+
+    companion object {
+        private val OPERATORS = mapOf(
+            "25001" to "МТС",
+            "25002" to "МегаФон",
+            "25099" to "Билайн",
+            "25020" to "T2",
+            "25011" to "Yota",
+            "25035" to "Мотив",
+        )
     }
 }

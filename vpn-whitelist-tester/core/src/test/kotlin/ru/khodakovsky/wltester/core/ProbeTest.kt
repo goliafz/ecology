@@ -194,6 +194,39 @@ class ProbeTest {
     }
 
     @Test
+    fun healthFallsBackToNextUrlAndCorruptionIsReported() = runBlocking {
+        val free = ServerSocket(0).use { it.localPort }
+        val platform = object : EnginePlatform {
+            override fun resolve(host: String) = listOf(localhost)
+            override fun network() = NetworkSnapshot(transport = "CELLULAR")
+        }
+        val tunnels = object : TunnelFactory {
+            override fun start(profiles: List<VlessProfile>, addresses: Map<Int, String>) = object : TunnelSession {
+                override val socksPorts = profiles.map { socksPort }
+                override fun diagnostics() = null
+                override fun close() {}
+            }
+        }
+        val cfg = EngineConfig(
+            ruTargets = emptyList(), foreignTargets = emptyList(), vpnTargets = emptyList(),
+            profiles = listOf(VlessProfile("P", "u", "localhost", tlsPort, sni = "localhost", publicKey = "k")),
+            connectTimeoutMs = 2000, readTimeoutMs = 1500, downloadEnabled = false, dnsUdp = false, ping = false, warmupHost = "",
+            healthUrls = listOf("https://blocked.test/x", "https://localhost:$tlsPort/204"),
+        )
+        val c = CycleEngine(platform, tunnels, sslFactory = ctx.socketFactory).run(CycleKind.QUICK, Trigger.WATCH, cfg)
+        assertEquals(mapOf("P" to true), c.summary.vpn)
+        val health = c.checks.first { it.target == CycleEngine.HEALTH_LABEL }
+        assertTrue(health.info!!.contains("blocked.test"), health.info)
+
+        val corrupt = c.copy(
+            kind = CycleKind.FULL,
+            checks = c.checks + CheckResult(Category.VPN, "www.youtube.com", "P", ProbeStatus.DATA_CORRUPT),
+        )
+        val report = ReportBuilder().build(listOf(corrupt), emptyList())
+        assertTrue(report.contains("BAD_DECRYPT") && report.contains("www.youtube.com"), report)
+    }
+
+    @Test
     fun fullCycleDetectsWhitelistAndReports() = runBlocking {
         val free = ServerSocket(0).use { it.localPort }
         val platform = object : EnginePlatform {
@@ -215,7 +248,8 @@ class ProbeTest {
             profiles = listOf(profile),
             connectTimeoutMs = 2000, readTimeoutMs = 1500,
             downloadEnabled = false, dnsUdp = false, ping = false,
-            healthUrl = "https://localhost:$tlsPort/204",
+            healthUrls = listOf("https://localhost:$tlsPort/204"),
+            warmupHost = "",
         )
         var now = 1_700_000_000_000L
         val engine = CycleEngine(platform, tunnels, clock = { now }, sslFactory = ctx.socketFactory)

@@ -103,6 +103,15 @@ class ParsingTest {
     }
 
     @Test
+    fun badDecryptIsDataCorruption() {
+        val e = javax.net.ssl.SSLProtocolException(
+            "Read error: ssl=0x7d: Failure in SSL library, usually a protocol error\nerror:1e000065:Cipher functions:OPENSSL_internal:BAD_DECRYPT"
+        )
+        assertEquals(ProbeStatus.DATA_CORRUPT, ru.khodakovsky.wltester.core.probe.ErrorMapper.map(Stage.HTTP, e))
+        assertEquals(ProbeStatus.HTTP_TIMEOUT, ru.khodakovsky.wltester.core.probe.ErrorMapper.map(Stage.HTTP, java.net.SocketTimeoutException("Read timed out")))
+    }
+
+    @Test
     fun verdicts() {
         assertEquals(Verdict.NORMAL, Analyzer.verdict(20, 20, 9, 9))
         assertEquals(Verdict.WHITELIST, Analyzer.verdict(15, 20, 0, 9))

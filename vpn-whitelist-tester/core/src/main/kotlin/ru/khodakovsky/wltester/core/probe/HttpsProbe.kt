@@ -331,6 +331,10 @@ object ErrorMapper {
         if (e is UnknownHostException) return ProbeStatus.DNS_FAIL
         if (hasCertCause(e)) return ProbeStatus.CERT_ERROR
         val msg = chainMessages(e)
+        // Рукопожатие прошло, но запись не расшифровалась: байты изменились по дороге (туннель/DPI).
+        if ("bad_decrypt" in msg || "bad_record_mac" in msg || "bad record mac" in msg || "decryption_failed" in msg) {
+            return ProbeStatus.DATA_CORRUPT
+        }
         val timeout = e is SocketTimeoutException || "timed out" in msg || "etimedout" in msg || "timeout" in msg
         val reset = e is EOFException || "reset" in msg || "broken pipe" in msg || "epipe" in msg || "eof" in msg ||
             "closed" in msg || "abort" in msg || "end of stream" in msg || "unexpected end" in msg

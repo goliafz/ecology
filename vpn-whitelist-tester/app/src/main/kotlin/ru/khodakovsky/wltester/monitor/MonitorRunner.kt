@@ -92,7 +92,8 @@ object MonitorRunner {
                 if (c.kind != CycleKind.SKIPPED) {
                     if (isFailing(c)) {
                         val fs = store.updateState { it.copy(failStreak = it.failStreak + 1) }.failStreak
-                        if (fs >= s.failThreshold) {
+                        // Пока шла проверка, мониторинг могли выключить — тогда не поднимаем тревогу.
+                        if (fs >= s.failThreshold && store.get().monitoringEnabled) {
                             store.updateState { it.copy(phase = Phase.ALERT, failStreak = 0, okStreak = 0) }
                             log.event(
                                 EventType.PHASE_CHANGED, "VPN недоступен $fs проверки подряд — включены подробные проверки",
@@ -129,7 +130,7 @@ object MonitorRunner {
         val all = events.toMutableList()
         if (rec.kind == CycleKind.SKIPPED && !st.lastWasSkipped) {
             all += Event(rec.startedAt, EventType.SKIPPED, "Проверки приостановлены — нет мобильной сети", rec.notes.firstOrNull())
-            Notifier.wifiWarning(ctx)
+            if (rec.network.transport == "WIFI") Notifier.wifiWarning(ctx)
         }
         store.updateState { it.copy(memory = mem, lastWasSkipped = rec.kind == CycleKind.SKIPPED) }
         log.appendEvents(all)

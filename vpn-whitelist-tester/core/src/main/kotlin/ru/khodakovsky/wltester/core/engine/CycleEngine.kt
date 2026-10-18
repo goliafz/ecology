@@ -60,7 +60,8 @@ data class EngineConfig(
     val ping: Boolean = true,
     val dnsUdp: Boolean = true,
     val parallelism: Int = 6,
-    val healthUrl: String = Defaults.HEALTH_URL,
+    val healthUrls: List<String> = Defaults.HEALTH_URLS,
+    val warmupHost: String = Defaults.WARMUP_HOST,
     /** Сколько первых сайтов из каждого списка проверять в быстром цикле. */
     val quickSites: Int = 2,
 )
@@ -79,10 +80,14 @@ class CycleEngine(
         val notes = mutableListOf<String>()
 
         if (cfg.requireCellular && !net.isCellular) {
+            val why = if (net.transport == "NONE") {
+                "Нет подключения к интернету (мобильные данные выключены или нет сигнала) — проверка пропущена."
+            } else {
+                "Активна сеть «${net.shortRu()}» — проверки выполняются только через мобильный интернет. Выключите Wi-Fi."
+            }
             return@coroutineScope CycleRecord(
                 id = id, startedAt = started, finishedAt = clock(), kind = CycleKind.SKIPPED, trigger = trigger,
-                network = net,
-                notes = listOf("Активна сеть «${net.shortRu()}» — проверки выполняются только через мобильный интернет. Выключите Wi-Fi."),
+                network = net, notes = listOf(why),
             )
         }
         if (net.ourTrafficViaVpn) {
@@ -90,6 +95,7 @@ class CycleEngine(
         }
 
         val probe = HttpsProbe(platform, cfg.connectTimeoutMs, cfg.readTimeoutMs, sslFactory)
+        waitForDns(probe, cfg)?.let { notes += it }
         val sem = Semaphore(cfg.parallelism.coerceIn(1, 16))
         suspend fun <T> io(block: () -> T): T = sem.io(block)
         val full = kind == CycleKind.FULL
@@ -235,13 +241,39 @@ class CycleEngine(
         port: Int,
         sem: Semaphore,
     ): CheckResult {
-        val t = Target.parse(cfg.healthUrl) ?: Target("www.google.com", 443, "/generate_204")
-        val req = HttpsProbe.Request(Category.VPN, t, label, socksPort = port, maxBytes = 4096, label = HEALTH_LABEL)
-        val first = sem.io { probe.run(req).result }
-        if (first.ok) return first
-        delay(1500)
-        val second = sem.io { probe.run(req).result }
-        return if (second.ok) second.copy(info = "со 2-й попытки (1-я: ${first.status.ru})") else second
+        val failed = mutableListOf<String>()
+        var last: CheckResult? = null
+        for (url in cfg.healthUrls) {
+            val t = Target.parse(url) ?: continue
+            val req = HttpsProbe.Request(Category.VPN, t, label, socksPort = port, maxBytes = 4096, label = HEALTH_LABEL)
+            val r = sem.io { probe.run(req).result }
+            if (r.ok) {
+                val info = "через ${t.host}" + if (failed.isNotEmpty()) "; не прошли: ${failed.joinToString("; ")}" else ""
+                return r.copy(info = info)
+            }
+            failed += "${t.host} — ${r.status.ru}"
+            last = r
+            delay(300)
+        }
+        return (last ?: CheckResult(Category.VPN, HEALTH_LABEL, label, ProbeStatus.SKIPPED))
+            .copy(info = "не прошли: ${failed.joinToString("; ")}")
+    }
+
+    /**
+     * Сразу после переключения сети DNS какое-то время не отвечает, и весь цикл выглядит как «ничего не работает».
+     * Ждём до ~15 с, пока разрешится контрольное имя.
+     */
+    private suspend fun waitForDns(probe: HttpsProbe, cfg: EngineConfig): String? {
+        if (cfg.warmupHost.isBlank()) return null
+        val t0 = clock()
+        repeat(4) { attempt ->
+            val ok = withContext(Dispatchers.IO) { runCatching { probe.resolveWithTimeout(cfg.warmupHost) }.isSuccess }
+            if (ok) {
+                return if (attempt == 0) null else "Сеть была не готова: DNS ответил через ${(clock() - t0) / 1000} с"
+            }
+            delay(2000)
+        }
+        return "DNS не отвечал ${(clock() - t0) / 1000} с перед проверкой (${cfg.warmupHost})"
     }
 
     private suspend fun <T> Semaphore.io(block: () -> T): T = withPermit { withContext(Dispatchers.IO) { block() } }
@@ -307,6 +339,7 @@ class CycleEngine(
         )
 
     companion object {
+        // Имя не меняем: по нему находятся записи в старых журналах.
         const val HEALTH_LABEL = "VPN-туннель (generate_204)"
 
         /** Для обычных сайтов достаточно ответа сервера — тело читаем немного, чтобы не тратить трафик. */

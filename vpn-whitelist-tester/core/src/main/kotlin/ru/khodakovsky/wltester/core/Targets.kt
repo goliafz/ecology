@@ -85,7 +85,18 @@ object Defaults {
         chatgpt.com
     """.trimIndent()
 
-    const val HEALTH_URL = "https://www.google.com/generate_204"
+    /**
+     * «Туннель пропускает трафик» — достаточно ответа хотя бы одного адреса.
+     * Google не первый: через некоторые связки Vision/версий ядра именно сайты Google ломаются отдельно от остального.
+     */
+    val HEALTH_URLS = listOf(
+        "https://cp.cloudflare.com/generate_204",
+        "https://www.google.com/generate_204",
+        "https://www.apple.com/library/test/success.html",
+    )
+
+    /** Этим именем проверяем, готова ли сеть (DNS отвечает), перед началом цикла. */
+    const val WARMUP_HOST = "ya.ru"
     const val DOWNLOAD_RU_URL = "https://yastatic.net/jquery/3.3.1/jquery.min.js"
     const val DOWNLOAD_FOREIGN_URL = "https://speed.cloudflare.com/__down?bytes=262144"
 
