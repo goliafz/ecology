@@ -121,7 +121,7 @@ fun SettingsScreen() {
         }
         RadioRow(
             ScheduleMode.ALWAYS.ru, s.scheduleMode == ScheduleMode.ALWAYS,
-            "Время от времени проверять VPN. Если он пропадёт, проверять всё подробно, пока не вернётся.",
+            "Время от времени проверять VPN, Telegram и WhatsApp. Если VPN пропадёт, проверять всё подробно, пока не вернётся.",
         ) {
             upd { it.copy(scheduleMode = ScheduleMode.ALWAYS) }
             store.updateState { it.copy(phase = Phase.WATCH, failStreak = 0, okStreak = 0) }

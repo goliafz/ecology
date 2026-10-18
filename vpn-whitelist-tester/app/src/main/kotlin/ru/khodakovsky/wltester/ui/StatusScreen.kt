@@ -216,7 +216,7 @@ private fun AutoCard(s: AppSettings, st: MonitorState, last: CycleRecord?) {
             }
             val plan = when (s.scheduleMode) {
                 ScheduleMode.WINDOW -> "Каждый день с ${hhmm(s.windowStart)} до ${hhmm(s.windowEnd)}, раз в ${minutes(s.fullIntervalMin)}."
-                ScheduleMode.ALWAYS -> "Весь день: раз в ${minutes(s.watchIntervalMin)} проверяю VPN. Если он пропадёт, проверяю всё подробно раз в ${minutes(s.fullIntervalMin)}."
+                ScheduleMode.ALWAYS -> "Весь день: раз в ${minutes(s.watchIntervalMin)} проверяю VPN, Telegram и WhatsApp. Если VPN пропадёт, проверяю всё подробно раз в ${minutes(s.fullIntervalMin)}."
             }
             Text(plan, style = MaterialTheme.typography.bodyMedium)
             when {

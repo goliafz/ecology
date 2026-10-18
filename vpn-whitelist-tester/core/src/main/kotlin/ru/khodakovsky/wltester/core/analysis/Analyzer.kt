@@ -87,6 +87,7 @@ data class MonitorMemory(
     val operator: String? = null,
     val networkType: String? = null,
     val messengers: Map<String, Boolean> = emptyMap(),
+    val messengersAt: Long? = null,
 )
 
 object EventDetector {
@@ -129,11 +130,11 @@ object EventDetector {
             m = m.copy(lastVerdict = s.verdict, lastFullAt = ts)
         }
 
-        if (c.kind == CycleKind.FULL && s.messengers.isNotEmpty()) {
+        if (s.messengers.isNotEmpty()) {
             s.messengers.forEach { (name, ok) ->
                 val was = mem.messengers[name]
                 if (was != null && was != ok) {
-                    val between = mem.lastFullAt?.let { "Это произошло между ${fmt(it)} и ${fmt(ts)}. " } ?: ""
+                    val between = mem.messengersAt?.let { "Это произошло между ${fmt(it)} и ${fmt(ts)}. " } ?: ""
                     val sig = c.network.signalText()?.let { "Сигнал: $it. " } ?: ""
                     events += Event(
                         ts, EventType.MESSENGER,
@@ -142,7 +143,7 @@ object EventDetector {
                     )
                 }
             }
-            m = m.copy(messengers = mem.messengers + s.messengers)
+            m = m.copy(messengers = mem.messengers + s.messengers, messengersAt = ts)
         }
 
         if (s.vpnTested) {

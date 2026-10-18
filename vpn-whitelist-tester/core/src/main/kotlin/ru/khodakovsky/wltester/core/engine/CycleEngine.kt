@@ -211,8 +211,13 @@ class CycleEngine(
                     val port = session.socksPorts[i]
                     val out = mutableListOf<CheckResult>()
                     out += healthCheck(probe, cfg, p.label, port, sem)
+                    val sub = mutableListOf<kotlinx.coroutines.Deferred<List<CheckResult>>>()
+                    // В быстрой проверке из списка «через VPN» берём только мессенджеры: они важнее всего для связи.
+                    val targets = if (full) cfg.vpnTargets else cfg.vpnTargets.filter { Analyzer.serviceOf(it.label) in Analyzer.MESSENGER_NAMES }
+                    targets.forEach { t ->
+                        sub += async { io { listOf(probe.run(siteRequest(Category.VPN, t, p.label, port)).result) } }
+                    }
                     if (full) {
-                        val sub = mutableListOf<kotlinx.coroutines.Deferred<List<CheckResult>>>()
                         sub += async {
                             io {
                                 val (check, ip) = publicIp(probe, Defaults.IP_VPN_URLS, p.label, port, "Ваш IP-адрес через VPN")
@@ -220,14 +225,11 @@ class CycleEngine(
                                 listOf(check)
                             }
                         }
-                        cfg.vpnTargets.forEach { t ->
-                            sub += async { io { listOf(probe.run(siteRequest(Category.VPN, t, p.label, port)).result) } }
-                        }
                         if (cfg.downloadEnabled) Target.parse(cfg.downloadForeignUrl)?.let { t ->
                             sub += async { io { listOf(probe.run(downloadRequest(t, "Скачивание через VPN", p.label, port, cfg)).result) } }
                         }
-                        out += sub.awaitAll().flatten()
                     }
+                    out += sub.awaitAll().flatten()
                     out
                 }
             }.awaitAll().flatten()

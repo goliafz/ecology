@@ -227,6 +227,35 @@ class ProbeTest {
     }
 
     @Test
+    fun quickCycleChecksOnlyMessengersThroughVpn() = runBlocking {
+        val platform = object : EnginePlatform {
+            override fun resolve(host: String) = listOf(localhost)
+            override fun network() = NetworkSnapshot(transport = "CELLULAR")
+        }
+        val tunnels = object : TunnelFactory {
+            override fun start(profiles: List<VlessProfile>, addresses: Map<Int, String>) = object : TunnelSession {
+                override val socksPorts = profiles.map { socksPort }
+                override fun diagnostics() = null
+                override fun close() {}
+            }
+        }
+        val cfg = EngineConfig(
+            ruTargets = emptyList(), foreignTargets = emptyList(),
+            vpnTargets = Target.parseList("localhost:$tlsPort # Telegram, сайт\nlocalhost:$tlsPort # WhatsApp, сайт\nlocalhost:$tlsPort # YouTube"),
+            profiles = listOf(VlessProfile("P", "u", "localhost", tlsPort, sni = "localhost", publicKey = "k")),
+            connectTimeoutMs = 2000, readTimeoutMs = 1500, downloadEnabled = false, dnsUdp = false, ping = false,
+            warmupHost = "", healthUrls = listOf("https://localhost:$tlsPort/204"),
+        )
+        val engine = CycleEngine(platform, tunnels, sslFactory = ctx.socketFactory)
+        val quick = engine.run(CycleKind.QUICK, Trigger.WATCH, cfg)
+        val vpnTargets = quick.checks.filter { it.category == Category.VPN && it.target != CycleEngine.HEALTH_LABEL }.map { it.target }
+        assertEquals(listOf("Telegram, сайт (localhost:$tlsPort)", "WhatsApp, сайт (localhost:$tlsPort)"), vpnTargets)
+        assertEquals(mapOf("Telegram" to true, "WhatsApp" to true), quick.summary.messengers)
+        val full = engine.run(CycleKind.FULL, Trigger.MANUAL, cfg)
+        assertTrue(full.checks.any { it.target.startsWith("YouTube") })
+    }
+
+    @Test
     fun fullCycleDetectsWhitelistAndReports() = runBlocking {
         val free = ServerSocket(0).use { it.localPort }
         val platform = object : EnginePlatform {
