@@ -62,7 +62,9 @@ object MonitorRunner {
         val s = store.get()
 
         if (reason == Reason.MANUAL) {
-            cycle(ctx, s, CycleKind.FULL, Trigger.MANUAL)
+            val c = cycle(ctx, s, CycleKind.FULL, Trigger.MANUAL)
+            // Ручная проверка тоже засчитывается: если VPN вернулся, выходим из режима тревоги.
+            if (s.scheduleMode == ScheduleMode.ALWAYS && store.state().phase == Phase.ALERT) trackRecovery(ctx, s, c)
             return
         }
         if (!Scheduler.isActiveNow(s)) return
@@ -78,15 +80,7 @@ object MonitorRunner {
         when (s.scheduleMode) {
             ScheduleMode.WINDOW -> cycle(ctx, s, CycleKind.FULL, Trigger.WINDOW)
             ScheduleMode.ALWAYS -> if (st0.phase == Phase.ALERT) {
-                val c = cycle(ctx, s, CycleKind.FULL, Trigger.ALERT)
-                if (c.kind != CycleKind.SKIPPED) {
-                    val failing = isFailing(c)
-                    val st = store.updateState { if (failing) it.copy(okStreak = 0) else it.copy(okStreak = it.okStreak + 1) }
-                    if (!failing && st.okStreak >= 2) {
-                        store.updateState { it.copy(phase = Phase.WATCH, okStreak = 0, failStreak = 0) }
-                        log.event(EventType.PHASE_CHANGED, "VPN снова работает — возврат к слежению", "Быстрая проверка каждые ${s.watchIntervalMin} мин")
-                    }
-                }
+                trackRecovery(ctx, s, cycle(ctx, s, CycleKind.FULL, Trigger.ALERT))
             } else {
                 val c = cycle(ctx, s, CycleKind.QUICK, Trigger.WATCH)
                 if (c.kind != CycleKind.SKIPPED) {
@@ -99,7 +93,7 @@ object MonitorRunner {
                                 EventType.PHASE_CHANGED, "VPN недоступен $fs проверки подряд — включены подробные проверки",
                                 "Полная проверка каждые ${s.fullIntervalMin} мин, пока VPN не вернётся",
                             )
-                            cycle(ctx, s, CycleKind.FULL, Trigger.ALERT)
+                            trackRecovery(ctx, s, cycle(ctx, s, CycleKind.FULL, Trigger.ALERT))
                         }
                     } else if (store.state().failStreak != 0) {
                         store.updateState { it.copy(failStreak = 0) }
@@ -108,6 +102,20 @@ object MonitorRunner {
             }
         }
     }
+
+    /** В режиме тревоги: после [RECOVERY_OK] успешных проверок подряд возвращаемся к слежению. */
+    private fun trackRecovery(ctx: Context, s: AppSettings, c: CycleRecord) {
+        if (c.kind == CycleKind.SKIPPED) return
+        val store = SettingsStore.get(ctx)
+        val failing = isFailing(c)
+        val st = store.updateState { if (failing) it.copy(okStreak = 0) else it.copy(okStreak = it.okStreak + 1) }
+        if (!failing && st.okStreak >= RECOVERY_OK) {
+            store.updateState { it.copy(phase = Phase.WATCH, okStreak = 0, failStreak = 0) }
+            LogStore.get(ctx).event(EventType.PHASE_CHANGED, "VPN снова работает — возврат к слежению", "Быстрая проверка каждые ${s.watchIntervalMin} мин")
+        }
+    }
+
+    const val RECOVERY_OK = 2
 
     /** «VPN пропал»: туннель не работает ни в одном профиле (или, без профилей, — сеть ограничена). */
     private fun isFailing(c: CycleRecord): Boolean =

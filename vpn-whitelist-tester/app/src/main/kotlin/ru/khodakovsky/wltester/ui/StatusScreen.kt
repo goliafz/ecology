@@ -111,10 +111,16 @@ fun StatusScreen(onOpenSettings: () -> Unit) {
                 Text("Профиль частоты: ${s.preset.ru}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (s.monitoringEnabled) {
                     if (s.scheduleMode == ScheduleMode.ALWAYS) {
-                        Text(
-                            if (st.phase == Phase.ALERT) "Сейчас: VPN недоступен — подробные проверки" else "Сейчас: слежение за VPN",
-                            color = if (st.phase == Phase.ALERT) Red else MaterialTheme.colorScheme.onSurface,
-                        )
+                        val vpnBack = last?.summary?.let { it.vpnTested && it.vpnAny } == true
+                        when {
+                            st.phase != Phase.ALERT -> Text("Сейчас: слежение за VPN")
+                            vpnBack -> Text(
+                                "Режим подробных проверок: VPN снова работает, возврат к слежению после " +
+                                    "${MonitorRunner.RECOVERY_OK} успешных проверок подряд (есть ${st.okStreak})",
+                                color = Amber,
+                            )
+                            else -> Text("Сейчас: VPN недоступен — подробные проверки каждые ${s.fullIntervalMin} мин", color = Red)
+                        }
                     } else if (!Scheduler.inWindow(s)) {
                         Text("Сейчас вне окна — ожидание", color = Gray)
                     }
