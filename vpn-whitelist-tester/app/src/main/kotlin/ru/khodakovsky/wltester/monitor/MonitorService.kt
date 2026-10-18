@@ -143,7 +143,8 @@ object Notifier {
         val st = store.state()
         val mode = when (s.scheduleMode) {
             ScheduleMode.WINDOW -> "По расписанию с ${MonitorRunner.hhmm(s.windowStart)} до ${MonitorRunner.hhmm(s.windowEnd)}, раз в ${s.fullIntervalMin} мин"
-            ScheduleMode.ALWAYS -> if (st.phase == Phase.ALERT) "VPN пропадал, проверяю раз в ${s.fullIntervalMin} мин" else "Слежу за VPN раз в ${s.watchIntervalMin} мин"
+            ScheduleMode.ALWAYS -> if (st.phase == Phase.ALERT) "VPN пропал, подробно раз в ${s.alertIntervalMin} мин"
+            else "Слежу за VPN раз в ${if (Scheduler.inWindow(s)) s.nightWatchMin else s.watchIntervalMin} мин"
         }
         val last = LogStore.get(ctx).lastCycle()?.let { c ->
             val vpn = if (c.summary.vpnTested) (if (c.summary.vpnAny) ", VPN работает" else ", VPN не работает") else ""

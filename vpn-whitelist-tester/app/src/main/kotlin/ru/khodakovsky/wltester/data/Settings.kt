@@ -38,6 +38,10 @@ data class AppSettings(
     val customWatchMin: Int = 15,
     /** Сколько неудачных быстрых проверок подряд считать «VPN пропал». */
     val failThreshold: Int = 2,
+    /** Режим «Весь день»: когда VPN пропал, подробная проверка раз в N минут (дорого, но информативно). */
+    val alertIntervalMin: Int = 2,
+    /** Режим «Весь день»: в ночные часы (windowStart..windowEnd) быстрая проверка VPN раз в N минут. */
+    val nightWatchMin: Int = 5,
     val requireCellular: Boolean = true,
     val autoWifiOff: Boolean = true,
     val reliableAlarms: Boolean = true,

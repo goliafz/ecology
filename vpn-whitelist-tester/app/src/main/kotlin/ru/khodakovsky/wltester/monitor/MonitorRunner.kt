@@ -89,9 +89,12 @@ object MonitorRunner {
                         // Пока шла проверка, мониторинг могли выключить — тогда не поднимаем тревогу.
                         if (fs >= s.failThreshold && store.get().monitoringEnabled) {
                             store.updateState { it.copy(phase = Phase.ALERT, failStreak = 0, okStreak = 0) }
+                            val night = Scheduler.inWindow(s)
                             log.event(
-                                EventType.PHASE_CHANGED, "VPN не ответил $fs раза подряд, проверяю чаще",
-                                "Подробная проверка раз в ${s.fullIntervalMin} мин, пока VPN не вернётся",
+                                EventType.PHASE_CHANGED,
+                                if (night) "VPN не ответил $fs раза подряд ночью: похоже, включили белые списки"
+                                else "VPN не ответил $fs раза подряд",
+                                "Перехожу на подробные проверки раз в ${s.alertIntervalMin} мин, пока VPN не вернётся",
                             )
                             trackRecovery(ctx, s, cycle(ctx, s, CycleKind.FULL, Trigger.ALERT))
                         }
@@ -111,11 +114,13 @@ object MonitorRunner {
         val st = store.updateState { if (failing) it.copy(okStreak = 0) else it.copy(okStreak = it.okStreak + 1) }
         if (!failing && st.okStreak >= RECOVERY_OK) {
             store.updateState { it.copy(phase = Phase.WATCH, okStreak = 0, failStreak = 0) }
-            LogStore.get(ctx).event(EventType.PHASE_CHANGED, "VPN снова работает, проверяю как обычно", "Проверка VPN раз в ${s.watchIntervalMin} мин")
+            val every = if (Scheduler.inWindow(s)) s.nightWatchMin else s.watchIntervalMin
+            LogStore.get(ctx).event(EventType.PHASE_CHANGED, "VPN снова работает, возвращаюсь к быстрым проверкам", "Быстрая проверка раз в $every мин")
         }
     }
 
-    const val RECOVERY_OK = 2
+    /** Сколько удачных подробных проверок подряд нужно, чтобы вернуться к быстрым: одной достаточно. */
+    const val RECOVERY_OK = 1
 
     /** «VPN пропал»: туннель не работает ни в одном профиле (или, без профилей, — сеть ограничена). */
     private fun isFailing(c: CycleRecord): Boolean =

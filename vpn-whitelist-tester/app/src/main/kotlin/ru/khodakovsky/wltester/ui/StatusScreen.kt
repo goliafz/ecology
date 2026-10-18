@@ -216,7 +216,9 @@ private fun AutoCard(s: AppSettings, st: MonitorState, last: CycleRecord?) {
             }
             val plan = when (s.scheduleMode) {
                 ScheduleMode.WINDOW -> "Каждый день с ${hhmm(s.windowStart)} до ${hhmm(s.windowEnd)}, раз в ${minutes(s.fullIntervalMin)}."
-                ScheduleMode.ALWAYS -> "Весь день: раз в ${minutes(s.watchIntervalMin)} проверяю VPN, Telegram и WhatsApp. Если VPN пропадёт, проверяю всё подробно раз в ${minutes(s.fullIntervalMin)}."
+                ScheduleMode.ALWAYS -> "Весь день: раз в ${minutes(s.watchIntervalMin)} проверяю VPN, Telegram и WhatsApp, " +
+                    "а ночью с ${hhmm(s.windowStart)} до ${hhmm(s.windowEnd)} раз в ${minutes(s.nightWatchMin)}. " +
+                    "Если VPN не ответит 2 раза подряд, проверяю всё подробно раз в ${minutes(s.alertIntervalMin)}, пока он не вернётся."
             }
             Text(plan, style = MaterialTheme.typography.bodyMedium)
             when {
@@ -232,7 +234,7 @@ private fun AutoCard(s: AppSettings, st: MonitorState, last: CycleRecord?) {
                             color = Amber,
                         )
                     } else {
-                        Text("VPN пропал, поэтому проверяю чаще, пока он не вернётся.", color = Red)
+                        Text("VPN пропал, поэтому проверяю всё подробно раз в ${minutes(s.alertIntervalMin)}, пока он не вернётся.", color = Red)
                     }
                 }
             }
@@ -322,7 +324,8 @@ fun setMonitoring(ctx: Context, on: Boolean) {
     if (on) store.updateState { it.copy(phase = Phase.WATCH, failStreak = 0, okStreak = 0, lastRunAt = 0, windowActive = false) }
     val mode = when (s.scheduleMode) {
         ScheduleMode.WINDOW -> "С ${hhmm(s.windowStart)} до ${hhmm(s.windowEnd)}, раз в ${minutes(s.fullIntervalMin)}"
-        ScheduleMode.ALWAYS -> "Весь день, VPN раз в ${minutes(s.watchIntervalMin)}"
+        ScheduleMode.ALWAYS -> "Весь день, VPN раз в ${minutes(s.watchIntervalMin)}, ночью раз в ${minutes(s.nightWatchMin)}, " +
+            "при пропаже VPN подробно раз в ${minutes(s.alertIntervalMin)}"
     }
     LogStore.get(ctx).event(EventType.SERVICE, if (on) "Автопроверки включены" else "Автопроверки выключены", if (on) mode else null)
     Scheduler.schedule(ctx)

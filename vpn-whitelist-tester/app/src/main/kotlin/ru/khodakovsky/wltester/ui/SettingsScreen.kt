@@ -121,10 +121,33 @@ fun SettingsScreen() {
         }
         RadioRow(
             ScheduleMode.ALWAYS.ru, s.scheduleMode == ScheduleMode.ALWAYS,
-            "Время от времени проверять VPN, Telegram и WhatsApp. Если VPN пропадёт, проверять всё подробно, пока не вернётся.",
+            "Обычно быстро проверять VPN, Telegram и WhatsApp. Как только VPN не ответит 2 раза подряд (обычно это значит, " +
+                "что включили белые списки), проверять всё подробно и часто. Когда VPN вернётся, снова перейти на быстрые проверки.",
         ) {
             upd { it.copy(scheduleMode = ScheduleMode.ALWAYS) }
             store.updateState { it.copy(phase = Phase.WATCH, failStreak = 0, okStreak = 0) }
+        }
+        if (s.scheduleMode == ScheduleMode.ALWAYS) {
+            Column(Modifier.padding(start = 48.dp)) {
+                Text("Ночные часы: в это время белые списки вероятнее, поэтому VPN проверяется чаще.", style = MaterialTheme.typography.bodySmall)
+                Row(Modifier.padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = {
+                        TimePickerDialog(ctx, { _, h, m -> upd { it.copy(windowStart = h * 60 + m) } }, s.windowStart / 60, s.windowStart % 60, true).show()
+                    }) { Text("С ${hhmm(s.windowStart)}") }
+                    OutlinedButton(onClick = {
+                        TimePickerDialog(ctx, { _, h, m -> upd { it.copy(windowEnd = h * 60 + m) } }, s.windowEnd / 60, s.windowEnd % 60, true).show()
+                    }) { Text("До ${hhmm(s.windowEnd)}") }
+                }
+                NumberField("Ночью проверять VPN раз во сколько минут", s.nightWatchMin, 1..720) { v -> upd { it.copy(nightWatchMin = v) } }
+                NumberField("Когда VPN пропал: подробная проверка раз во сколько минут", s.alertIntervalMin, 1..720) { v ->
+                    upd { it.copy(alertIntervalMin = v) }
+                }
+                val alertMb = s.estimateFullKb() * (60.0 / s.alertIntervalMin) / 1024
+                Text(
+                    "Пока VPN нет, уходит около ${"%.0f".format(alertMb)} МБ мобильного интернета в час. Зато журнал получается подробным.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
 
         // ---------- Частота

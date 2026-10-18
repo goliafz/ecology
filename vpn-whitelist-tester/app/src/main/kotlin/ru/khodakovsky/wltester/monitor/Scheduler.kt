@@ -46,8 +46,9 @@ object Scheduler {
     fun intervalMs(s: AppSettings, st: MonitorState): Long = when (s.scheduleMode) {
         ScheduleMode.WINDOW -> s.fullIntervalMin * 60_000L
         ScheduleMode.ALWAYS -> when {
-            st.phase == Phase.ALERT -> s.fullIntervalMin * 60_000L
+            st.phase == Phase.ALERT -> s.alertIntervalMin.coerceIn(1, 720) * 60_000L
             st.failStreak > 0 -> 60_000L // перепроверить через минуту, прежде чем бить тревогу
+            inWindow(s) -> s.nightWatchMin.coerceIn(1, 720) * 60_000L // ночью белые списки вероятнее, смотрим чаще
             else -> s.watchIntervalMin * 60_000L
         }
     }
