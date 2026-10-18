@@ -87,22 +87,9 @@ namespace MasterVks.UI
                 BackColor = Theme.Background,
                 UseMnemonic = false
             };
-            // Разработчик: рядом с названием, тем же цветом, что подзаголовок.
-            var developer = new Label
-            {
-                Text = "Разработчик: " + Developer,
-                Font = Theme.Base,
-                ForeColor = Theme.Muted,
-                AutoSize = true,
-                BackColor = Theme.Background,
-                UseMnemonic = false
-            };
-            title.SizeChanged += (s, e) => developer.Location = new Point(title.Right + Theme.S(12), title.Top + title.Height - developer.Height - Theme.S(3));
-            developer.Location = new Point(title.Left + title.PreferredWidth + Theme.S(12), Theme.S(9));
-
             var subtitle = new Label
             {
-                Text = "Надёжная запись видеоконференций: экран, оба микрофона и голоса собеседников",
+                Text = "Разработчик: " + Developer,
                 Font = Theme.Small,
                 ForeColor = Theme.Muted,
                 AutoSize = true,
@@ -123,7 +110,6 @@ namespace MasterVks.UI
             header.Controls.Add(logo);
             header.Controls.Add(title);
             header.Controls.Add(subtitle);
-            header.Controls.Add(developer);
             header.Controls.Add(_pill);
             header.Controls.Add(_settingsButton);
             header.Controls.Add(_aboutButton);
