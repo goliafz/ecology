@@ -75,6 +75,9 @@ namespace MasterVks.UI
         private TextBox _nameBox;
         private ModernButton _folderButton;
         private SegmentedToggle _checkMode;
+        private SegmentedToggle _checkTabs;
+        private Panel _recordList, _healthList;
+        private readonly HealthMonitor _health = new HealthMonitor();
         private ModernButton _checkButton;
         private Label _checkTime;
         private ModernButton _recordButton, _pauseButton, _openFolderButton, _settingsButton, _aboutButton, _eventsButton, _showFileButton;
@@ -135,6 +138,7 @@ namespace MasterVks.UI
             FitToWorkingArea();
             if (_launchedByAutostart && _settings.StartMinimizedOnAutostart) WindowState = FormWindowState.Minimized;
             _fastTimer.Start();
+            _health.Start();
             _slowTimer.Start();
             StartPreviewThread();
         }
@@ -455,6 +459,54 @@ namespace MasterVks.UI
             }));
         }
 
+        private void OnCheckRowClick(CheckItem item)
+        {
+            if (item != null && item.Key == SystemCheck.KeyUpdates && item.CanFix && !_checking)
+            {
+                DialogResult r = MessageBox.Show(this,
+                    item.Summary + ".\n\n" +
+                    "Защитить ноутбук от самопроизвольной перезагрузки?\n\n" +
+                    "Что изменится: Windows не будет перезагружаться сама, пока вы вошли в систему, а часы активности станут с 6:00 до 24:00. " +
+                    "Обновления по-прежнему скачиваются и ставятся, а перезагрузку вы делаете сами, когда удобно.\n\n" +
+                    "Windows один раз попросит пароль администратора. При следующих запусках программы пароль не нужен.",
+                    "Обновления Windows", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+                if (r != DialogResult.Yes) return;
+                Task.Run(() => UpdateProtection.RunElevated()).ContinueWith(t => PostToUi(() =>
+                {
+                    string error = t.IsFaulted ? "неизвестная ошибка" : t.Result;
+                    if (error == null)
+                    {
+                        AddEvent(new Notice("Защита от самопроизвольной перезагрузки включена. Проверяю ещё раз…", NoticeLevel.Success));
+                        RunCheck(CheckMode.Silent, false);
+                    }
+                    else
+                    {
+                        AddEvent(new Notice("Защиту от перезагрузки включить не удалось: " + error + ".", NoticeLevel.Warning));
+                    }
+                }));
+                return;
+            }
+            ShowCheckDetails(item);
+        }
+
+        /// <summary>Цветная точка на вкладке: худший результат среди её строк.</summary>
+        private void UpdateTabDots()
+        {
+            if (_checkTabs == null) return;
+            _checkTabs.SetDot(0, GroupColor(SystemCheck.GroupRecord));
+            _checkTabs.SetDot(1, GroupColor(SystemCheck.GroupHealth));
+        }
+
+        private Color? GroupColor(string group)
+        {
+            var items = _rows.Values.Select(r => r.Item).Where(i => i != null && i.Group == group).ToList();
+            if (items.Any(i => i.Status == CheckStatus.Running)) return Theme.Accent;
+            if (items.Any(i => i.Status == CheckStatus.Error)) return Theme.Red;
+            if (items.Any(i => i.Status == CheckStatus.Warning)) return Theme.Yellow;
+            if (items.Any(i => i.Status == CheckStatus.Ok)) return Theme.Green;
+            return null;
+        }
+
         private void ShowCheckDetails(CheckItem item)
         {
             if (item == null) return;
@@ -687,6 +739,8 @@ namespace MasterVks.UI
                 Notice n;
                 while (session.TryTakeNotice(out n)) AddEvent(n);
             }
+            Notice healthNotice;
+            while (_health.TryTakeNotice(out healthNotice)) AddEvent(healthNotice);
 
             WatchSources(session != null);
 
@@ -740,7 +794,7 @@ namespace MasterVks.UI
 
         private bool AnySourceProblem()
         {
-            return _engine.Sources.Any(s => s.IsConfigured && s.State != SourceState.Active && s.State != SourceState.Connecting);
+            return _health.HasProblem || _engine.Sources.Any(s => s.IsConfigured && s.State != SourceState.Active && s.State != SourceState.Connecting);
         }
 
         private void UpdateControls()
@@ -1115,6 +1169,7 @@ namespace MasterVks.UI
             UnregisterHotkeys();
             PowerHelper.KeepAwake(false);
             _overlay.Dispose();
+            _health.Dispose();
             try
             {
                 _engine.Dispose();

@@ -49,6 +49,8 @@ namespace MasterVks.SelfTest
             Run("Человеческие подписи", TestFmt);
             Run("Имена папок и файлов с названием ВКС", TestNames);
             Run("Старые настройки: MKV теперь сохраняется по умолчанию", TestSettingsMigration);
+            Run("Здоровье: правила оценки", TestHealthRules);
+            Run("Здоровье: предупреждения во время работы", TestHealthWatch);
             if (_ffmpeg != null)
             {
                 Run("FFmpeg: запись по аргументам программы (видео + 6 каналов звука)", TestFfmpegRecording);
@@ -533,6 +535,79 @@ namespace MasterVks.SelfTest
             var fresh = new AppSettings();
             fresh.Normalize();
             Check(fresh.KeepMkvAfterConvert && fresh.MeetingName == "", "новые настройки: MKV сохраняется, название пустое");
+        }
+
+        private static void TestHealthRules()
+        {
+            Check(HealthRules.Power(true, 100, true, false, false).Status == CheckStatus.Ok, "от сети: всё хорошо");
+            HealthVerdict battery = HealthRules.Power(false, 80, true, false, false);
+            Check(battery.Status == CheckStatus.Warning && battery.Summary.Contains("батареи"), "от батареи: предупреждение «" + battery.Summary + "»");
+            Check(HealthRules.Power(false, 20, true, false, false).Status == CheckStatus.Error, "от батареи и мало заряда: ошибка");
+            Check(HealthRules.Power(true, 100, true, false, true).Status == CheckStatus.Warning, "схема «Экономия энергии»: предупреждение");
+
+            Check(HealthRules.InActiveHours(8, 17, 10) && !HealthRules.InActiveHours(8, 17, 17) && !HealthRules.InActiveHours(8, 17, 7), "часы активности 8–17");
+            Check(HealthRules.InActiveHours(6, 0, 6) && HealthRules.InActiveHours(6, 0, 23) && !HealthRules.InActiveHours(6, 0, 3), "часы активности через полночь 6–24");
+            Check(HealthRules.InActiveHours(22, 6, 23) && HealthRules.InActiveHours(22, 6, 2) && !HealthRules.InActiveHours(22, 6, 12), "часы активности 22–6");
+
+            HealthVerdict pending = HealthRules.Updates(true, false, 8, 17, 10, TimeSpan.FromDays(3));
+            Check(pending.Status == CheckStatus.Warning && pending.CanFix && pending.Details.Contains("3 дня"), "ждёт перезагрузки: предупреждение, можно защитить");
+            HealthVerdict outside = HealthRules.Updates(false, false, 8, 17, 19, TimeSpan.Zero);
+            Check(outside.Status == CheckStatus.Warning && outside.CanFix, "вне часов активности без защиты: предупреждение");
+            HealthVerdict inside = HealthRules.Updates(false, false, 8, 17, 12, TimeSpan.Zero);
+            Check(inside.Status == CheckStatus.Ok && inside.CanFix, "в часы активности: зелёный, но защиту можно включить");
+            HealthVerdict guarded = HealthRules.Updates(false, true, 6, 0, 3, TimeSpan.Zero);
+            Check(guarded.Status == CheckStatus.Ok && !guarded.CanFix, "защита включена: зелёный, исправлять нечего");
+
+            Check(HealthRules.Processor(20, 8000, 16000, null).Status == CheckStatus.Ok, "процессор и память в норме");
+            Check(HealthRules.Processor(95, 8000, 16000, null).Status == CheckStatus.Warning, "процессор загружен: предупреждение");
+            Check(HealthRules.Processor(10, 600, 8000, null).Status == CheckStatus.Warning, "мало памяти: предупреждение");
+            Check(HealthRules.Processor(10, 8000, 16000, 97).Status == CheckStatus.Warning, "горячо: предупреждение");
+
+            var good = new List<DiskInfo> { new DiskInfo { Name = "NVMe", Health = "Healthy", Media = "SSD" } };
+            Check(HealthRules.Disks(good, 900).Status == CheckStatus.Ok, "исправный SSD");
+            Check(HealthRules.Disks(new List<DiskInfo> { new DiskInfo { Name = "HDD", Health = "Unhealthy" } }, 50).Status == CheckStatus.Error, "неисправный диск: ошибка");
+            Check(HealthRules.Disks(good, 8).Status == CheckStatus.Warning, "медленная запись: предупреждение");
+            Check(HealthRules.Disks(new List<DiskInfo>(), 300).Status == CheckStatus.Ok, "состояние неизвестно, но запись работает: зелёный");
+
+            Check(HealthRules.Stability(0, 0, 0, null, true).Status == CheckStatus.Ok, "сбоев не было");
+            Check(HealthRules.Stability(1, 0, 0, DateTime.Now, true).Status == CheckStatus.Ok, "одно выключение (могли выключить кнопкой): без тревоги");
+            HealthVerdict bsod = HealthRules.Stability(1, 2, 0, DateTime.Now, true);
+            Check(bsod.Status == CheckStatus.Warning && bsod.Summary.Contains("2 синих экрана"), "синие экраны: предупреждение «" + bsod.Summary + "»");
+        }
+
+        private static void TestHealthWatch()
+        {
+            var w = new HealthWatch();
+            double t = 0;
+            Func<HealthSample, List<Notice>> step = s => { t += 5; return w.Feed(s, t); };
+
+            List<Notice> n = step(new HealthSample { OnAc = true, BatteryPercent = 100, CpuPercent = 20, AvailableMb = 8000 });
+            Check(n.Count == 0 && !w.HasProblem, "всё в порядке: тишина");
+
+            n = step(new HealthSample { OnAc = false, BatteryPercent = 90, CpuPercent = 20, AvailableMb = 8000 });
+            Check(n.Count == 1 && n[0].Level == NoticeLevel.Warning && w.HasProblem, "отключили зарядку: одно предупреждение");
+            n = step(new HealthSample { OnAc = false, BatteryPercent = 89, CpuPercent = 20, AvailableMb = 8000 });
+            Check(n.Count == 0, "повторно не предупреждает");
+            n = step(new HealthSample { OnAc = false, BatteryPercent = 25, CpuPercent = 20, AvailableMb = 8000 });
+            Check(n.Count == 1 && n[0].Level == NoticeLevel.Error, "мало заряда: ошибка");
+            n = step(new HealthSample { OnAc = true, BatteryPercent = 26, CpuPercent = 20, AvailableMb = 8000 });
+            Check(n.Count == 1 && n[0].Level == NoticeLevel.Success && !w.HasProblem, "зарядку вернули: сообщение и значок снова зелёный");
+
+            int cpuNotices = 0;
+            for (int i = 0; i < 30; i++) cpuNotices += step(new HealthSample { OnAc = true, CpuPercent = 97, AvailableMb = 8000 }).Count;
+            Check(cpuNotices == 1 && w.HasProblem, "процессор полностью загружен 2,5 минуты: ровно одно предупреждение");
+            int calm = 0;
+            for (int i = 0; i < 20; i++) calm += step(new HealthSample { OnAc = true, CpuPercent = 30, AvailableMb = 8000 }).Count;
+            Check(calm == 1 && !w.HasProblem, "нагрузка спала: одно сообщение, что всё в норме");
+
+            int throttle = 0;
+            for (int i = 0; i < 20; i++) throttle += step(new HealthSample { OnAc = true, CpuPercent = 60, PerformancePercent = 40, AvailableMb = 8000 }).Count;
+            Check(throttle == 1, "процессор сбросил частоту под нагрузкой: одно предупреждение о перегреве");
+
+            n = step(new HealthSample { OnAc = true, CpuPercent = 20, PerformancePercent = 100, AvailableMb = 500, RebootPending = true });
+            Check(n.Count == 2, "мало памяти и Windows ждёт перезагрузки: два предупреждения");
+            n = step(new HealthSample { OnAc = true, CpuPercent = 20, PerformancePercent = 100, AvailableMb = 500, RebootPending = true });
+            Check(n.Count == 0, "без повторов");
         }
 
         // ===================== FFmpeg =====================

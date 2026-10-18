@@ -205,6 +205,62 @@ namespace MasterVks.Core
         [DllImport("kernel32.dll", SetLastError = true)]
         public static extern bool SetProcessInformation(IntPtr process, int infoClass, ref PROCESS_POWER_THROTTLING_STATE info, int size);
 
+        // ---------- Здоровье компьютера ----------
+        [StructLayout(LayoutKind.Sequential)]
+        public struct SYSTEM_POWER_STATUS
+        {
+            public byte ACLineStatus;
+            public byte BatteryFlag;
+            public byte BatteryLifePercent;
+            public byte SystemStatusFlag;
+            public int BatteryLifeTime;
+            public int BatteryFullLifeTime;
+        }
+
+        [DllImport("kernel32.dll")]
+        public static extern bool GetSystemPowerStatus(out SYSTEM_POWER_STATUS status);
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct FILETIME_LONG
+        {
+            public uint Low;
+            public uint High;
+
+            public ulong Value
+            {
+                get { return ((ulong)High << 32) | Low; }
+            }
+        }
+
+        [DllImport("kernel32.dll")]
+        public static extern bool GetSystemTimes(out FILETIME_LONG idle, out FILETIME_LONG kernel, out FILETIME_LONG user);
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct MEMORYSTATUSEX
+        {
+            public uint dwLength;
+            public uint dwMemoryLoad;
+            public ulong ullTotalPhys;
+            public ulong ullAvailPhys;
+            public ulong ullTotalPageFile;
+            public ulong ullAvailPageFile;
+            public ulong ullTotalVirtual;
+            public ulong ullAvailVirtual;
+            public ulong ullAvailExtendedVirtual;
+        }
+
+        [DllImport("kernel32.dll")]
+        public static extern bool GlobalMemoryStatusEx(ref MEMORYSTATUSEX status);
+
+        [DllImport("kernel32.dll")]
+        public static extern ulong GetTickCount64();
+
+        [DllImport("powrprof.dll")]
+        public static extern uint PowerGetActiveScheme(IntPtr rootPowerKey, out IntPtr activePolicyGuid);
+
+        [DllImport("kernel32.dll")]
+        public static extern IntPtr LocalFree(IntPtr mem);
+
         // ---------- Окна и горячие клавиши ----------
         public const int WM_HOTKEY = 0x0312;
         public const uint MOD_ALT = 0x0001;

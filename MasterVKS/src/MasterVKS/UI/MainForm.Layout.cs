@@ -270,16 +270,34 @@ namespace MasterVks.UI
                 UseMnemonic = false
             };
 
-            var list = new Panel { Dock = DockStyle.Fill };
+            // Две вкладки: оборудование для записи и здоровье самого ноутбука.
+            _checkTabs = new SegmentedToggle("Запись и звук", "Ноутбук")
+            {
+                Dock = DockStyle.Top,
+                Height = Theme.S(32)
+            };
+            _tips.SetToolTip(_checkTabs, "«Запись и звук»: экран, микрофоны, звук собеседников, место на диске.\n«Ноутбук»: питание, обновления Windows, процессор и память, диски, сбои Windows.");
+            var tabGap = new Panel { Dock = DockStyle.Top, Height = Theme.S(6) };
+
+            _recordList = new Panel { Dock = DockStyle.Fill };
+            _healthList = new Panel { Dock = DockStyle.Fill, Visible = false };
             var items = SystemCheck.CreateItems();
             for (int i = items.Count - 1; i >= 0; i--)
             {
-                var row = new CheckRowView(items[i]) { Dock = DockStyle.Top };
-                row.Click += (s, e) => ShowCheckDetails(((CheckRowView)s).Item);
+                var row = new CheckRowView(items[i]) { Dock = DockStyle.Top, Height = Theme.S(42) };
+                row.Click += (s, e) => OnCheckRowClick(((CheckRowView)s).Item);
                 _rows[items[i].Key] = row;
-                list.Controls.Add(row);
+                (items[i].Group == SystemCheck.GroupHealth ? _healthList : _recordList).Controls.Add(row);
             }
-            card.Controls.Add(list);
+            _checkTabs.SelectedChanged += (s, e) =>
+            {
+                _recordList.Visible = _checkTabs.SelectedIndex == 0;
+                _healthList.Visible = _checkTabs.SelectedIndex == 1;
+            };
+            card.Controls.Add(_recordList);
+            card.Controls.Add(_healthList);
+            card.Controls.Add(tabGap);
+            card.Controls.Add(_checkTabs);
             card.Controls.Add(_checkTime);
             return card;
         }
@@ -287,8 +305,10 @@ namespace MasterVks.UI
         private void SetRowItem(CheckRowView row, CheckItem item)
         {
             row.Item = item;
+            UpdateTabDots();
             string tip = item.Summary + (string.IsNullOrEmpty(item.Details) ? "" : "\n\n" + item.Details);
-            if (item.Status != CheckStatus.Running && item.Status != CheckStatus.Pending) tip += "\n\nНажмите, чтобы открыть подробности.";
+            if (item.CanFix) tip += "\n\nНажмите, чтобы исправить.";
+            else if (item.Status != CheckStatus.Running && item.Status != CheckStatus.Pending) tip += "\n\nНажмите, чтобы открыть подробности.";
             _tips.SetToolTip(row, WrapTip(tip));
         }
 

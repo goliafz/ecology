@@ -475,6 +475,7 @@ namespace MasterVks.UI
     internal sealed class SegmentedToggle : Control
     {
         private readonly string[] _options;
+        private readonly Color?[] _dots;
         private int _selected;
         private int _hover = -1;
 
@@ -483,6 +484,7 @@ namespace MasterVks.UI
         public SegmentedToggle(params string[] options)
         {
             _options = options;
+            _dots = new Color?[options.Length];
             SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw |
                      ControlStyles.UserPaint | ControlStyles.Selectable, true);
             Font = Theme.Base;
@@ -501,6 +503,14 @@ namespace MasterVks.UI
                 Invalidate();
                 if (SelectedChanged != null) SelectedChanged(this, EventArgs.Empty);
             }
+        }
+
+        /// <summary>Цветная точка перед подписью варианта (null — без точки).</summary>
+        public void SetDot(int index, Color? color)
+        {
+            if (index < 0 || index >= _dots.Length || _dots[index] == color) return;
+            _dots[index] = color;
+            Invalidate();
         }
 
         private int IndexAt(Point p)
@@ -593,8 +603,23 @@ namespace MasterVks.UI
                     }
                 }
                 Color fore = !Enabled ? Theme.Faint : (selected ? Theme.Text : (i == _hover ? Theme.Text : Theme.Muted));
-                Theme.DrawText(g, _options[i], selected ? Theme.Semibold : Font, Rectangle.Round(seg), fore,
-                    TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
+                Font font = selected ? Theme.Semibold : Font;
+                if (_dots[i].HasValue)
+                {
+                    float d = Theme.Sf(8);
+                    int textWidth = TextRenderer.MeasureText(g, _options[i], font, Size.Empty, TextFormatFlags.NoPadding).Width;
+                    float total = d + Theme.Sf(7) + textWidth;
+                    float x = seg.X + Math.Max(Theme.Sf(4), (seg.Width - total) / 2);
+                    using (var dot = new SolidBrush(_dots[i].Value))
+                        g.FillEllipse(dot, x, seg.Y + (seg.Height - d) / 2, d, d);
+                    var textRect = new Rectangle((int)(x + d + Theme.Sf(7)), (int)seg.Y, (int)(seg.Right - x - d - Theme.Sf(7)), (int)seg.Height);
+                    Theme.DrawText(g, _options[i], font, textRect, fore, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding);
+                }
+                else
+                {
+                    Theme.DrawText(g, _options[i], font, Rectangle.Round(seg), fore,
+                        TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
+                }
             }
             if (Focused && ShowFocusCues)
             {

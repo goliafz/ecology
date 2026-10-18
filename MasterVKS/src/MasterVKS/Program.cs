@@ -10,8 +10,15 @@ namespace MasterVks
     internal static class Program
     {
         [STAThread]
-        private static void Main(string[] args)
+        private static int Main(string[] args)
         {
+            // Копия с правами администратора: только включить защиту от перезагрузки и выйти.
+            if (args.Any(a => string.Equals(a, MasterVks.Checks.UpdateProtection.Argument, StringComparison.OrdinalIgnoreCase)))
+            {
+                Log.Init();
+                return MasterVks.Checks.UpdateProtection.ApplyElevated();
+            }
+
             bool createdNew;
             using (var mutex = new Mutex(true, @"Local\MasterVKS.SingleInstance", out createdNew))
             {
@@ -19,7 +26,7 @@ namespace MasterVks
                 {
                     // Программа уже открыта — просто показываем её окно.
                     MainForm.SignalExistingInstance();
-                    return;
+                    return 0;
                 }
 
                 Log.Init();
@@ -74,6 +81,7 @@ namespace MasterVks
                     }
                 }
             }
+            return 0;
         }
     }
 }

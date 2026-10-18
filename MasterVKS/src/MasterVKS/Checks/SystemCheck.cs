@@ -28,6 +28,10 @@ namespace MasterVks.Checks
         public CheckStatus Status = CheckStatus.Pending;
         public string Summary = "Ожидает проверки";
         public string Details = "";
+        /// <summary>Группа: «record» — запись и звук, «health» — здоровье ноутбука.</summary>
+        public string Group = SystemCheck.GroupRecord;
+        /// <summary>Проблему можно исправить по нажатию на строку.</summary>
+        public bool CanFix;
 
         public CheckItem Copy()
         {
@@ -68,6 +72,14 @@ namespace MasterVks.Checks
         public const string KeySystem = "sys";
         public const string KeyTogether = "together";
         public const string KeyDisk = "disk";
+        public const string KeyPower = "power";
+        public const string KeyUpdates = "updates";
+        public const string KeyCpu = "cpu";
+        public const string KeyDrives = "drives";
+        public const string KeyStability = "stability";
+
+        public const string GroupRecord = "record";
+        public const string GroupHealth = "health";
 
         private static readonly double[] ChimeFrequencies = { 880, 1320, 1760 };
         private static readonly double[] ProbeFrequencies = { 14000 };
@@ -89,7 +101,12 @@ namespace MasterVks.Checks
                 new CheckItem { Key = KeyMic2, Title = "Микрофон 2" },
                 new CheckItem { Key = KeySystem, Title = "Звук собеседников" },
                 new CheckItem { Key = KeyTogether, Title = "Два микрофона вместе" },
-                new CheckItem { Key = KeyDisk, Title = "Папка и место на диске" }
+                new CheckItem { Key = KeyDisk, Title = "Папка и место на диске" },
+                new CheckItem { Key = KeyPower, Title = "Питание", Group = GroupHealth },
+                new CheckItem { Key = KeyUpdates, Title = "Обновления Windows", Group = GroupHealth },
+                new CheckItem { Key = KeyCpu, Title = "Процессор, память, охлаждение", Group = GroupHealth },
+                new CheckItem { Key = KeyDrives, Title = "Состояние дисков", Group = GroupHealth },
+                new CheckItem { Key = KeyStability, Title = "Стабильность Windows", Group = GroupHealth }
             };
         }
 
@@ -127,6 +144,12 @@ namespace MasterVks.Checks
                     if (_items[key].Status == CheckStatus.Running) Set(key, CheckStatus.Error, "Проверка не удалась: " + ex.Message, "");
             }
 
+            Safe(KeyPower, CheckPower);
+            Safe(KeyUpdates, CheckUpdates);
+            Safe(KeyCpu, CheckCpu);
+            Safe(KeyDrives, CheckDrives);
+            Safe(KeyStability, CheckStability);
+
             foreach (CheckItem item in _report.Items)
                 Log.Info("Проверка: " + item.Title + ": " + item.Status + ": " + item.Summary + (string.IsNullOrEmpty(item.Details) ? "" : " (" + item.Details + ")"));
             return _report;
@@ -143,6 +166,57 @@ namespace MasterVks.Checks
                 Log.Error("Сбой проверки «" + _items[key].Title + "»", ex);
                 Set(key, CheckStatus.Error, "Проверка не удалась: " + ex.Message, "");
             }
+        }
+
+        private void Set(string key, HealthVerdict v)
+        {
+            _items[key].CanFix = v.CanFix;
+            Set(key, v.Status, v.Summary, v.Details);
+        }
+
+        // ===================== Здоровье ноутбука =====================
+
+        private void CheckPower()
+        {
+            HealthProbe.PowerState p = HealthProbe.ReadPower();
+            Set(KeyPower, HealthRules.Power(p.OnAc, p.BatteryPercent, p.HasBattery, p.BatterySaver, p.PowerSaverPlan));
+        }
+
+        private void CheckUpdates()
+        {
+            HealthProbe.UpdateState u = HealthProbe.ReadUpdates();
+            Set(KeyUpdates, HealthRules.Updates(u.RebootPending, u.NoAutoRebootPolicy, u.ActiveStart, u.ActiveEnd, DateTime.Now.Hour, u.Uptime));
+        }
+
+        private void CheckCpu()
+        {
+            double load = HealthProbe.CpuLoad(1000);
+            double available, total;
+            HealthProbe.Memory(out available, out total);
+            Set(KeyCpu, HealthRules.Processor(load, available, total, HealthProbe.Temperature()));
+        }
+
+        private void CheckDrives()
+        {
+            List<DiskInfo> disks = HealthProbe.Disks();
+            double speed = HealthProbe.WriteSpeed(_settings.OutputFolder);
+            Set(KeyDrives, HealthRules.Disks(disks, speed));
+        }
+
+        private void CheckStability()
+        {
+            HealthProbe.StabilityState st;
+            try
+            {
+                st = HealthProbe.Stability();
+            }
+            catch (Exception ex)
+            {
+                // Журнал Windows недоступен: на запись это не влияет, поэтому не красим строку.
+                Log.Warn("Журнал Windows недоступен", ex);
+                st = new HealthProbe.StabilityState { Readable = false };
+            }
+            Set(KeyStability, HealthRules.Stability(st.UnexpectedShutdowns, st.BlueScreens, st.HardwareErrors, st.Last, st.Readable));
         }
 
         private void Set(string key, CheckStatus status, string summary, string details)
