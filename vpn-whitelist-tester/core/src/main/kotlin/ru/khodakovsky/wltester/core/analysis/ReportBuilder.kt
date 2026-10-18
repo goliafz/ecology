@@ -7,6 +7,7 @@ import ru.khodakovsky.wltester.core.CycleRecord
 import ru.khodakovsky.wltester.core.Defaults
 import ru.khodakovsky.wltester.core.Event
 import ru.khodakovsky.wltester.core.ProbeStatus
+import ru.khodakovsky.wltester.core.SignalGrade
 import ru.khodakovsky.wltester.core.Stage
 import ru.khodakovsky.wltester.core.Verdict
 import ru.khodakovsky.wltester.core.engine.CycleEngine
@@ -142,11 +143,16 @@ class ReportBuilder(private val zone: ZoneId = ZoneId.systemDefault()) {
         }
         line()
 
-        line("=== 5. ВЫВОДЫ И КАК МОЖНО ОБОЙТИ ===")
-        conclusions(all, fulls, wl, normal).forEachIndexed { i, s -> line("${i + 1}. $s") }
+        line("=== 5. СИГНАЛ И КАЧЕСТВО СВЯЗИ ===")
+        signalSection(fulls, normal, wl, partial).forEach { line(it) }
         line()
 
-        line("=== 6. СОБЫТИЯ ===")
+        line("=== 6. ВЫВОДЫ И КАК МОЖНО ОБОЙТИ ===")
+        (conclusions(all, fulls, wl, normal) + messengerConclusions(fulls) + signalConclusions(fulls))
+            .forEachIndexed { i, s -> line("${i + 1}. $s") }
+        line()
+
+        line("=== 7. СОБЫТИЯ ===")
         if (events.isEmpty()) line("Событий нет.")
         events.sortedBy { it.ts }.forEach { e ->
             line("${dm.format(Instant.ofEpochMilli(e.ts))}  ${e.title}" + (e.details?.let { ". $it" } ?: ""))
@@ -284,6 +290,120 @@ class ReportBuilder(private val zone: ZoneId = ZoneId.systemDefault()) {
         }
         if (out.isEmpty()) out += "Явных закономерностей пока нет, нужно больше проверок."
         return out
+    }
+
+    private fun median(xs: List<Double>): Double? = xs.sorted().let { if (it.isEmpty()) null else it[it.size / 2] }
+
+    private fun qualityOf(c: CycleRecord): CheckResult? = c.checks.firstOrNull { it.category == Category.QUALITY }
+
+    private fun lossOf(c: CycleRecord): Int? =
+        qualityOf(c)?.let { q -> if (!q.ok && q.status != ProbeStatus.SKIPPED) 100 else Regex("потерь (\\d+)%").find(q.info ?: "")?.groupValues?.get(1)?.toIntOrNull() }
+
+    /** Связь плохая: слабый сигнал, много шума или заметные потери пакетов. */
+    private fun poorLink(c: CycleRecord): Boolean =
+        (c.network.signalGrade()?.let { it == SignalGrade.WEAK || it == SignalGrade.BAD } == true) || (lossOf(c) ?: 0) >= 20
+
+    private fun signalLine(name: String, cs: List<CycleRecord>): String? {
+        if (cs.isEmpty()) return null
+        val parts = listOfNotNull(
+            median(cs.mapNotNull { it.network.signalDbm?.toDouble() })?.let { "сигнал ${it.toInt()} dBm" },
+            median(cs.mapNotNull { it.network.sinr })?.let { "сигнал/шум ${it.toInt()} дБ" },
+            median(cs.mapNotNull { qualityOf(it)?.ttfbMs?.toDouble() })?.let { "пинг ${it.toInt()} мс" },
+            median(cs.mapNotNull { lossOf(it)?.toDouble() })?.let { "потери ${it.toInt()}%" },
+        )
+        if (parts.isEmpty()) return null
+        return "$name (${cs.size} пров., типичные значения): ${parts.joinToString(", ")}"
+    }
+
+    private fun signalSection(fulls: List<CycleRecord>, normal: List<CycleRecord>, wl: List<CycleRecord>, partial: List<CycleRecord>): List<String> {
+        val out = mutableListOf<String>()
+        out += "Сигнал: от -90 dBm и выше отличный, до -105 хороший, до -115 слабый, ниже очень слабый. " +
+            "Сигнал/шум: от 13 дБ отлично, от 5 хорошо, от 0 слабо, ниже нуля плохо."
+        listOfNotNull(
+            signalLine("Обычный интернет", normal),
+            signalLine("Белые списки", wl),
+            signalLine("Сбои или нет интернета", partial),
+        ).ifEmpty { listOf("Данных о сигнале пока нет.") }.forEach { out += it }
+
+        val withMsg = fulls.filter { it.summary.messengers.isNotEmpty() }
+        withMsg.flatMap { it.summary.messengers.keys }.distinct().forEach { svc ->
+            signalLine("$svc через VPN работал", withMsg.filter { it.summary.messengers[svc] == true })?.let { out += it }
+            signalLine("$svc через VPN не работал", withMsg.filter { it.summary.messengers[svc] == false })?.let { out += it }
+        }
+
+        val byCell = fulls.filter { it.network.cellLabel() != null }.groupBy { it.network.cellLabel()!! }
+        if (byCell.isNotEmpty()) {
+            out += "По вышкам:"
+            byCell.entries.sortedByDescending { it.value.size }.forEach { (cell, cs) ->
+                val normalPct = cs.count { it.summary.verdict == Verdict.NORMAL } * 100 / cs.size
+                val band = cs.mapNotNull { it.network.band }.firstOrNull()?.let { ", диапазон $it" } ?: ""
+                val dist = median(cs.mapNotNull { it.network.towerDistanceM?.toDouble() })?.let { ", до вышки ~${(it / 100).toInt() / 10.0} км" } ?: ""
+                val msgFail = cs.count { c -> c.summary.messengers.values.any { !it } }
+                out += "  $cell$band$dist: ${cs.size} пров., обычный интернет в $normalPct%, мессенджеры с перебоями в $msgFail"
+            }
+        } else {
+            out += "Номер вышки не записывался: для этого нужно разрешить приложению доступ к местоположению."
+        }
+        return out
+    }
+
+    private fun messengerConclusions(fulls: List<CycleRecord>): List<String> {
+        val out = mutableListOf<String>()
+        val withMsg = fulls.filter { it.summary.messengers.isNotEmpty() }
+        val services = withMsg.flatMap { it.summary.messengers.keys }.distinct()
+        services.forEach { svc ->
+            val tested = withMsg.filter { svc in it.summary.messengers }
+            val fails = tested.filter { it.summary.messengers[svc] == false }
+            if (fails.isEmpty()) {
+                out += "$svc через VPN работал во всех ${tested.size} проверках."
+                return@forEach
+            }
+            val others = services - svc
+            val othersOk = fails.count { c -> others.any { c.summary.messengers[it] == true } }
+            val vpnOk = fails.count { it.summary.vpnAny }
+            val poor = fails.count { poorLink(it) }
+            val siteOkServersFail = fails.count { c ->
+                val mine = c.checks.filter { Analyzer.isMessengerCheck(it) && Analyzer.serviceOf(it.target) == svc }
+                mine.any { it.sni != null && it.ok } && mine.filter { it.sni == null }.none { it.ok }
+            }
+            val sb = StringBuilder("$svc через VPN не работал в ${fails.size} из ${tested.size} проверок.")
+            when {
+                poor * 2 > fails.size -> sb.append(
+                    " В большинстве этих случаев связь была плохой (слабый сигнал, шум или потери пакетов), так что вероятная причина в связи.",
+                )
+                othersOk * 2 >= fails.size || vpnOk * 2 >= fails.size -> {
+                    val what = if (othersOk * 2 >= fails.size) others.joinToString() + " через VPN" else "остальные сайты через VPN"
+                    sb.append(
+                        " При этом связь была нормальной, а $what работали. Значит, дело не в сигнале: не доходят именно данные $svc. " +
+                            "Обычно это значит, что $svc не может достучаться до своих серверов с вашего VPN-сервера, или у самого $svc сбой.",
+                    )
+                }
+                else -> sb.append(" Одновременно не работал и сам VPN, так что это общий сбой, а не только $svc.")
+            }
+            if (siteOkServersFail * 2 >= fails.size) {
+                sb.append(" Сайт $svc через VPN открывался, а серверы самого приложения нет: страдает именно приложение.")
+            }
+            out += sb.toString()
+        }
+        return out
+    }
+
+    private fun signalConclusions(fulls: List<CycleRecord>): List<String> {
+        val bad = fulls.filter { it.summary.verdict != Verdict.NORMAL && it.summary.verdict != Verdict.UNKNOWN }
+        val good = fulls.filter { it.summary.verdict == Verdict.NORMAL }
+        if (bad.size < 2 || fulls.none { it.network.signalDbm != null || qualityOf(it) != null }) return emptyList()
+        val poorBad = bad.count { poorLink(it) }
+        val poorGood = good.count { poorLink(it) }
+        return when {
+            poorBad * 2 > bad.size && poorGood * 2 < good.size.coerceAtLeast(1) -> listOf(
+                "Сбои чаще всего совпадают с плохой связью ($poorBad из ${bad.size}). Возможно, часть проблем не из-за ограничений, " +
+                    "а из-за слабого сигнала: сравните с другим местом или другой SIM-картой.",
+            )
+            poorBad * 4 < bad.size -> listOf(
+                "Во время сбоев связь в основном была нормальной (плохая только в $poorBad из ${bad.size}). Значит, сбои вызывает не сигнал, а ограничения.",
+            )
+            else -> emptyList()
+        }
     }
 
     private fun pctOf(h: Map<Stage, Int>, s: Stage, total: Int) = if (total == 0) "0%" else "${(h[s] ?: 0) * 100 / total}%"

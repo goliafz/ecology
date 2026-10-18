@@ -9,6 +9,7 @@ enum class Category(val ru: String) {
     RU("Российские сайты"),
     FOREIGN("Зарубежные сайты"),
     DNS("Поиск адресов сайтов (DNS)"),
+    QUALITY("Качество связи"),
     SERVER("Ваш VPN-сервер"),
     VPN("Сайты через VPN"),
     DOWNLOAD("Скачивание файла"),
@@ -99,8 +100,24 @@ data class NetworkSnapshot(
     val mccMnc: String? = null,
     val simOperator: String? = null,
     val networkType: String? = null,
+    /** Уровень сигнала: для 4G/5G это RSRP, для 2G/3G просто dBm. */
     val signalDbm: Int? = null,
+    /** Полоски Android, 0..4. */
     val signalLevel: Int? = null,
+    /** Качество сигнала (RSRQ), дБ: ближе к нулю лучше. */
+    val rsrq: Int? = null,
+    /** Сигнал/шум (SINR/RSSNR), дБ: чем больше, тем лучше. */
+    val sinr: Double? = null,
+    /** Полная мощность в канале (RSSI), dBm. */
+    val rssi: Int? = null,
+    /** Timing advance: по нему оценивается расстояние до вышки. */
+    val timingAdvance: Int? = null,
+    /** Идентификатор соты (для LTE eNB = cellId / 256). Нужен доступ к местоположению. */
+    val cellId: Long? = null,
+    val pci: Int? = null,
+    val tac: Int? = null,
+    val earfcn: Int? = null,
+    val band: String? = null,
     val roaming: Boolean? = null,
     /** В системе поднят какой-то VPN (например, NekoBox). */
     val vpnInSystem: Boolean = false,
@@ -109,6 +126,51 @@ data class NetworkSnapshot(
     val wifiConnected: Boolean = false,
 ) {
     val isCellular: Boolean get() = transport == "CELLULAR"
+
+    /** Примерное расстояние до вышки по timing advance (LTE: ~78 м на единицу). */
+    val towerDistanceM: Int? get() = timingAdvance?.takeIf { it in 0..1282 }?.let { it * 78 }
+
+    /** Номер базовой станции для LTE (eNB) и сектор. */
+    val enb: Long? get() = cellId?.takeIf { networkType?.contains("LTE") == true }?.let { it / 256 }
+    val sector: Int? get() = cellId?.takeIf { networkType?.contains("LTE") == true }?.let { (it % 256).toInt() }
+
+    fun cellLabel(): String? = when {
+        enb != null -> "вышка $enb, сектор $sector"
+        cellId != null -> "сота $cellId"
+        else -> null
+    }
+
+    /** «хороший: -95 dBm, сигнал/шум 8 дБ, вышка 123456, сектор 2» */
+    fun signalText(): String? {
+        val g = signalGrade() ?: return null
+        val parts = listOfNotNull(
+            signalDbm?.let { "$it dBm" },
+            sinr?.let { "сигнал/шум ${it.toInt()} дБ" },
+            cellLabel(),
+        )
+        return g.ru + if (parts.isNotEmpty()) ": " + parts.joinToString(", ") else ""
+    }
+
+    /** Оценка сигнала простыми словами: худшая из уровня и шума. */
+    fun signalGrade(): SignalGrade? {
+        val byLevel = signalDbm?.let {
+            when {
+                it >= -90 -> SignalGrade.EXCELLENT
+                it >= -105 -> SignalGrade.GOOD
+                it >= -115 -> SignalGrade.WEAK
+                else -> SignalGrade.BAD
+            }
+        }
+        val byNoise = sinr?.let {
+            when {
+                it >= 13 -> SignalGrade.EXCELLENT
+                it >= 5 -> SignalGrade.GOOD
+                it >= 0 -> SignalGrade.WEAK
+                else -> SignalGrade.BAD
+            }
+        }
+        return listOfNotNull(byLevel, byNoise).maxByOrNull { it.ordinal }
+    }
 
     fun shortRu(): String = buildString {
         append(
@@ -126,6 +188,13 @@ data class NetworkSnapshot(
     }
 }
 
+enum class SignalGrade(val ru: String) {
+    EXCELLENT("отличный"),
+    GOOD("хороший"),
+    WEAK("слабый"),
+    BAD("очень слабый"),
+}
+
 @Serializable
 data class Summary(
     val verdict: Verdict = Verdict.UNKNOWN,
@@ -137,6 +206,8 @@ data class Summary(
     val vpn: Map<String, Boolean> = emptyMap(),
     val serverTcpOk: Int = 0,
     val serverTcpTotal: Int = 0,
+    /** Мессенджер через VPN -> работает (хотя бы через один профиль). */
+    val messengers: Map<String, Boolean> = emptyMap(),
 ) {
     val vpnAny: Boolean get() = vpn.values.any { it }
     val vpnTested: Boolean get() = vpn.isNotEmpty()
@@ -164,6 +235,7 @@ enum class EventType(val ru: String) {
     VPN_UP("VPN вернулся"),
     NETWORK_CHANGED("Сеть"),
     PHASE_CHANGED("Режим проверок"),
+    MESSENGER("Мессенджеры"),
     SERVICE("Приложение"),
     SKIPPED("Проверка пропущена"),
     ERROR("Ошибка"),

@@ -146,7 +146,7 @@ object MonitorRunner {
         if (s.notifyEvents) {
             events.filter {
                 (it.type == EventType.VERDICT_CHANGED && !it.title.startsWith("Начальное")) ||
-                    it.type == EventType.VPN_DOWN || it.type == EventType.VPN_UP
+                    it.type == EventType.VPN_DOWN || it.type == EventType.VPN_UP || it.type == EventType.MESSENGER
             }.forEach { Notifier.event(ctx, it) }
         }
         return rec

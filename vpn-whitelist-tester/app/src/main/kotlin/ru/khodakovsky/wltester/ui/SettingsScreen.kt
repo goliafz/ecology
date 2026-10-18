@@ -206,7 +206,7 @@ private fun AdvancedSettings(s: AppSettings, upd: ((AppSettings) -> AppSettings)
     )
     SitesField("Российские сайты", s.ruSites, { v -> upd { it.copy(ruSites = v) } }) { upd { it.copy(ruSites = Defaults.RU_SITES) } }
     SitesField("Зарубежные сайты", s.foreignSites, { v -> upd { it.copy(foreignSites = v) } }) { upd { it.copy(foreignSites = Defaults.FOREIGN_SITES) } }
-    SitesField("Сайты, которые открываются только через VPN", s.vpnSites, { v -> upd { it.copy(vpnSites = v) } }) {
+    SitesField("Сайты и мессенджеры через VPN", s.vpnSites, { v -> upd { it.copy(vpnSites = v) } }) {
         upd { it.copy(vpnSites = Defaults.VPN_SITES) }
     }
 
@@ -221,6 +221,10 @@ private fun AdvancedSettings(s: AppSettings, upd: ((AppSettings) -> AppSettings)
         "Видно, режет ли оператор подключения по имени сайта",
     ) { v -> upd { it.copy(sniMatrix = v) } }
     SwitchRow("Пинг до VPN-сервера", s.ping) { v -> upd { it.copy(ping = v) } }
+    SwitchRow(
+        "Мерить качество связи", s.quality,
+        "Пинг до Яндекса: задержка, разброс и потери. Помогает понять, виноват ли слабый сигнал",
+    ) { v -> upd { it.copy(quality = v) } }
     SwitchRow("Проверять DNS-серверы Google, Cloudflare и Яндекса", s.dnsUdp) { v -> upd { it.copy(dnsUdp = v) } }
     NumberField("Сколько секунд ждать ответа сайта", s.timeoutSec, 2..30) { v -> upd { it.copy(timeoutSec = v) } }
     NumberField("Сколько дней хранить журнал", s.retentionDays, 1..365) { v -> upd { it.copy(retentionDays = v) } }

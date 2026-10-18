@@ -60,6 +60,8 @@ class HttpsProbe(
         val download: Boolean = false,
         val deadlineMs: Long = 20_000,
         val label: String? = null,
+        /** Сервер Telegram: после подключения отправить запрос протокола MTProto и дождаться ответа. */
+        val mtproto: Boolean = false,
     )
 
     class Outcome(val result: CheckResult, val body: String?)
@@ -119,7 +121,15 @@ class HttpsProbe(
                 tcpMs = msSince(t)
             }
 
-            if (!r.tls) {
+            if (r.mtproto) {
+                // Через VPN «подключение» к прокси есть всегда, поэтому проверяем, что сервер Telegram правда отвечает.
+                stage = Stage.HTTP
+                val th = System.nanoTime()
+                raw!!.soTimeout = readTimeoutMs
+                info = MtProto.ping(raw!!)
+                ttfbMs = msSince(th)
+                status = ProbeStatus.OK
+            } else if (!r.tls) {
                 status = ProbeStatus.OK
             } else {
                 stage = Stage.TLS
@@ -299,6 +309,41 @@ class HttpsProbe(
             val o = Regex("O=([^,]+)").find(dn)?.groupValues?.get(1)
             return listOfNotNull(cn, o?.let { "($it)" }).joinToString(" ").ifBlank { dn }
         }
+    }
+}
+
+/**
+ * Минимальный запрос к серверу Telegram: req_pq_multi в транспорте «abridged», без шифрования.
+ * Сервер отвечает resPQ с тем же nonce; так проверяется, что до Telegram доходят именно данные приложения.
+ */
+object MtProto {
+    fun ping(socket: Socket): String {
+        val nonce = ByteArray(16).also { java.util.Random().nextBytes(it) }
+        val ms = System.currentTimeMillis()
+        val msgId = ((ms / 1000) shl 32) or (((ms % 1000) shl 22) and 0xFFFFFFFCL)
+        val body = java.nio.ByteBuffer.allocate(40).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+            .putLong(0L).putLong(msgId).putInt(20).putInt(0xbe7e8ef1.toInt()).put(nonce).array()
+        val out = socket.getOutputStream()
+        out.write(byteArrayOf(0xef.toByte(), (body.size / 4).toByte()))
+        out.write(body)
+        out.flush()
+
+        val input = java.io.DataInputStream(socket.getInputStream())
+        var words = input.readUnsignedByte()
+        if (words == 0x7f) {
+            words = input.readUnsignedByte() or (input.readUnsignedByte() shl 8) or (input.readUnsignedByte() shl 16)
+        }
+        val reply = ByteArray(words * 4).also { input.readFully(it) }
+        if (reply.size == 4) {
+            val code = java.nio.ByteBuffer.wrap(reply).order(java.nio.ByteOrder.LITTLE_ENDIAN).int
+            return "сервер Telegram ответил кодом $code"
+        }
+        if (reply.size < 40) throw IOException("сервер прислал слишком короткий ответ (${reply.size} байт)")
+        val bb = java.nio.ByteBuffer.wrap(reply).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+        val ctor = bb.getInt(20)
+        if (ctor != 0x05162463) throw IOException("ответ не похож на Telegram")
+        if (!reply.copyOfRange(24, 40).contentEquals(nonce)) throw IOException("ответ Telegram не совпал с запросом")
+        return "сервер Telegram ответил"
     }
 }
 

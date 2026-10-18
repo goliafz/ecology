@@ -51,6 +51,8 @@ data class AppSettings(
     val sniMatrix: Boolean = true,
     val ping: Boolean = true,
     val dnsUdp: Boolean = true,
+    /** Пинг, разброс и потери до российского сайта: качество самой мобильной связи. */
+    val quality: Boolean = true,
     val timeoutSec: Int = 6,
     val retentionDays: Int = 30,
 ) {
@@ -70,6 +72,7 @@ data class AppSettings(
         sniMatrix = sniMatrix,
         ping = ping,
         dnsUdp = dnsUdp,
+        quality = quality,
     )
 
     /** Примерный трафик одной полной проверки, КБ. */
@@ -102,9 +105,13 @@ class SettingsStore private constructor(ctx: Context) {
     private val _settings = MutableStateFlow(load())
     val settings: StateFlow<AppSettings> = _settings.asStateFlow()
 
-    private fun load(): AppSettings = prefs.getString("settings", null)?.let {
-        runCatching { WlJson.decodeFromString(AppSettings.serializer(), it) }.getOrNull()
-    } ?: AppSettings()
+    private fun load(): AppSettings {
+        val s = prefs.getString("settings", null)?.let {
+            runCatching { WlJson.decodeFromString(AppSettings.serializer(), it) }.getOrNull()
+        } ?: return AppSettings()
+        // Старый список «через VPN», если его не меняли, заменяем новым (с серверами Telegram).
+        return if (s.vpnSites.trim() == Defaults.VPN_SITES_V1.trim()) s.copy(vpnSites = Defaults.VPN_SITES) else s
+    }
 
     fun get(): AppSettings = _settings.value
 

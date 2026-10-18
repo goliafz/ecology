@@ -159,6 +159,20 @@ private fun NowCard(last: CycleRecord?, progress: String?) {
                         }
                     }
                 }
+                last.summary.messengers.forEach { (name, ok) ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Dot(if (ok) Green else Red)
+                        Spacer(Modifier.width(8.dp))
+                        Text(if (ok) "$name через VPN работает" else "$name через VPN не работает", color = if (ok) Green else Red)
+                    }
+                }
+                last.network.signalGrade()?.let { g ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Dot(gradeColor(g))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Сигнал мобильной сети: ${g.ru}")
+                    }
+                }
             }
             if (last != null) {
                 Text(
@@ -271,6 +285,7 @@ private fun DetailsCard(c: CycleRecord?, net: NetworkSnapshot?) {
             if (sm.serverTcpTotal > 0) Text("Подключение к VPN-серверу: ${if (sm.serverTcpOk == sm.serverTcpTotal) "есть" else "нет"}")
             c.publicIpDirect?.let { Text("Ваш IP-адрес без VPN: $it", style = MaterialTheme.typography.bodySmall) }
             c.publicIpVpn.forEach { (k, v) -> Text("IP-адрес через VPN «$k»: $v", style = MaterialTheme.typography.bodySmall) }
+            signalDetails(c).forEach { Text(it, style = MaterialTheme.typography.bodySmall) }
             Text("Проверка шла ${(c.finishedAt - c.startedAt) / 1000} с", style = MaterialTheme.typography.bodySmall)
             c.notes.forEach { Text(it, color = Amber, style = MaterialTheme.typography.bodySmall) }
             Text("Все сайты по отдельности видны в разделе «Журнал».", style = MaterialTheme.typography.bodySmall, color = Gray)
@@ -358,6 +373,25 @@ private fun buildTodos(
     if (!Scheduler.canScheduleExact(ctx) && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
         out += Todo("Разрешите будильники, чтобы проверки начинались вовремя.", "Разрешить") {
             ctx.startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:${ctx.packageName}")))
+        }
+    }
+    if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+        out += Todo(
+            "Необязательно: разрешите доступ к местоположению, тогда в журнале будет видно, к какой вышке подключён телефон " +
+                "и в каком диапазоне. Координаты приложение не записывает.",
+            "Разрешить",
+            important = false,
+        ) { requestPermission(Manifest.permission.ACCESS_FINE_LOCATION) }
+    } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+        ContextCompat.checkSelfPermission(ctx, Manifest.permission.ACCESS_BACKGROUND_LOCATION) != PackageManager.PERMISSION_GRANTED
+    ) {
+        out += Todo(
+            "Необязательно: чтобы вышка записывалась и ночью, в настройках приложения откройте «Разрешения», затем «Местоположение» " +
+                "и выберите «Разрешить в любом режиме».",
+            "Открыть настройки",
+            important = false,
+        ) {
+            ctx.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${ctx.packageName}")))
         }
     }
     if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) {

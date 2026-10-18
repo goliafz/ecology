@@ -132,11 +132,25 @@ private fun CycleItem(c: CycleRecord, onlyFailures: Boolean) {
                         style = MaterialTheme.typography.bodySmall, color = if (ok) Green else Red,
                     )
                 }
+                if (s.messengers.isNotEmpty()) {
+                    Text(
+                        s.messengers.entries.joinToString(". ") { "${it.key} через VPN: ${if (it.value) "работает" else "не работает"}" },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (s.messengers.values.all { it }) Green else Red,
+                    )
+                }
+                c.network.signalGrade()?.let { g ->
+                    Text(
+                        "Сигнал: ${g.ru}" + (c.network.signalDbm?.let { ", $it dBm" } ?: "") + (c.network.sinr?.let { ", сигнал/шум ${it.toInt()} дБ" } ?: ""),
+                        style = MaterialTheme.typography.bodySmall, color = gradeColor(g),
+                    )
+                }
             }
             Text(c.network.shortRu(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (!expanded) return@Column
 
             c.notes.forEach { Text(it, color = Amber, style = MaterialTheme.typography.bodySmall) }
+            signalDetails(c).forEach { Text(it, style = MaterialTheme.typography.bodySmall) }
             c.publicIpDirect?.let { Text("Ваш IP-адрес без VPN: $it", style = MaterialTheme.typography.bodySmall) }
             c.publicIpVpn.forEach { (k, v) -> Text("IP-адрес через VPN «$k»: $v", style = MaterialTheme.typography.bodySmall) }
             Category.entries.forEach { cat ->

@@ -30,8 +30,8 @@ import java.net.InetAddress
 interface EnginePlatform : NetPlatform {
     fun network(): NetworkSnapshot
 
-    /** ICMP-пинг; null — если ping недоступен на устройстве. */
-    fun ping(ip: String): PingParser.Stats? = null
+    /** ICMP-пинг; null, если ping недоступен на устройстве. */
+    fun ping(ip: String, count: Int = 3): PingParser.Stats? = null
 }
 
 /** Запуск локального xray с SOCKS-входом на каждый профиль. */
@@ -48,6 +48,9 @@ data class EngineConfig(
     val ruTargets: List<Target> = Target.parseList(Defaults.RU_SITES),
     val foreignTargets: List<Target> = Target.parseList(Defaults.FOREIGN_SITES),
     val vpnTargets: List<Target> = Target.parseList(Defaults.VPN_SITES),
+    /** Пинг, разброс и потери до российского сайта: качество самой мобильной связи. */
+    val quality: Boolean = true,
+    val qualityHost: String = Defaults.QUALITY_PING_HOST,
     val profiles: List<VlessProfile> = emptyList(),
     val connectTimeoutMs: Int = 6000,
     val readTimeoutMs: Int = 8000,
@@ -111,8 +114,11 @@ class CycleEngine(
         val direct = mutableListOf<kotlinx.coroutines.Deferred<List<CheckResult>>>()
         val ru = if (full) cfg.ruTargets else cfg.ruTargets.take(cfg.quickSites)
         val foreign = if (full) cfg.foreignTargets else cfg.foreignTargets.take(cfg.quickSites)
-        ru.forEach { t -> direct += async { listOf(io { probe.run(HttpsProbe.Request(Category.RU, t, maxBytes = SITE_BYTES)).result }) } }
-        foreign.forEach { t -> direct += async { listOf(io { probe.run(HttpsProbe.Request(Category.FOREIGN, t, maxBytes = SITE_BYTES)).result }) } }
+        ru.forEach { t -> direct += async { listOf(io { probe.run(siteRequest(Category.RU, t)).result }) } }
+        foreign.forEach { t -> direct += async { listOf(io { probe.run(siteRequest(Category.FOREIGN, t)).result }) } }
+        if (full && cfg.quality && cfg.qualityHost.isNotBlank()) {
+            direct += async { listOf(io { qualityCheck(probe, cfg.qualityHost) }) }
+        }
 
         var publicIpDirect: String? = null
         if (full) {
@@ -215,7 +221,7 @@ class CycleEngine(
                             }
                         }
                         cfg.vpnTargets.forEach { t ->
-                            sub += async { io { listOf(probe.run(HttpsProbe.Request(Category.VPN, t, p.label, socksPort = port, maxBytes = SITE_BYTES)).result) } }
+                            sub += async { io { listOf(probe.run(siteRequest(Category.VPN, t, p.label, port)).result) } }
                         }
                         if (cfg.downloadEnabled) Target.parse(cfg.downloadForeignUrl)?.let { t ->
                             sub += async { io { listOf(probe.run(downloadRequest(t, "Скачивание через VPN", p.label, port, cfg)).result) } }
@@ -305,6 +311,36 @@ class CycleEngine(
         return probe.run(req).result
     }
 
+    private fun siteRequest(category: Category, t: Target, route: String = CheckResult.DIRECT, socksPort: Int? = null) =
+        if (t.tcpOnly || t.mtproto) {
+            HttpsProbe.Request(category, t, route, socksPort = socksPort, tls = false, http = false, mtproto = t.mtproto)
+        } else {
+            HttpsProbe.Request(category, t, route, socksPort = socksPort, maxBytes = SITE_BYTES)
+        }
+
+    private fun qualityCheck(probe: HttpsProbe, host: String): CheckResult {
+        val t0 = System.nanoTime()
+        val label = "Пинг до $host"
+        val ip = try {
+            probe.resolveWithTimeout(host).let { list -> list.firstOrNull { it is Inet4Address } ?: list.first() }
+        } catch (e: Exception) {
+            return CheckResult(Category.QUALITY, label, status = ProbeStatus.DNS_FAIL, totalMs = HttpsProbe.msSince(t0), error = ErrorMapper.describe(e))
+        }
+        val addr = ip.hostAddress ?: host
+        val st = runCatching { platform.ping(addr, QUALITY_PINGS) }.getOrNull()
+            ?: return CheckResult(Category.QUALITY, label, status = ProbeStatus.SKIPPED, ip = addr, totalMs = HttpsProbe.msSince(t0), error = "на телефоне нет команды ping")
+        val info = buildString {
+            st.avgMs?.let { append("в среднем ${it.toLong()} мс") }
+            st.mdevMs?.let { append(", разброс ${it.toLong()} мс") }
+            append(if (isEmpty()) "" else ", ").append("потерь ${st.lossPct}% (${st.sent - st.received} из ${st.sent})")
+        }
+        return CheckResult(
+            Category.QUALITY, label,
+            status = if (st.received > 0) ProbeStatus.OK else ProbeStatus.TCP_TIMEOUT,
+            ip = addr, ttfbMs = st.avgMs?.toLong(), totalMs = HttpsProbe.msSince(t0), info = info,
+        )
+    }
+
     private fun pingCheck(host: String, ip: InetAddress): CheckResult {
         val t0 = System.nanoTime()
         val addr = ip.hostAddress ?: host
@@ -344,6 +380,9 @@ class CycleEngine(
 
         /** Для обычных сайтов достаточно ответа сервера — тело читаем немного, чтобы не тратить трафик. */
         const val SITE_BYTES = 8L * 1024
+
+        /** Пакетов для замера качества связи: по 10 видно и разброс, и потери. */
+        const val QUALITY_PINGS = 10
         private val IP_RE = Regex("\\b\\d{1,3}(?:\\.\\d{1,3}){3}\\b|\\b[0-9a-fA-F]{1,4}(?::[0-9a-fA-F]{0,4}){2,7}\\b")
     }
 }

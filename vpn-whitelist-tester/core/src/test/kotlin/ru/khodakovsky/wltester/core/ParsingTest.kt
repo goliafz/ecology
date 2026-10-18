@@ -67,7 +67,8 @@ class ParsingTest {
 
     @Test
     fun targetParsing() {
-        assertEquals(Target("ya.ru"), Target.parse("  ya.ru  # comment"))
+        assertEquals(Target("ya.ru"), Target.parse("  ya.ru  "))
+        assertEquals("Яндекс (ya.ru)", Target.parse("ya.ru # Яндекс")!!.label)
         assertEquals(Target("h", 8443, "/", "h:8443"), Target.parse("h:8443"))
         val u = Target.parse("https://speed.example.com/__down?bytes=100")!!
         assertEquals("speed.example.com", u.host)

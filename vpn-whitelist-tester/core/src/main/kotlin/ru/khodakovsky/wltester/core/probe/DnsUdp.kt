@@ -107,11 +107,19 @@ object DnsUdp {
 
 /** Разбор вывода системного ping. */
 object PingParser {
-    data class Stats(val sent: Int, val received: Int, val avgMs: Double?)
+    data class Stats(val sent: Int, val received: Int, val avgMs: Double?, val mdevMs: Double? = null, val maxMs: Double? = null) {
+        val lossPct: Int get() = if (sent == 0) 100 else (sent - received) * 100 / sent
+    }
 
     fun parse(output: String): Stats? {
         val m = Regex("(\\d+) packets transmitted, (\\d+) (?:packets )?received").find(output) ?: return null
-        val avg = Regex("= [\\d.]+/([\\d.]+)/").find(output)?.groupValues?.get(1)?.toDoubleOrNull()
-        return Stats(m.groupValues[1].toInt(), m.groupValues[2].toInt(), avg)
+        val rtt = Regex("= ([\\d.]+)/([\\d.]+)/([\\d.]+)(?:/([\\d.]+))?").find(output)?.groupValues
+        return Stats(
+            sent = m.groupValues[1].toInt(),
+            received = m.groupValues[2].toInt(),
+            avgMs = rtt?.get(2)?.toDoubleOrNull(),
+            mdevMs = rtt?.get(4)?.toDoubleOrNull(),
+            maxMs = rtt?.get(3)?.toDoubleOrNull(),
+        )
     }
 }

@@ -1,5 +1,6 @@
 package ru.khodakovsky.wltester.core.analysis
 
+import ru.khodakovsky.wltester.core.Category
 import ru.khodakovsky.wltester.core.CycleRecord
 import ru.khodakovsky.wltester.core.Event
 import java.time.Instant
@@ -32,7 +33,9 @@ class Csv(zone: ZoneId = ZoneId.systemDefault()) {
     fun cycles(cycles: List<CycleRecord>): String = table(
         listOf(
             "time", "cycle_id", "kind", "trigger", "verdict", "ru_ok", "ru_total", "foreign_ok", "foreign_total", "vpn",
-            "server_tcp_ok", "server_tcp_total", "transport", "operator", "mcc_mnc", "net_type", "signal_dbm", "vpn_in_system",
+            "server_tcp_ok", "server_tcp_total", "messengers", "transport", "operator", "mcc_mnc", "net_type", "signal_dbm",
+            "signal_grade", "rsrq", "sinr", "rssi", "timing_advance", "tower_km", "cell_id", "enb", "pci", "tac", "earfcn", "band",
+            "ping_ms", "ping_loss", "vpn_in_system",
             "tester_via_vpn", "public_ip", "public_ip_vpn", "duration_s", "notes",
         ),
         cycles.map { c ->
@@ -40,8 +43,15 @@ class Csv(zone: ZoneId = ZoneId.systemDefault()) {
             listOf(
                 t(c.startedAt), c.id, c.kind.name, c.trigger.name, s.verdict.name, s.ruOk, s.ruTotal, s.foreignOk, s.foreignTotal,
                 s.vpn.entries.joinToString(" ") { "${it.key}=${if (it.value) "ok" else "fail"}" },
-                s.serverTcpOk, s.serverTcpTotal, c.network.transport, c.network.operatorName, c.network.mccMnc,
-                c.network.networkType, c.network.signalDbm, if (c.network.vpnInSystem) 1 else 0,
+                s.serverTcpOk, s.serverTcpTotal,
+                s.messengers.entries.joinToString(" ") { "${it.key}=${if (it.value) "ok" else "fail"}" },
+                c.network.transport, c.network.operatorName, c.network.mccMnc,
+                c.network.networkType, c.network.signalDbm, c.network.signalGrade()?.ru, c.network.rsrq, c.network.sinr,
+                c.network.rssi, c.network.timingAdvance, c.network.towerDistanceM?.let { it / 1000.0 }, c.network.cellId,
+                c.network.enb, c.network.pci, c.network.tac, c.network.earfcn, c.network.band,
+                c.checks.firstOrNull { it.category == Category.QUALITY }?.ttfbMs,
+                c.checks.firstOrNull { it.category == Category.QUALITY }?.info?.let { Regex("потерь (\\d+)%").find(it)?.groupValues?.get(1) },
+                if (c.network.vpnInSystem) 1 else 0,
                 if (c.network.ourTrafficViaVpn) 1 else 0, c.publicIpDirect,
                 c.publicIpVpn.entries.joinToString(" ") { "${it.key}=${it.value}" },
                 (c.finishedAt - c.startedAt) / 1000, c.notes.joinToString(" | "),

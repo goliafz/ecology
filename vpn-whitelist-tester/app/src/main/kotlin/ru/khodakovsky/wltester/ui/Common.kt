@@ -132,7 +132,12 @@ fun friendlyTarget(r: ru.khodakovsky.wltester.core.CheckResult): String {
 fun friendlyStatus(r: ru.khodakovsky.wltester.core.CheckResult): String {
     val health = r.target == ru.khodakovsky.wltester.core.engine.CycleEngine.HEALTH_LABEL
     return when {
-        r.status == ProbeStatus.OK -> if (health) "работает" else "открылся"
+        r.status == ProbeStatus.OK -> when {
+            health -> "работает"
+            r.category == ru.khodakovsky.wltester.core.Category.QUALITY -> "связь есть"
+            r.sni == null && r.route != ru.khodakovsky.wltester.core.CheckResult.DIRECT -> "отвечает"
+            else -> "открылся"
+        }
         r.ok -> r.status.ru
         health -> "не работает: " + r.status.ru
         else -> "не открылся: " + r.status.ru
@@ -153,4 +158,32 @@ fun verdictExplain(v: Verdict): String = when (v) {
     Verdict.PARTIAL -> "Что-то открывается, что-то нет. Возможно, сеть нестабильна или ограничения включаются."
     Verdict.NO_INTERNET -> "Не открываются ни российские, ни зарубежные сайты."
     Verdict.UNKNOWN -> "Не хватило данных, чтобы сделать вывод."
+}
+
+fun gradeColor(g: ru.khodakovsky.wltester.core.SignalGrade): Color = when (g) {
+    ru.khodakovsky.wltester.core.SignalGrade.EXCELLENT, ru.khodakovsky.wltester.core.SignalGrade.GOOD -> Green
+    ru.khodakovsky.wltester.core.SignalGrade.WEAK -> Amber
+    ru.khodakovsky.wltester.core.SignalGrade.BAD -> Red
+}
+
+/** Строки о сигнале и связи для раздела «Подробности» и журнала. */
+fun signalDetails(c: ru.khodakovsky.wltester.core.CycleRecord): List<String> {
+    val n = c.network
+    val out = mutableListOf<String>()
+    val sig = listOfNotNull(
+        n.signalDbm?.let { "уровень $it dBm" },
+        n.sinr?.let { "сигнал/шум ${it.toInt()} дБ" },
+        n.rsrq?.let { "качество (RSRQ) $it дБ" },
+    )
+    if (sig.isNotEmpty()) out += "Сигнал ${n.signalGrade()?.ru ?: ""}: ${sig.joinToString(", ")}"
+    val tower = listOfNotNull(
+        n.cellLabel(),
+        n.band?.let { "диапазон $it" },
+        n.towerDistanceM?.let { "до вышки около ${"%.1f".format(it / 1000.0)} км" },
+    )
+    if (tower.isNotEmpty()) out += tower.joinToString(", ").replaceFirstChar { it.uppercase() }
+    c.checks.firstOrNull { it.category == ru.khodakovsky.wltester.core.Category.QUALITY }?.let { q ->
+        out += "${q.target}: " + (q.info ?: friendlyStatus(q))
+    }
+    return out
 }
