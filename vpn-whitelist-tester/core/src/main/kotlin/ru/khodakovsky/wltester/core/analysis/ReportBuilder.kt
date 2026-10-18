@@ -71,7 +71,7 @@ class ReportBuilder(private val zone: ZoneId = ZoneId.systemDefault()) {
         val skipped = all.count { it.kind == CycleKind.SKIPPED }
         line("Период: с ${full.format(Instant.ofEpochMilli(all.first().startedAt))} по ${full.format(Instant.ofEpochMilli(all.last().startedAt))}")
         line("Проверок: полных ${fulls.size}, быстрых проверок VPN $quick, пропущено $skipped (не было мобильного интернета)")
-        val operators = all.mapNotNull { it.network.operatorName?.takeIf { n -> n.isNotBlank() } }.groupingBy { it }.eachCount()
+        val operators = all.mapNotNull { it.network.operatorText()?.takeIf { n -> n.isNotBlank() } }.groupingBy { it }.eachCount()
         if (operators.isNotEmpty()) line("Оператор: " + operators.entries.joinToString { "${it.key} (${it.value} пров.)" })
         val types = all.mapNotNull { it.network.networkType }.groupingBy { it }.eachCount()
         if (types.isNotEmpty()) line("Тип сети: " + types.entries.joinToString { "${it.key} (${it.value} пров.)" })
@@ -342,7 +342,9 @@ class ReportBuilder(private val zone: ZoneId = ZoneId.systemDefault()) {
                 out += "  $cell$band$dist: ${cs.size} пров., обычный интернет в $normalPct%, мессенджеры с перебоями в $msgFail"
             }
         } else {
-            out += "Номер вышки не записывался: для этого нужно разрешить приложению доступ к местоположению."
+            val why = fulls.mapNotNull { it.network.cellNote }.groupingBy { it }.eachCount().maxByOrNull { it.value }?.key
+                ?: "нужно разрешить приложению доступ к местоположению"
+            out += "Номер вышки не записывался: $why."
         }
         return out
     }

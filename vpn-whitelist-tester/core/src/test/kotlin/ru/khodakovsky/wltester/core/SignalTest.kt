@@ -56,6 +56,14 @@ class SignalTest {
     }
 
     @Test
+    fun simAndNetworkOperatorsShownSeparately() {
+        val n = NetworkSnapshot(transport = "CELLULAR", operatorName = "MTS RUS", mccMnc = "25001", simOperator = "Билайн", simMccMnc = "25099")
+        assertTrue(n.foreignNetwork)
+        assertEquals("MTS RUS (SIM: Билайн)", n.operatorText())
+        assertEquals("Билайн", NetworkSnapshot(operatorName = "Билайн", mccMnc = "25099", simOperator = "Билайн", simMccMnc = "25099").operatorText())
+    }
+
+    @Test
     fun messengerSummaryPrefersAppServers() {
         val checks = listOf(
             CheckResult(Category.VPN, "Telegram, сайт (telegram.org)", status = ProbeStatus.OK, sni = "telegram.org"),

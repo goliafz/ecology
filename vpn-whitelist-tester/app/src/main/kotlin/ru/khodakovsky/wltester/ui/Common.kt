@@ -170,6 +170,13 @@ fun gradeColor(g: ru.khodakovsky.wltester.core.SignalGrade): Color = when (g) {
 fun signalDetails(c: ru.khodakovsky.wltester.core.CycleRecord): List<String> {
     val n = c.network
     val out = mutableListOf<String>()
+    n.simOperator?.let { sim ->
+        out += "SIM-карта с интернетом: $sim" + (n.dataSimSlot?.let { " (слот $it)" } ?: "")
+    }
+    if (n.foreignNetwork) {
+        out += "Телефон сейчас в сети «${n.operatorName}», хотя SIM-карта «${n.simOperator}». Так бывает в роуминге " +
+            "или когда операторы пользуются общими вышками." + if (n.roaming == true) " Телефон считает, что он в роуминге." else ""
+    }
     val sig = listOfNotNull(
         n.signalDbm?.let { "уровень $it dBm" },
         n.sinr?.let { "сигнал/шум ${it.toInt()} дБ" },
@@ -182,6 +189,7 @@ fun signalDetails(c: ru.khodakovsky.wltester.core.CycleRecord): List<String> {
         n.towerDistanceM?.let { "до вышки около ${"%.1f".format(it / 1000.0)} км" },
     )
     if (tower.isNotEmpty()) out += tower.joinToString(", ").replaceFirstChar { it.uppercase() }
+    if (n.cellId == null && n.isCellular) n.cellNote?.let { out += "Номер вышки не виден: $it." }
     c.checks.firstOrNull { it.category == ru.khodakovsky.wltester.core.Category.QUALITY }?.let { q ->
         out += "${q.target}: " + (q.info ?: friendlyStatus(q))
     }

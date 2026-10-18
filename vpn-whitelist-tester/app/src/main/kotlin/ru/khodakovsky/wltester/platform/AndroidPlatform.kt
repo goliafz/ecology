@@ -14,6 +14,7 @@ import android.telephony.CellInfoNr
 import android.telephony.CellInfoWcdma
 import android.telephony.CellSignalStrengthLte
 import android.telephony.CellSignalStrengthNr
+import android.telephony.SubscriptionManager
 import android.telephony.TelephonyManager
 import androidx.core.content.ContextCompat
 import ru.khodakovsky.wltester.core.NetworkSnapshot
@@ -24,9 +25,19 @@ import java.util.concurrent.TimeUnit
 class AndroidPlatform(private val ctx: Context) : EnginePlatform {
 
     private val cm = ctx.getSystemService(ConnectivityManager::class.java)
-    private val tm = ctx.getSystemService(TelephonyManager::class.java)
+    private val baseTm = ctx.getSystemService(TelephonyManager::class.java)
+
+    /** SIM-карта, через которую идёт мобильный интернет. На телефоне с двумя SIM это не обязательно основная. */
+    private var tm: TelephonyManager = baseTm
+
+    private fun dataTm(): TelephonyManager {
+        val id = SubscriptionManager.getDefaultDataSubscriptionId()
+        if (id == SubscriptionManager.INVALID_SUBSCRIPTION_ID) return baseTm
+        return runCatching { baseTm.createForSubscriptionId(id) }.getOrDefault(baseTm)
+    }
 
     override fun network(): NetworkSnapshot {
+        tm = dataTm()
         val active = cm.activeNetwork
         val caps = active?.let { cm.getNetworkCapabilities(it) }
         val viaVpn = caps?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true
@@ -54,7 +65,9 @@ class AndroidPlatform(private val ctx: Context) : EnginePlatform {
             transport = transport,
             operatorName = operatorName(runCatching { tm.networkOperatorName }.getOrNull(), mccMnc),
             mccMnc = mccMnc,
-            simOperator = runCatching { tm.simOperatorName }.getOrNull()?.takeIf { it.isNotBlank() },
+            simOperator = simName(),
+            simMccMnc = runCatching { tm.simOperator }.getOrNull()?.takeIf { it.isNotBlank() },
+            dataSimSlot = runCatching { dataSlot() }.getOrNull(),
             networkType = networkType(),
             signalDbm = r.dbm,
             signalLevel = r.level,
@@ -67,6 +80,7 @@ class AndroidPlatform(private val ctx: Context) : EnginePlatform {
             tac = r.tac,
             earfcn = r.earfcn,
             band = r.band,
+            cellNote = r.note,
             roaming = runCatching { tm.isNetworkRoaming }.getOrNull(),
             vpnInSystem = vpnInSystem,
             ourTrafficViaVpn = viaVpn,
@@ -86,6 +100,7 @@ class AndroidPlatform(private val ctx: Context) : EnginePlatform {
         var tac: Int? = null
         var earfcn: Int? = null
         var band: String? = null
+        var note: String? = null
     }
 
     /** Android отдаёт Int.MAX_VALUE, когда значения нет. */
@@ -111,7 +126,20 @@ class AndroidPlatform(private val ctx: Context) : EnginePlatform {
         } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             runCatching { tm.signalStrength?.let { r.level = it.level } }
         }
-        if (hasLocation()) runCatching { fillCell(r) }
+        when {
+            !hasLocation() -> r.note = "нет разрешения на доступ к местоположению"
+            !locationEnabled() -> r.note = "на телефоне выключена геолокация"
+            else -> {
+                runCatching { fillCell(r) }.onFailure { r.note = "Android не дал данные о вышке (нужно разрешение «в любом режиме»)" }
+                if (r.note == null && r.cellId == null) {
+                    val bg = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q || ContextCompat.checkSelfPermission(
+                        ctx, Manifest.permission.ACCESS_BACKGROUND_LOCATION,
+                    ) == PackageManager.PERMISSION_GRANTED
+                    r.note = if (bg) "телефон не сообщил данные о вышке"
+                    else "нужно разрешение на местоположение «в любом режиме»: без него Android прячет вышку от фоновых проверок"
+                }
+            }
+        }
         return r
     }
 
@@ -132,7 +160,10 @@ class AndroidPlatform(private val ctx: Context) : EnginePlatform {
 
     @SuppressLint("MissingPermission")
     private fun fillCell(r: Radio) {
-        val cell = tm.allCellInfo.orEmpty().firstOrNull { it.isRegistered } ?: return
+        val registered = tm.allCellInfo.orEmpty().filter { it.isRegistered }
+        // При двух SIM зарегистрированных сот две: берём соту оператора, через которого идёт интернет.
+        val plmn = runCatching { tm.networkOperator }.getOrNull()
+        val cell = registered.firstOrNull { plmn != null && cellPlmn(it) == plmn } ?: registered.firstOrNull() ?: return
         when (cell) {
             is CellInfoLte -> {
                 val id = cell.cellIdentity
@@ -164,6 +195,43 @@ class AndroidPlatform(private val ctx: Context) : EnginePlatform {
                 fillNr(r, cell.cellSignalStrength as CellSignalStrengthNr)
             }
         }
+    }
+
+    private fun cellPlmn(c: android.telephony.CellInfo): String? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return null
+        return when (c) {
+            is CellInfoLte -> c.cellIdentity.let { (it.mccString ?: return null) + (it.mncString ?: return null) }
+            is CellInfoWcdma -> c.cellIdentity.let { (it.mccString ?: return null) + (it.mncString ?: return null) }
+            is CellInfoGsm -> c.cellIdentity.let { (it.mccString ?: return null) + (it.mncString ?: return null) }
+            else -> null
+        }
+    }
+
+    private fun locationEnabled(): Boolean {
+        val lm = ctx.getSystemService(android.location.LocationManager::class.java) ?: return true
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) lm.isLocationEnabled
+        else runCatching { lm.isProviderEnabled(android.location.LocationManager.NETWORK_PROVIDER) || lm.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER) }.getOrDefault(true)
+    }
+
+    /** Название SIM-карты: имя из SIM, а если там сокращение, то по коду оператора SIM. */
+    private fun simName(): String? {
+        val raw = runCatching { tm.simOperatorName }.getOrNull()?.trim().orEmpty()
+        val code = runCatching { tm.simOperator }.getOrNull()
+        return when {
+            raw.length >= 3 -> raw
+            OPERATORS[code] != null -> OPERATORS[code]
+            else -> raw.ifEmpty { null }
+        }
+    }
+
+    /** Номер слота SIM (1 или 2), через которую идёт интернет. */
+    @SuppressLint("MissingPermission")
+    private fun dataSlot(): Int? {
+        val id = SubscriptionManager.getDefaultDataSubscriptionId()
+        if (id == SubscriptionManager.INVALID_SUBSCRIPTION_ID) return null
+        if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) return null
+        val sm = ctx.getSystemService(SubscriptionManager::class.java) ?: return null
+        return sm.getActiveSubscriptionInfo(id)?.simSlotIndex?.plus(1)
     }
 
     private fun hasLocation(): Boolean =

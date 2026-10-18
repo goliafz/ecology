@@ -98,7 +98,11 @@ data class NetworkSnapshot(
     val transport: String = "NONE",
     val operatorName: String? = null,
     val mccMnc: String? = null,
+    /** Оператор SIM-карты, через которую идёт интернет (может отличаться от оператора сети). */
     val simOperator: String? = null,
+    val simMccMnc: String? = null,
+    /** Слот SIM с мобильным интернетом: 1 или 2. */
+    val dataSimSlot: Int? = null,
     val networkType: String? = null,
     /** Уровень сигнала: для 4G/5G это RSRP, для 2G/3G просто dBm. */
     val signalDbm: Int? = null,
@@ -118,6 +122,8 @@ data class NetworkSnapshot(
     val tac: Int? = null,
     val earfcn: Int? = null,
     val band: String? = null,
+    /** Почему номер вышки не записан (нет разрешения, выключена геолокация и т.п.). */
+    val cellNote: String? = null,
     val roaming: Boolean? = null,
     /** В системе поднят какой-то VPN (например, NekoBox). */
     val vpnInSystem: Boolean = false,
@@ -126,6 +132,16 @@ data class NetworkSnapshot(
     val wifiConnected: Boolean = false,
 ) {
     val isCellular: Boolean get() = transport == "CELLULAR"
+
+    /** Сеть другого оператора, чем SIM: роуминг или общая сеть операторов. */
+    val foreignNetwork: Boolean
+        get() = mccMnc != null && simMccMnc != null && mccMnc != simMccMnc
+
+    /** «Билайн» или «MTS RUS (SIM: Билайн)», если сеть чужая. */
+    fun operatorText(): String? {
+        val net = operatorName?.takeIf { it.isNotBlank() } ?: return simOperator
+        return if (foreignNetwork && simOperator != null) "$net (SIM: $simOperator)" else net
+    }
 
     /** Примерное расстояние до вышки по timing advance (LTE: ~78 м на единицу). */
     val towerDistanceM: Int? get() = timingAdvance?.takeIf { it in 0..1282 }?.let { it * 78 }
@@ -182,7 +198,7 @@ data class NetworkSnapshot(
                 else -> transport
             }
         )
-        operatorName?.takeIf { it.isNotBlank() }?.let { append(" · ").append(it) }
+        operatorText()?.let { append(" · ").append(it) }
         networkType?.let { append(" · ").append(it) }
         signalDbm?.let { append(" · ").append(it).append(" dBm") }
     }
