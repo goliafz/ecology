@@ -6,3 +6,5 @@ local.properties
 .kotlin/
 app/src/main/jniLibs/
 captures/
+out/
+bundle/

@@ -41,16 +41,24 @@ jobs:
       - name: Сборка APK
         run: ./gradlew :app:assembleRelease --no-daemon --stacktrace
 
-      - name: Подготовка файла
+      - name: APK и архив с исходниками
         run: |
-          mkdir -p out
-          cp app/build/outputs/apk/release/app-release.apk "out/WL-Tester-1.0.${BUILD_NUMBER}.apk"
+          NAME="WL-Tester-1.0.${BUILD_NUMBER}"
+          mkdir -p out "bundle/$NAME"
+          cp app/build/outputs/apk/release/app-release.apk "out/$NAME.apk"
+          # Архив: APK + исходники приложения (папка source), как в чате
+          (cd .. && git archive --format=tar --prefix=source/ HEAD vpn-whitelist-tester .github/workflows/wl-tester-android.yml) \
+            | tar -x -C "bundle/$NAME"
+          cp "out/$NAME.apk" "bundle/$NAME/"
+          (cd bundle && zip -q -r "../out/$NAME.zip" "$NAME")
           ls -la out
 
       - uses: actions/upload-artifact@v4
         with:
           name: WL-Tester-1.0.${{ github.run_number }}
-          path: vpn-whitelist-tester/out/*.apk
+          path: |
+            vpn-whitelist-tester/out/*.apk
+            vpn-whitelist-tester/out/*.zip
 
       - name: Публикация в Releases
         uses: softprops/action-gh-release@v2
@@ -59,8 +67,11 @@ jobs:
           name: WL Tester 1.0.${{ github.run_number }}
           target_commitish: ${{ github.sha }}
           make_latest: 'true'
-          files: vpn-whitelist-tester/out/*.apk
+          files: |
+            vpn-whitelist-tester/out/*.apk
+            vpn-whitelist-tester/out/*.zip
           body: |
             Тестер белых списков и VPN для Android (Android 8.0+).
-            Скачайте APK ниже и установите его на телефон. Новая версия ставится поверх старой, журнал сохраняется.
+            Для установки на телефон скачайте файл .apk. Новая версия ставится поверх старой, журнал сохраняется.
+            Файл .zip: тот же APK и исходники приложения (папка source).
             Разработчик: Ходаковский Александр.
