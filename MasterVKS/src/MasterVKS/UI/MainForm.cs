@@ -83,6 +83,12 @@ namespace MasterVks.UI
         private ModernButton _recordButton, _pauseButton, _openFolderButton, _settingsButton, _aboutButton, _eventsButton, _showFileButton;
         private Label _timerLabel, _recordInfo, _hintLabel, _noticeLabel;
         private ScreenPreview _preview;
+        private ScreenPreview _cameraView;
+        private ComboBox _cameraBox;
+        private readonly CameraMonitor _camera = new CameraMonitor();
+        private string _cameraSignature;
+        private string _cameraCaption;
+        private bool _cameraListLoaded;
         private StatusPill _pill;
         private ToolTip _tips;
         private System.Windows.Forms.Timer _fastTimer, _slowTimer;
@@ -139,6 +145,8 @@ namespace MasterVks.UI
             if (_launchedByAutostart && _settings.StartMinimizedOnAutostart) WindowState = FormWindowState.Minimized;
             _fastTimer.Start();
             _health.Start();
+            _camera.SetDevice(_settings.CameraName, _settings.CameraId, Ffmpeg.Locate(_settings.FfmpegPath));
+            _camera.Start();
             _slowTimer.Start();
             StartPreviewThread();
         }
@@ -166,6 +174,7 @@ namespace MasterVks.UI
             AddEvent(new Notice("Программа запущена. Проверяю оборудование…", NoticeLevel.Info));
             RecoverUnfinished();
             RefreshDevicesAsync(true);
+            RefreshCamerasAsync();
         }
 
         private void RecoverUnfinished()
@@ -335,6 +344,173 @@ namespace MasterVks.UI
             return -1;
         }
 
+        // ===================== Камера =====================
+
+        private void RefreshCamerasAsync()
+        {
+            string ffmpeg = Ffmpeg.Locate(_settings.FfmpegPath);
+            Task.Run(() => CameraDevices.TryList(ffmpeg)).ContinueWith(t =>
+            {
+                if (t.IsFaulted) return;
+                PostToUi(() => ApplyCameraList(t.Result));
+            });
+        }
+
+        /// <param name="cameras">null, если список узнать не удалось (например, нет FFmpeg).</param>
+        private void ApplyCameraList(List<CameraDevice> cameras)
+        {
+            if (_cameraBox.DroppedDown) return;
+            string signature = cameras == null ? "?" : string.Join("|", cameras.Select(c => c.Name + "#" + c.AltName));
+            if (signature == _cameraSignature && _cameraListLoaded) return;
+            _cameraSignature = signature;
+            _cameraListLoaded = true;
+
+            if (cameras != null && !_settings.CameraInitialized && cameras.Count > 0)
+            {
+                CameraDevice pick = CameraDevices.PickDefault(cameras);
+                _settings.CameraName = pick.Name;
+                _settings.CameraId = pick.AltName;
+                _settings.CameraInitialized = true;
+                _settings.Save();
+                _camera.SetDevice(_settings.CameraName, _settings.CameraId, Ffmpeg.Locate(_settings.FfmpegPath));
+            }
+
+            _suppressEvents = true;
+            try
+            {
+                _cameraBox.Items.Clear();
+                _cameraBox.Items.Add(new ComboItem("Не проверять камеру", null));
+                int index = 0;
+                if (cameras != null)
+                {
+                    foreach (CameraDevice c in cameras)
+                    {
+                        _cameraBox.Items.Add(new ComboItem(c.Name, c));
+                        if (index == 0 && CameraDevices.Find(new[] { c }, _settings.CameraName, _settings.CameraId) != null) index = _cameraBox.Items.Count - 1;
+                    }
+                }
+                if (index == 0 && !string.IsNullOrEmpty(_settings.CameraName))
+                {
+                    string suffix = cameras == null ? "" : " (сейчас не подключена)";
+                    _cameraBox.Items.Add(new ComboItem(_settings.CameraName + suffix, new CameraDevice { Name = _settings.CameraName, AltName = _settings.CameraId }));
+                    index = _cameraBox.Items.Count - 1;
+                }
+                _cameraBox.SelectedIndex = index;
+            }
+            finally
+            {
+                _suppressEvents = false;
+            }
+            if (string.IsNullOrEmpty(_settings.CameraName))
+                _cameraView.Placeholder = cameras != null && cameras.Count == 0 ? "Камера не найдена" : "Камера не выбрана";
+        }
+
+        private void OnCameraChanged(object sender, EventArgs e)
+        {
+            if (_suppressEvents || !_cameraListLoaded) return;
+            var item = _cameraBox.SelectedItem as ComboItem;
+            var device = item != null ? item.Value as CameraDevice : null;
+            _settings.CameraName = device != null ? device.Name : "";
+            _settings.CameraId = device != null ? device.AltName : "";
+            _settings.CameraInitialized = true;
+            _settings.Save();
+            _camera.SetDevice(_settings.CameraName, _settings.CameraId, Ffmpeg.Locate(_settings.FfmpegPath));
+            _cameraView.SetImage(null);
+            _cameraCaption = null;
+            _cameraView.Placeholder = device != null ? "Нажмите, чтобы посмотреть на камеру, или «Проверить»" : "Камера не выбрана";
+            UpdateCameraView();
+        }
+
+        private CameraDevice SelectedCamera()
+        {
+            var item = _cameraBox.SelectedItem as ComboItem;
+            return item != null ? item.Value as CameraDevice : null;
+        }
+
+        /// <summary>Значок и подпись на снимке камеры: включена ли она в ВКС, не отключилась ли.</summary>
+        private void UpdateCameraView()
+        {
+            if (_cameraView == null) return;
+            string[] apps = _camera.InUseBy;
+            if (string.IsNullOrEmpty(_settings.CameraName))
+            {
+                _cameraView.SetBadge(null, Color.Empty);
+                _cameraView.SetCaption(null);
+            }
+            else if (_camera.Missing)
+            {
+                _cameraView.SetBadge("НЕТ КАМЕРЫ", Theme.Red);
+                _cameraView.SetCaption("Камера отключилась");
+            }
+            else if (apps.Length > 0)
+            {
+                _cameraView.SetBadge("● В ВКС", Theme.Green);
+                _cameraView.SetCaption("Камера включена: " + string.Join(", ", apps));
+            }
+            else
+            {
+                _cameraView.SetBadge(null, Color.Empty);
+                _cameraView.SetCaption(_cameraCaption);
+            }
+        }
+
+        private void ShowCameraFrame(CameraFrame frame, string caption)
+        {
+            if (frame == null) return;
+            _cameraView.SetImage(frame.ToBitmap());
+            _cameraCaption = caption;
+            UpdateCameraView();
+        }
+
+        private void OpenCameraView()
+        {
+            if (_checking)
+            {
+                AddEvent(new Notice("Камера сейчас проверяется, её картинка уже на снимке.", NoticeLevel.Info));
+                return;
+            }
+            CameraDevice device = SelectedCamera();
+            if (device == null)
+            {
+                MessageBox.Show(this, "Сначала выберите камеру в списке «Камера» слева.", "Камера", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            string ffmpeg = Ffmpeg.Locate(_settings.FfmpegPath);
+            if (ffmpeg == null)
+            {
+                WarnIfFfmpegMissing();
+                return;
+            }
+            string block = CameraUsage.PrivacyBlock();
+            if (block != null)
+            {
+                MessageBox.Show(this, "Камеру включить нельзя: " + block + ".\n\nПока так, камеру не увидит и ВКС.", "Камера", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            List<string> apps = CameraUsage.ActiveApps(ffmpeg);
+            if (apps.Count > 0)
+            {
+                MessageBox.Show(this,
+                    "Камеру сейчас использует " + string.Join(", ", apps) + ", значит она включена и работает. Картинку с неё видно в окне ВКС.\n\n" +
+                    "Чтобы не помешать ВКС, МастерВКС не будет забирать камеру себе.",
+                    "Камера", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            if (_session != null)
+            {
+                DialogResult r = MessageBox.Show(this,
+                    "Идёт запись. Включить камеру для просмотра?\n\nПока окно с камерой открыто, программа ВКС не сможет её включить. Окно закроется само через минуту.",
+                    "Камера", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2);
+                if (r != DialogResult.Yes) return;
+            }
+            using (var form = new CameraForm(ffmpeg, device))
+            {
+                form.ShowDialog(this);
+                if (form.LastFrame != null)
+                    ShowCameraFrame(form.LastFrame, "Снимок в " + DateTime.Now.ToString("HH:mm") + " · нажмите, чтобы посмотреть ещё");
+            }
+        }
+
         private void OnMicChanged(object sender, EventArgs e)
         {
             if (_suppressEvents) return;
@@ -452,11 +628,31 @@ namespace MasterVks.UI
             UpdateControls();
 
             AppSettings snapshot = _settings.Clone();
-            Task.Run(() => new SystemCheck(snapshot, _engine, mode, item => PostToUi(() =>
+            bool watchCamera = !string.IsNullOrEmpty(snapshot.CameraName) || !snapshot.CameraInitialized;
+            if (watchCamera)
             {
-                CheckRowView row;
-                if (_rows.TryGetValue(item.Key, out row)) SetRowItem(row, item);
-            })).Run()).ContinueWith(t => PostToUi(() =>
+                _cameraCaption = "Проверяю камеру…";
+                UpdateCameraView();
+            }
+            SystemCheck check = null;
+            Task.Run(() =>
+            {
+                check = new SystemCheck(snapshot, _engine, mode, item => PostToUi(() =>
+                {
+                    CheckRowView row;
+                    if (_rows.TryGetValue(item.Key, out row)) SetRowItem(row, item);
+                }), frame =>
+                {
+                    Bitmap bmp = frame.ToBitmap();
+                    PostToUi(() =>
+                    {
+                        _cameraView.SetImage(bmp);
+                        _cameraCaption = "Проверяю камеру…";
+                        UpdateCameraView();
+                    });
+                });
+                return check.Run();
+            }).ContinueWith(t => PostToUi(() =>
             {
                 _checking = false;
                 if (t.IsFaulted)
@@ -468,6 +664,7 @@ namespace MasterVks.UI
                 {
                     _lastReport = t.Result;
                     foreach (CheckItem item in _lastReport.Items) SetRowItem(_rows[item.Key], item.Copy());
+                    ApplyCameraResult(check != null ? check.Camera : null);
                     _checkTime.Text = (startup ? "Проверено при запуске в " : "Проверено в ") + _lastReport.Time.ToString("HH:mm") +
                                       (mode == CheckMode.Audible ? " · со звуком" : " · тихо");
                     CheckStatus overall = _lastReport.Overall;
@@ -483,6 +680,39 @@ namespace MasterVks.UI
                 }
                 UpdateControls();
             }));
+        }
+
+        private void ApplyCameraResult(CameraTestResult r)
+        {
+            if (r == null)
+            {
+                _cameraCaption = null;
+                UpdateCameraView();
+                return;
+            }
+            // Проверка сама подобрала камеру, если её ещё не выбирали.
+            if (r.Device != null && !_settings.CameraInitialized)
+            {
+                _settings.CameraName = r.Device.Name;
+                _settings.CameraId = r.Device.AltName;
+                _settings.CameraInitialized = true;
+                _settings.Save();
+                _camera.SetDevice(_settings.CameraName, _settings.CameraId, Ffmpeg.Locate(_settings.FfmpegPath));
+                _cameraListLoaded = false;
+            }
+            if (r.Devices != null && r.Devices.Count > 0) ApplyCameraList(r.Devices);
+
+            if (r.LastFrame != null)
+            {
+                ShowCameraFrame(r.LastFrame, "Снимок при проверке в " + DateTime.Now.ToString("HH:mm"));
+            }
+            else
+            {
+                _cameraView.SetImage(null);
+                _cameraCaption = null;
+                if (r.Verdict != null) _cameraView.Placeholder = r.Verdict.Summary;
+                UpdateCameraView();
+            }
         }
 
         private void OnCheckRowClick(CheckItem item)
@@ -778,11 +1008,15 @@ namespace MasterVks.UI
             }
             Notice healthNotice;
             while (_health.TryTakeNotice(out healthNotice)) AddEvent(healthNotice);
+            Notice cameraNotice;
+            while (_camera.TryTakeNotice(out cameraNotice)) AddEvent(cameraNotice);
+            UpdateCameraView();
 
             WatchSources(session != null);
 
             if (_slowTicks % 5 == 0 || _freeBytesIdle < 0) _freeBytesIdle = DiskSpace.FreeBytes(_settings.OutputFolder);
             if (_slowTicks % 5 == 0 && _devicesLoaded && session == null && !_checking) RefreshDevicesAsync(false);
+            if (_slowTicks % 30 == 0 && session == null && !_checking) RefreshCamerasAsync();
 
             UpdateControls();
         }
@@ -831,7 +1065,7 @@ namespace MasterVks.UI
 
         private bool AnySourceProblem()
         {
-            return _health.HasProblem || _engine.Sources.Any(s => s.IsConfigured && s.State != SourceState.Active && s.State != SourceState.Connecting);
+            return _health.HasProblem || (_camera.Missing && !string.IsNullOrEmpty(_settings.CameraName)) || _engine.Sources.Any(s => s.IsConfigured && s.State != SourceState.Active && s.State != SourceState.Connecting);
         }
 
         private void UpdateControls()
@@ -841,6 +1075,7 @@ namespace MasterVks.UI
             bool recording = session != null;
             bool paused = recording && session.State == SessionState.Paused;
             bool problem = AnySourceProblem() || (recording && !_sessionStarting && !_sessionStopping && !session.IsHealthy);
+            _camera.SetRecording(recording && !_sessionStarting);
 
             // Кнопки записи
             if (_sessionStarting)
@@ -1220,6 +1455,7 @@ namespace MasterVks.UI
             PowerHelper.KeepAwake(false);
             _overlay.Dispose();
             _health.Dispose();
+            _camera.Dispose();
             try
             {
                 _engine.Dispose();
@@ -1245,6 +1481,7 @@ namespace MasterVks.UI
                 Autostart.Apply(_settings.Autostart);
                 ApplyAudioSettingsToEngine();
                 RegisterHotkeys();
+                _camera.SetDevice(_settings.CameraName, _settings.CameraId, Ffmpeg.Locate(_settings.FfmpegPath));
                 AddEvent(new Notice("Настройки сохранены.", NoticeLevel.Info));
                 UpdateControls();
             }

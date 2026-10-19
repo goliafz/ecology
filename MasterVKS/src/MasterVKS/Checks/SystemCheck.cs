@@ -67,6 +67,7 @@ namespace MasterVks.Checks
     {
         public const string KeyFfmpeg = "ffmpeg";
         public const string KeyScreen = "screen";
+        public const string KeyCamera = "camera";
         public const string KeyMic1 = "mic1";
         public const string KeyMic2 = "mic2";
         public const string KeyMic3 = "mic3";
@@ -89,6 +90,7 @@ namespace MasterVks.Checks
         private readonly AudioEngine _engine;
         private readonly CheckMode _mode;
         private readonly Action<CheckItem> _onUpdate;
+        private readonly Action<CameraFrame> _onCameraFrame;
         private readonly Dictionary<string, CheckItem> _items = new Dictionary<string, CheckItem>();
         private readonly CheckReport _report = new CheckReport();
 
@@ -98,6 +100,7 @@ namespace MasterVks.Checks
             {
                 new CheckItem { Key = KeyFfmpeg, Title = "Модуль записи" },
                 new CheckItem { Key = KeyScreen, Title = "Экран" },
+                new CheckItem { Key = KeyCamera, Title = "Камера" },
                 new CheckItem { Key = KeyMic1, Title = "Микрофон 1" },
                 new CheckItem { Key = KeyMic2, Title = "Микрофон 2" },
                 new CheckItem { Key = KeyMic3, Title = "Микрофон 3" },
@@ -112,8 +115,12 @@ namespace MasterVks.Checks
             };
         }
 
-        public SystemCheck(AppSettings settings, AudioEngine engine, CheckMode mode, Action<CheckItem> onUpdate)
+        /// <summary>Результат проверки камеры (последний кадр и выбранное устройство) для окна.</summary>
+        public CameraTestResult Camera { get; private set; }
+
+        public SystemCheck(AppSettings settings, AudioEngine engine, CheckMode mode, Action<CheckItem> onUpdate, Action<CameraFrame> onCameraFrame = null)
         {
+            _onCameraFrame = onCameraFrame;
             _settings = settings.Clone();
             _engine = engine;
             _mode = mode;
@@ -132,6 +139,10 @@ namespace MasterVks.Checks
             Log.Info("Проверка (" + (_mode == CheckMode.Audible ? "со звуком" : "тихая") + "): начало");
             foreach (CheckItem item in _report.Items) Set(item.Key, CheckStatus.Running, "Проверяю…", "");
 
+            // Камера проверяется параллельно со звуком: ей нужно несколько секунд, чтобы включиться.
+            var cameraThread = new Thread(() => Safe(KeyCamera, CheckCamera)) { IsBackground = true, Name = "Проверка камеры" };
+            cameraThread.Start();
+
             Safe(KeyDisk, CheckDisk);
             Safe(KeyFfmpeg, CheckFfmpeg);
             Safe(KeyScreen, CheckScreen);
@@ -145,6 +156,9 @@ namespace MasterVks.Checks
                 foreach (string key in new[] { KeyMic1, KeyMic2, KeyMic3, KeySystem, KeyTogether })
                     if (_items[key].Status == CheckStatus.Running) Set(key, CheckStatus.Error, "Проверка не удалась: " + ex.Message, "");
             }
+
+            if (!cameraThread.Join(30000))
+                Set(KeyCamera, CheckStatus.Error, "Камера не ответила за 30 секунд", "Переподключите камеру и повторите проверку.");
 
             Safe(KeyPower, CheckPower);
             Safe(KeyUpdates, CheckUpdates);
@@ -237,6 +251,15 @@ namespace MasterVks.Checks
                 {
                 }
             }
+        }
+
+        // ===================== Камера =====================
+
+        private void CheckCamera()
+        {
+            CameraTestResult r = CameraTest.Run(_settings, _onCameraFrame);
+            Camera = r;
+            Set(KeyCamera, r.Verdict);
         }
 
         // ===================== Диск =====================

@@ -12,6 +12,7 @@ using MasterVks.Audio;
 using MasterVks.Checks;
 using MasterVks.Core;
 using MasterVks.Recording;
+using MasterVks.Video;
 using NAudio.Wave;
 
 namespace MasterVks.SelfTest
@@ -51,13 +52,19 @@ namespace MasterVks.SelfTest
             Run("Старые настройки: MKV теперь сохраняется по умолчанию", TestSettingsMigration);
             Run("Здоровье: правила оценки", TestHealthRules);
             Run("Здоровье: предупреждения во время работы", TestHealthWatch);
+            Run("Камера: список устройств из FFmpeg", TestCameraList);
+            Run("Камера: анализ картинки", TestCameraPicture);
+            Run("Камера: правила оценки", TestCameraRules);
+            Run("Камера: кто сейчас пользуется камерой", TestCameraUsage);
+            Run("Камера: предупреждения во время записи", TestCameraWatch);
             if (_ffmpeg != null)
             {
-                Run("FFmpeg: запись по аргументам программы (видео + 6 каналов звука)", TestFfmpegRecording);
+                Run("FFmpeg: запись по аргументам программы (видео + 7 каналов звука)", TestFfmpegRecording);
                 Run("FFmpeg: MKV → MP4, проверка и удаление MKV", TestFinalizeSingle);
                 Run("FFmpeg: склейка двух частей после сбоя", TestFinalizeMulti);
                 Run("FFmpeg: в папке остаются и MKV, и MP4", TestFinalizeKeepBoth);
                 Run("FFmpeg: восстановление оборванной записи (имитация синего экрана)", TestFinalizeTruncated);
+                Run("FFmpeg: кадры с камеры по трубе (тестовый источник вместо камеры)", TestCameraGrabber);
             }
 
             Console.WriteLine();
@@ -612,6 +619,234 @@ namespace MasterVks.SelfTest
             Check(n.Count == 2, "мало памяти и Windows ждёт перезагрузки: два предупреждения");
             n = step(new HealthSample { OnAc = true, CpuPercent = 20, PerformancePercent = 100, AvailableMb = 500, RebootPending = true });
             Check(n.Count == 0, "без повторов");
+        }
+
+        // ===================== Камера =====================
+
+        private static void TestCameraList()
+        {
+            string modern =
+                "[dshow @ 0000020f] \"ARDOR GAMING Rune\" (video)\r\n" +
+                "[dshow @ 0000020f]   Alternative name \"@device_pnp_\\\\?\\usb#vid_1bcf&pid_2284&mi_00#7&1#{65e8773d-8f56-11d0-a3b9-00a0c9223196}\\global\"\r\n" +
+                "[dshow @ 0000020f] \"OBS Virtual Camera\" (video)\r\n" +
+                "[dshow @ 0000020f]   Alternative name \"@device_sw_{860BB310}\\{A3FCE0F5}\"\r\n" +
+                "[dshow @ 0000020f] \"Микрофон (ARDOR GAMING Rune)\" (audio)\r\n" +
+                "[dshow @ 0000020f]   Alternative name \"@device_cm_{33D9A762}\\wave_{1}\"\r\n" +
+                "dummy: Immediate exit requested\r\n";
+            List<CameraDevice> list = CameraDevices.Parse(modern);
+            Check(list.Count == 2, "новый формат: две камеры, микрофон не попал в список (" + list.Count + ")");
+            Check(list.Count > 0 && list[0].Name == "ARDOR GAMING Rune" && list[0].AltName.StartsWith("@device_pnp_"), "название и внутреннее имя камеры");
+            Check(list.Count > 1 && list[1].IsVirtual && !list[0].IsVirtual, "OBS распознана как программная камера");
+            Check(CameraDevices.PickDefault(list) == list[0], "по умолчанию выбирается настоящая камера");
+            Check(CameraDevices.InputArgs(list[0]).Last() == "video=" + list[0].AltName, "камера открывается по внутреннему имени");
+
+            string old =
+                "[dshow @ 03b8] DirectShow video devices (some may be both video and audio devices)\n" +
+                "[dshow @ 03b8]  \"Integrated Camera\"\n" +
+                "[dshow @ 03b8]     Alternative name \"@device_pnp_int\"\n" +
+                "[dshow @ 03b8] DirectShow audio devices\n" +
+                "[dshow @ 03b8]  \"Microphone Array\"\n" +
+                "[dshow @ 03b8]     Alternative name \"@device_cm_mic\"\n";
+            List<CameraDevice> oldList = CameraDevices.Parse(old);
+            Check(oldList.Count == 1 && oldList[0].Name == "Integrated Camera" && oldList[0].AltName == "@device_pnp_int", "старый формат FFmpeg 4");
+            Check(CameraDevices.Parse("[dshow @ 01] Could not enumerate video devices (or none found).").Count == 0, "камер нет: пустой список");
+
+            var twins = new List<CameraDevice>
+            {
+                new CameraDevice { Name = "USB Camera", AltName = "@a" },
+                new CameraDevice { Name = "USB Camera", AltName = "@b" }
+            };
+            Check(CameraDevices.Find(twins, "USB Camera", "@b") == twins[1], "две одинаковые камеры различаются по внутреннему имени");
+            Check(CameraDevices.Find(twins, "USB Camera", "@moved") == twins[0], "камеру переключили в другой порт: находится по названию");
+            Check(CameraDevices.Find(twins, "Другая", null) == null, "чужая камера не находится");
+
+            var s = new AppSettings();
+            Check(CameraTest.Resolve(s, list) == list[0], "первый запуск: камера подбирается сама");
+            s.CameraInitialized = true;
+            s.CameraName = "";
+            Check(CameraTest.Resolve(s, list) == null, "«Не проверять камеру» соблюдается");
+        }
+
+        private static CameraFrame SyntheticFrame(double seconds, Func<int, int, int> luma, int w = 64, int h = 36)
+        {
+            var data = new byte[w * h * 3];
+            for (int y = 0; y < h; y++)
+                for (int x = 0; x < w; x++)
+                {
+                    byte v = (byte)Math.Max(0, Math.Min(255, luma(x, y)));
+                    int i = (y * w + x) * 3;
+                    data[i] = data[i + 1] = data[i + 2] = v;
+                }
+            return new CameraFrame { Data = data, Width = w, Height = h, Seconds = seconds };
+        }
+
+        private static void TestCameraPicture()
+        {
+            var rnd = new Random(1);
+            var normal = Enumerable.Range(0, 30).Select(i => SyntheticFrame(i / 30.0, (x, y) => 60 + x * 2 + rnd.Next(-4, 5))).ToList();
+            CameraPicture p = CameraPicture.Analyze(normal);
+            Check(!p.Frozen && p.Brightness > 80 && p.Contrast > 10, "обычная картинка: не застыла, яркая, с деталями (яркость " + (int)p.Brightness + ", контраст " + (int)p.Contrast + ")");
+            Check(Math.Abs(p.Fps - 30) < 0.5, "частота кадров 30 (" + p.Fps.ToString("0.0") + ")");
+
+            CameraFrame still = SyntheticFrame(0, (x, y) => 60 + x * 2);
+            var frozen = Enumerable.Range(0, 10).Select(i => new CameraFrame { Data = still.Data, Width = 64, Height = 36, Seconds = i / 30.0 }).ToList();
+            Check(CameraPicture.Analyze(frozen).Frozen, "одинаковые до байта кадры: камера зависла");
+
+            var black = Enumerable.Range(0, 10).Select(i => SyntheticFrame(i / 30.0, (x, y) => rnd.Next(0, 4))).ToList();
+            CameraPicture b = CameraPicture.Analyze(black);
+            Check(b.Brightness < 14 && b.Contrast < 8 && !b.Frozen, "закрытая шторка: тёмная картинка с шумом");
+        }
+
+        private static void TestCameraRules()
+        {
+            var good = new CameraProbe
+            {
+                DeviceName = "ARDOR GAMING Rune",
+                Available = { "ARDOR GAMING Rune" },
+                Picture = new CameraPicture { Frames = 30, Fps = 30, Brightness = 110, Contrast = 40 },
+                NativeSize = new System.Drawing.Size(1280, 720)
+            };
+            HealthVerdict v = CameraRules.Verdict(good);
+            Check(v.Status == CheckStatus.Ok && v.Summary == "Камера работает, картинка есть" && v.Details.Contains("1280 × 720") && v.Details.Contains("30 кадров/с"),
+                "картинка есть: зелёный, с разрешением и частотой");
+
+            v = CameraRules.Verdict(new CameraProbe { DeviceName = "ARDOR GAMING Rune", Missing = true, Available = { "Integrated Camera" } });
+            Check(v.Status == CheckStatus.Error && v.Summary.Contains("не подключена") && v.Details.Contains("Integrated Camera"), "камера отключена: красный и список того, что подключено");
+
+            v = CameraRules.Verdict(new CameraProbe { DeviceName = "X", PrivacyBlock = "Windows не пускает к камере классические приложения: «Параметры → Конфиденциальность → Камера»" });
+            Check(v.Status == CheckStatus.Error && v.Details.StartsWith("Windows не пускает"), "запрет в настройках Windows: красный с подсказкой");
+
+            v = CameraRules.Verdict(new CameraProbe { DeviceName = "X", InUseBy = { "Телемост" } });
+            Check(v.Status == CheckStatus.Ok && v.Summary == "Камера включена в Телемост", "камеру держит Телемост: зелёный, камеру не трогаем");
+
+            v = CameraRules.Verdict(new CameraProbe { DeviceName = "X", Failure = CameraFailure.Busy, Picture = new CameraPicture() });
+            Check(v.Status == CheckStatus.Warning && v.Summary.Contains("занята"), "занята неизвестной программой: жёлтый");
+
+            v = CameraRules.Verdict(new CameraProbe { DeviceName = "X", NoFrames = true, Picture = new CameraPicture() });
+            Check(v.Status == CheckStatus.Error && v.Summary == "Камера не присылает картинку" && v.Details.Contains("ffmpeg.exe"), "включилась, но молчит: красный, с подсказкой про антивирус");
+
+            v = CameraRules.Verdict(new CameraProbe { DeviceName = "X", Failure = CameraFailure.Other, ErrorLine = "Could not RenderStream", Picture = new CameraPicture() });
+            Check(v.Status == CheckStatus.Error && v.Details.Contains("Could not RenderStream"), "непонятная ошибка драйвера показывается в подробностях");
+
+            Func<CameraPicture, string> sum = pic => CameraRules.Verdict(new CameraProbe { DeviceName = "X", Picture = pic }).Summary;
+            Check(sum(new CameraPicture { Frames = 20, Fps = 30, Brightness = 3, Contrast = 2 }) == "Картинка с камеры чёрная", "чёрная картинка");
+            Check(sum(new CameraPicture { Frames = 20, Fps = 30, Brightness = 120, Contrast = 1 }) == "Картинка с камеры однотонная", "однотонная картинка (заглушка)");
+            Check(sum(new CameraPicture { Frames = 20, Fps = 30, Brightness = 100, Contrast = 30, Frozen = true }) == "Камера отвечает, но картинка застыла", "застывшая картинка");
+            Check(sum(new CameraPicture { Frames = 20, Fps = 30, Brightness = 25, Contrast = 12 }) == "Картинка с камеры очень тёмная", "очень тёмная комната");
+            Check(sum(new CameraPicture { Frames = 6, Fps = 2, Brightness = 100, Contrast = 30 }).StartsWith("Камера присылает мало кадров"), "2 кадра в секунду: предупреждение");
+
+            Check(CameraErrors.Classify("[dshow @ 01] Could not run graph (sometimes caused by a device already in use by other application)") == CameraFailure.Busy, "сообщение «already in use»: камера занята");
+            Check(CameraErrors.Classify("[dshow @ 01] Could not find video device with name [X] among source devices of type video.") == CameraFailure.NotFound, "сообщение «could not find»: камеры нет");
+            Check(CameraErrors.Classify("") == CameraFailure.None, "пустой вывод: ошибки нет");
+            Check(CameraErrors.LastError("Input #0\n[dshow @ 01] Could not RenderStream to connect pins\nvideo=X: I/O error\n") == "video=X: I/O error", "последняя строка ошибки без служебной приставки");
+
+            foreach (string text in new[] { CameraRules.AntivirusHint, CameraRules.Verdict(good).Details })
+                Check(text.IndexOf('—') < 0, "без длинных тире: " + text.Substring(0, 30) + "…");
+        }
+
+        private static void TestCameraUsage()
+        {
+            var entries = new List<CameraUseEntry>
+            {
+                new CameraUseEntry { Key = "C:#Users#user#AppData#Local#Yandex#Telemost#Telemost.exe", LastStart = 133000000000000000, LastStop = 0 },
+                new CameraUseEntry { Key = "C:#Program Files#Google#Chrome#Application#chrome.exe", LastStart = 133000000000000000, LastStop = 133000000000000500 },
+                new CameraUseEntry { Key = "C:#Program Files#Zoom#bin#Zoom.exe", LastStart = 133000000000000000, LastStop = 0 },
+                new CameraUseEntry { Key = "C:#MasterVKS#ffmpeg.exe", LastStart = 133000000000000000, LastStop = 0 },
+                new CameraUseEntry { Key = "Microsoft.WindowsCamera_8wekyb3d8bbwe", LastStart = 133000000000000000, LastStop = 0, Packaged = true }
+            };
+            List<string> apps = CameraUsage.InUse(entries, @"C:\MasterVKS\ffmpeg.exe", exe => exe != "Zoom");
+            Check(apps.SequenceEqual(new[] { "Телемост", "Камера Windows" }), "сейчас камеру держат Телемост и Камера Windows: " + string.Join(", ", apps));
+            Check(!apps.Contains("Google Chrome"), "Chrome уже закончил: не считается");
+            Check(!apps.Contains("Zoom"), "Zoom упал, не отметив конец: не считается, раз процесса нет");
+            Check(!apps.Contains("ffmpeg"), "собственный ffmpeg программы не считается");
+            Check(CameraUsage.AppTitle("C:#Users#u#AppData#Local#Yandex#YandexBrowser#Application#browser.exe") == "Яндекс Браузер", "browser.exe из папки Яндекса: Яндекс Браузер");
+            Check(CameraUsage.AppTitle("C:#Program Files (x86)#Microsoft#Edge#Application#msedge.exe") == "Microsoft Edge", "Edge");
+            Check(CameraUsage.AppTitle("C:#Tools#SomeApp.exe") == "SomeApp", "неизвестная программа: имя файла");
+        }
+
+        private static void TestCameraWatch()
+        {
+            var w = new CameraWatch();
+            double t = 0;
+            var none = new string[0];
+            var telemost = new[] { "Телемост" };
+            Func<bool?, string[], bool, List<Notice>> step = (present, apps, rec) => { t += 3; return w.Feed("ARDOR", present, apps, rec, t); };
+
+            int n = 0;
+            for (int i = 0; i < 5; i++) n += step(true, telemost, false).Count;
+            Check(n == 0, "до записи, камера в Телемосте: тихо");
+            for (int i = 0; i < 60; i++) n += step(i % 5 == 0 ? (bool?)true : null, telemost, true).Count;
+            Check(n == 0 && !w.Missing, "запись, камера включена: тихо");
+
+            List<Notice> a = step(false, none, true);
+            Check(a.Count == 0, "один неудачный опрос: ещё не тревожимся");
+            a = step(false, none, true);
+            Check(a.Any(x => x.Level == NoticeLevel.Warning && x.Text.Contains("отключилась")) && w.Missing, "камера пропала два опроса подряд: предупреждение");
+            Check(!a.Any(x => x.Text.Contains("выключил камеру")), "при пропаже не дублирует «выключил камеру»");
+            n = 0;
+            for (int i = 0; i < 5; i++) n += step(false, none, true).Count;
+            Check(n == 0, "без повторов");
+            a = step(true, none, true);
+            Check(a.Count == 1 && a[0].Level == NoticeLevel.Success && !w.Missing, "камеру вернули: сообщение");
+            step(true, telemost, true);
+            a = step(true, telemost, true);
+            Check(a.Count == 1 && a[0].Text.Contains("снова включена"), "Телемост снова включил камеру");
+            step(null, none, true);
+            a = step(null, none, true);
+            Check(a.Count == 1 && a[0].Text.StartsWith("Телемост выключил камеру"), "видео выключили в ВКС: сообщение");
+
+            var w2 = new CameraWatch();
+            double t2 = 0;
+            int idle = 0;
+            for (int i = 0; i < 40; i++)
+            {
+                t2 += 3;
+                idle += w2.Feed("ARDOR", null, none, true, t2).Count(x => x.Text.StartsWith("Камеру сейчас не использует"));
+            }
+            Check(idle == 1, "полторы минуты записи без камеры в ВКС: одна подсказка включить камеру");
+            Check(w2.Feed("", false, none, true, 200).Count == 0 && w2.Feed("", false, none, true, 203).Count == 0 && !w2.Missing, "камера не выбрана: никаких предупреждений");
+        }
+
+        private static void TestCameraGrabber()
+        {
+            var frames = new List<CameraFrame>();
+            var input = new[] { "-re", "-f", "lavfi", "-i", "testsrc2=size=1280x720:rate=30" };
+            using (var g = new CameraGrabber(_ffmpeg, input, 320, 180, f => { lock (frames) frames.Add(f); }))
+            {
+                var sw = Stopwatch.StartNew();
+                while (sw.ElapsedMilliseconds < 2500) Thread.Sleep(50);
+                Check(g.NativeSize.Width == 1280 && g.NativeSize.Height == 720, "размер исходной картинки узнан из сообщений: " + g.NativeSize);
+            }
+            CameraPicture p;
+            // Как и в проверке, первую секунду не считаем: в начале ffmpeg может выдать кадры пачкой.
+            lock (frames) p = CameraPicture.Analyze(frames.Where(f => f.Seconds >= frames[0].Seconds + 1.0).ToList());
+            Check(p.Frames >= 30 && frames.Count >= 50, "кадры идут по трубе: " + frames.Count + " за 2,5 с");
+            Check(p.Fps > 25 && p.Fps < 35, "около 30 кадров в секунду: " + p.Fps.ToString("0.0"));
+            Check(!p.Frozen && p.Contrast > 20, "тестовая картинка живая и с деталями");
+            Check(frames.Count > 0 && frames[0].Data.Length == 320 * 180 * 3, "кадр уменьшен до 320 × 180");
+
+            var dark = new List<CameraFrame>();
+            using (new CameraGrabber(_ffmpeg, new[] { "-re", "-f", "lavfi", "-i", "color=c=black:size=640x480:rate=15" }, 320, 180, f => { lock (dark) dark.Add(f); }))
+                Thread.Sleep(1500);
+            CameraPicture d;
+            lock (dark) d = CameraPicture.Analyze(dark);
+            HealthVerdict v = CameraRules.Verdict(new CameraProbe { DeviceName = "Тест", Picture = d });
+            Check(d.Frames > 5 && v.Summary == "Картинка с камеры чёрная", "чёрный источник распознан: " + v.Summary);
+
+            var none = new List<CameraFrame>();
+            CameraGrabber bad = new CameraGrabber(_ffmpeg, new[] { "-f", "lavfi", "-i", "nosuchfilter" }, 320, 180, f => none.Add(f));
+            var wait = Stopwatch.StartNew();
+            while (!bad.Exited && wait.ElapsedMilliseconds < 5000) Thread.Sleep(50);
+            Thread.Sleep(200);
+            Check(bad.Exited && none.Count == 0, "источник не открылся: ffmpeg завершился без кадров");
+            Check(CameraErrors.Classify(bad.LogText) == CameraFailure.Other && CameraErrors.LastError(bad.LogText).Length > 0, "ошибка видна: " + CameraErrors.LastError(bad.LogText));
+            bad.Dispose();
+
+            var sw2 = Stopwatch.StartNew();
+            var held = new CameraGrabber(_ffmpeg, input, 160, 90, null);
+            Thread.Sleep(500);
+            held.Dispose();
+            Check(sw2.ElapsedMilliseconds < 4000 && held.Exited, "камера отпускается быстро: " + sw2.ElapsedMilliseconds + " мс");
         }
 
         // ===================== FFmpeg =====================

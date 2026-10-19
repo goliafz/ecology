@@ -294,7 +294,7 @@ namespace MasterVks.UI
             var version = new Label { Text = "Версия " + v.Major + "." + v.Minor + "." + v.Build, ForeColor = Theme.Muted, AutoSize = true, Location = new Point(Theme.S(106), Theme.S(60)), UseMnemonic = false };
             var body = new Label
             {
-                Text = "Надёжная запись видеоконференций: экран, два микрофона и голоса собеседников.\n\n" +
+                Text = "Надёжная запись видеоконференций: экран, три микрофона и голоса собеседников, с проверкой камеры.\n\n" +
                        "Разработчик: Ходаковский Александр\n\n" +
                        "Видео записывается с помощью FFmpeg (ffmpeg.org), звук берётся через библиотеку NAudio.",
                 AutoSize = false,
