@@ -6,6 +6,7 @@ using System.Drawing.Imaging;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Management;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -54,10 +55,12 @@ namespace MasterVks.Video
         }
 
         /// <summary>Список камер или null, если ffmpeg не ответил (тогда нельзя считать, что камер нет).</summary>
-        public static List<CameraDevice> TryList(string ffmpegPath)
+        /// <param name="log">Записать ответ ffmpeg в журнал (при проверке, чтобы было видно, что он нашёл).</param>
+        public static List<CameraDevice> TryList(string ffmpegPath, bool log = false)
         {
             if (ffmpegPath == null) return null;
             Ffmpeg.RunResult r = Ffmpeg.Run(ffmpegPath, new[] { "-hide_banner", "-list_devices", "true", "-f", "dshow", "-i", "dummy" }, 15000);
+            if (log) Log.Info("Камеры DirectShow, ответ ffmpeg:" + Environment.NewLine + r.Error.TrimEnd());
             if (r.TimedOut || r.Error.IndexOf("dshow", StringComparison.OrdinalIgnoreCase) < 0) return null;
             return Parse(r.Error);
         }
@@ -136,6 +139,83 @@ namespace MasterVks.Video
         public static List<string> InputArgs(CameraDevice device)
         {
             return new List<string> { "-f", "dshow", "-rtbufsize", "64M", "-i", "video=" + device.OpenName };
+        }
+    }
+
+    /// <summary>Камера в списке устройств Windows (диспетчер устройств), даже выключенная.</summary>
+    internal sealed class SystemCamera
+    {
+        public string Name;
+        public string DeviceId;
+        /// <summary>Класс устройства: «Camera» или «Image».</summary>
+        public string Class;
+        /// <summary>Код ошибки диспетчера устройств: 0 — работает, 22 — выключена, остальное — сбой драйвера.</summary>
+        public int ErrorCode;
+
+        public override string ToString()
+        {
+            return Name + " (код " + ErrorCode + ")";
+        }
+    }
+
+    /// <summary>
+    /// Камеры из диспетчера устройств. Нужны, чтобы объяснить, почему камеры нет
+    /// в списке: выключена клавишей, сбой драйвера или Windows не отдаёт её
+    /// классическим способом (DirectShow).
+    /// </summary>
+    internal static class SystemCameras
+    {
+        public static List<SystemCamera> List()
+        {
+            var result = new List<SystemCamera>();
+            try
+            {
+                using (var searcher = new ManagementObjectSearcher(
+                    "SELECT Name, PNPClass, PNPDeviceID, ConfigManagerErrorCode FROM Win32_PnPEntity WHERE PNPClass = 'Camera' OR PNPClass = 'Image'"))
+                {
+                    searcher.Options.Timeout = TimeSpan.FromSeconds(10);
+                    foreach (ManagementObject o in searcher.Get())
+                    {
+                        using (o)
+                        {
+                            result.Add(new SystemCamera
+                            {
+                                Name = Convert.ToString(o["Name"]) ?? "",
+                                Class = Convert.ToString(o["PNPClass"]) ?? "",
+                                DeviceId = Convert.ToString(o["PNPDeviceID"]) ?? "",
+                                ErrorCode = Convert.ToInt32(o["ConfigManagerErrorCode"] ?? 0)
+                            });
+                        }
+                    }
+                }
+                Log.Info("Камеры в диспетчере устройств: " + (result.Count == 0 ? "нет" : string.Join("; ", result)));
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("Не удалось получить список камер из диспетчера устройств", ex);
+            }
+            return result;
+        }
+
+        /// <summary>
+        /// Отбирает настоящие камеры, которых нет среди найденных через DirectShow.
+        /// ИК-камеры для входа по лицу (Windows Hello) и сканеры пропускает.
+        /// </summary>
+        public static List<SystemCamera> NotInDirectShow(IEnumerable<SystemCamera> all, IEnumerable<string> directShowNames)
+        {
+            var known = new HashSet<string>(directShowNames ?? new string[0], StringComparer.OrdinalIgnoreCase);
+            var result = new List<SystemCamera>();
+            foreach (SystemCamera c in all)
+            {
+                if (string.IsNullOrWhiteSpace(c.Name) || known.Contains(c.Name)) continue;
+                if (Regex.IsMatch(c.Name, @"\bIR\b|infrared|инфракрас|\bИК\b", RegexOptions.IgnoreCase)) continue;
+                if (string.Equals(c.Class, "Image", StringComparison.OrdinalIgnoreCase) &&
+                    !Regex.IsMatch(c.Name, @"cam|камер|video|uvc", RegexOptions.IgnoreCase))
+                    continue;
+                result.Add(c);
+            }
+            // Сначала проблемные: о них и надо сказать.
+            return result.OrderByDescending(c => c.ErrorCode != 0).ToList();
         }
     }
 

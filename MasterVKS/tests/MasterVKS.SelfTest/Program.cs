@@ -728,6 +728,28 @@ namespace MasterVks.SelfTest
             v = CameraRules.Verdict(new CameraProbe { DeviceName = "X", Failure = CameraFailure.Other, ErrorLine = "Could not RenderStream", Picture = new CameraPicture() });
             Check(v.Status == CheckStatus.Error && v.Details.Contains("Could not RenderStream"), "непонятная ошибка драйвера показывается в подробностях");
 
+            var sys = new List<SystemCamera>
+            {
+                new SystemCamera { Name = "HP TrueVision HD Camera", Class = "Camera", ErrorCode = 0 },
+                new SystemCamera { Name = "HP IR Camera", Class = "Camera", ErrorCode = 0 },
+                new SystemCamera { Name = "Canon LiDE 300", Class = "Image", ErrorCode = 0 },
+                new SystemCamera { Name = "ARDOR GAMING Rune", Class = "Camera", ErrorCode = 0 }
+            };
+            List<SystemCamera> hidden = SystemCameras.NotInDirectShow(sys, new[] { "ARDOR GAMING Rune" });
+            Check(hidden.Count == 1 && hidden[0].Name == "HP TrueVision HD Camera", "из диспетчера устройств: без ИК-камеры, сканера и уже найденной камеры");
+            v = CameraRules.NoCamera(hidden, null);
+            Check(v.Status == CheckStatus.Warning && v.Summary.Contains("HP TrueVision") && v.Details.Contains("«Камера» Windows"), "камера есть в Windows, но не в DirectShow: объяснение");
+            hidden[0].ErrorCode = 22;
+            v = CameraRules.NoCamera(hidden, null);
+            Check(v.Status == CheckStatus.Warning && v.Summary.EndsWith("выключена") && v.Details.Contains("перечёркнутой камерой"), "камера выключена клавишей или в диспетчере");
+            hidden[0].ErrorCode = 10;
+            v = CameraRules.NoCamera(hidden, null);
+            Check(v.Summary.Contains("сбой драйвера") && v.Details.Contains("код 10"), "сбой драйвера с кодом");
+            v = CameraRules.NoCamera(new List<SystemCamera>(), null);
+            Check(v.Status == CheckStatus.Skipped && v.Details.Contains("BIOS"), "камер нет совсем: серый, с подсказками для ноутбука");
+            v = CameraRules.NoCamera(new List<SystemCamera>(), "доступ к камере запрещён групповой политикой");
+            Check(v.Status == CheckStatus.Error, "запрет доступа важнее, чем «не найдена»");
+
             Func<CameraPicture, string> sum = pic => CameraRules.Verdict(new CameraProbe { DeviceName = "X", Picture = pic }).Summary;
             Check(sum(new CameraPicture { Frames = 20, Fps = 30, Brightness = 3, Contrast = 2 }) == "Картинка с камеры чёрная", "чёрная картинка");
             Check(sum(new CameraPicture { Frames = 20, Fps = 30, Brightness = 120, Contrast = 1 }) == "Картинка с камеры однотонная", "однотонная картинка (заглушка)");

@@ -379,7 +379,8 @@ namespace MasterVks.UI
             try
             {
                 _cameraBox.Items.Clear();
-                _cameraBox.Items.Add(new ComboItem("Не проверять камеру", null));
+                bool none = cameras != null && cameras.Count == 0;
+                _cameraBox.Items.Add(new ComboItem(none ? "Камера не найдена" : "Не проверять камеру", null));
                 int index = 0;
                 if (cameras != null)
                 {

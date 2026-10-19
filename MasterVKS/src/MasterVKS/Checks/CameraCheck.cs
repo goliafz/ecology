@@ -93,6 +93,38 @@ namespace MasterVks.Checks
                 "Во время ВКС камерой пользуется программа ВКС, а МастерВКС следит, чтобы камера не отключилась.");
         }
 
+        /// <summary>
+        /// Камеры для записи не нашлось. Объясняем почему, по диспетчеру устройств.
+        /// </summary>
+        /// <param name="system">Камеры Windows, которых нет в списке DirectShow.</param>
+        public static HealthVerdict NoCamera(IList<SystemCamera> system, string privacyBlock)
+        {
+            if (privacyBlock != null)
+                return new HealthVerdict(CheckStatus.Error, "Windows не пускает программы к камере",
+                    Capitalize(privacyBlock) + ". Пока так, камеру не увидит и ВКС.");
+
+            SystemCamera disabled = system.FirstOrDefault(c => c.ErrorCode == 22);
+            if (disabled != null)
+                return new HealthVerdict(CheckStatus.Warning, "Камера «" + disabled.Name + "» выключена",
+                    "Windows видит камеру, но она отключена. Включите её: на ноутбуке это клавиша с перечёркнутой камерой (обычно среди F1–F12) или переключатель на корпусе; " +
+                    "ещё можно в «Диспетчере устройств»: раздел «Камеры», правой кнопкой по камере, «Включить устройство». Потом нажмите «Проверить».");
+
+            SystemCamera broken = system.FirstOrDefault(c => c.ErrorCode != 0);
+            if (broken != null)
+                return new HealthVerdict(CheckStatus.Warning, "Камера «" + broken.Name + "» не работает: сбой драйвера",
+                    "Диспетчер устройств сообщает об ошибке (код " + broken.ErrorCode + "). Переподключите камеру, если она внешняя, или переустановите её драйвер с сайта производителя ноутбука.");
+
+            if (system.Count > 0)
+                return new HealthVerdict(CheckStatus.Warning, "Камера «" + system[0].Name + "» есть, но снимок сделать не получилось",
+                    "Windows считает камеру исправной, но не отдаёт её классическим способом (DirectShow), через который программа делает снимок. " +
+                    "Так бывает со встроенными камерами некоторых ноутбуков. В Телемосте она при этом может работать: проверьте картинку в приложении «Камера» Windows. " +
+                    "Обычные USB-камеры программа проверяет полностью.");
+
+            return new HealthVerdict(CheckStatus.Skipped, "Камера не найдена",
+                "Windows не видит ни одной камеры, даже выключенной. Если камера нужна: у внешней проверьте USB-кабель и порт, " +
+                "у встроенной в ноутбук клавишу отключения камеры на клавиатуре (значок перечёркнутой камеры) и не выключена ли камера в настройках BIOS. Потом нажмите «Проверить».");
+        }
+
         private static string Capitalize(string s)
         {
             if (string.IsNullOrEmpty(s)) return s;
@@ -134,7 +166,7 @@ namespace MasterVks.Checks
                 return result;
             }
 
-            result.Devices = CameraDevices.List(ffmpeg);
+            result.Devices = CameraDevices.TryList(ffmpeg, true) ?? new List<CameraDevice>();
             var probe = new CameraProbe { Available = result.Devices.Select(d => d.Name).ToList() };
             CameraDevice device = Resolve(settings, result.Devices);
             result.Device = device;
@@ -149,8 +181,7 @@ namespace MasterVks.Checks
                 else if (settings.CameraInitialized)
                     result.Verdict = new HealthVerdict(CheckStatus.Skipped, "Не выбрана", "Выберите камеру в списке «Камера» слева, если её нужно проверять.");
                 else
-                    result.Verdict = new HealthVerdict(CheckStatus.Skipped, "Камера не найдена",
-                        "Windows не видит ни одной камеры. Если камера нужна, подключите её и нажмите «Проверить».");
+                    result.Verdict = CameraRules.NoCamera(SystemCameras.NotInDirectShow(SystemCameras.List(), probe.Available), CameraUsage.PrivacyBlock());
                 return result;
             }
             probe.DeviceName = device.Name;
