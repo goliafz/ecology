@@ -64,10 +64,15 @@ data class EngineConfig(
     val dnsUdp: Boolean = true,
     val parallelism: Int = 6,
     val healthUrls: List<String> = Defaults.HEALTH_URLS,
+    /** Уже работающие на телефоне прокси (например, NekoBox): проверяем через них то, чем реально пользуются приложения. */
+    val externalProxies: List<ExternalProxy> = emptyList(),
     val warmupHost: String = Defaults.WARMUP_HOST,
     /** Сколько первых сайтов из каждого списка проверять в быстром цикле. */
     val quickSites: Int = 2,
 )
+
+/** Локальный SOCKS/mixed-порт стороннего VPN-клиента. */
+data class ExternalProxy(val label: String, val port: Int)
 
 class CycleEngine(
     private val platform: EnginePlatform,
@@ -192,54 +197,83 @@ class CycleEngine(
         sem: Semaphore,
     ): List<CheckResult> = coroutineScope {
         suspend fun <T> io(block: () -> T): T = sem.io(block)
-        if (cfg.profiles.isEmpty()) return@coroutineScope emptyList()
-        val factory = tunnels ?: return@coroutineScope cfg.profiles.map {
-            CheckResult(Category.VPN, HEALTH_LABEL, it.label, ProbeStatus.SKIPPED, error = "в этой версии приложения нет ядра для проверки VPN")
-        }
-        val addresses = cfg.profiles.withIndex().mapNotNull { (i, p) -> serverIp[p.host]?.hostAddress?.let { i to it } }.toMap()
-        val session = try {
-            withContext(Dispatchers.IO) { factory.start(cfg.profiles, addresses) }
-        } catch (e: Exception) {
-            notes += "Не получилось запустить проверку VPN: ${e.message}"
-            return@coroutineScope cfg.profiles.map {
-                CheckResult(Category.VPN, HEALTH_LABEL, it.label, ProbeStatus.ERROR, error = "проверка VPN не запустилась: ${e.message}")
+        val out = mutableListOf<CheckResult>()
+        // Маршрут = имя + локальный SOCKS-порт: свои профили через встроенное ядро и, если есть, прокси самого NekoBox.
+        val routes = mutableListOf<Pair<String, Int>>()
+        var session: TunnelSession? = null
+
+        if (cfg.profiles.isNotEmpty()) {
+            val factory = tunnels
+            if (factory == null) {
+                out += cfg.profiles.map {
+                    CheckResult(Category.VPN, HEALTH_LABEL, it.label, ProbeStatus.SKIPPED, error = "в этой версии приложения нет ядра для проверки VPN")
+                }
+            } else {
+                val addresses = cfg.profiles.withIndex().mapNotNull { (i, p) -> serverIp[p.host]?.hostAddress?.let { i to it } }.toMap()
+                try {
+                    val started = withContext(Dispatchers.IO) { factory.start(cfg.profiles, addresses) }
+                    session = started
+                    cfg.profiles.forEachIndexed { i, p -> routes += p.label to started.socksPorts[i] }
+                } catch (e: Exception) {
+                    notes += "Не получилось запустить проверку VPN: ${e.message}"
+                    out += cfg.profiles.map {
+                        CheckResult(Category.VPN, HEALTH_LABEL, it.label, ProbeStatus.ERROR, error = "проверка VPN не запустилась: ${e.message}")
+                    }
+                }
             }
         }
+        cfg.externalProxies.forEach { ep ->
+            if (withContext(Dispatchers.IO) { localPortOpen(ep.port) }) {
+                routes += ep.label to ep.port
+            } else {
+                out += CheckResult(
+                    Category.VPN, HEALTH_LABEL, ep.label, ProbeStatus.SKIPPED, port = ep.port,
+                    error = "${ep.label} не запущен или у него другой порт прокси (указан ${ep.port})",
+                )
+            }
+        }
+
         try {
-            val perProfile = cfg.profiles.mapIndexed { i, p ->
+            out += routes.map { (label, port) ->
                 async {
-                    val port = session.socksPorts[i]
-                    val out = mutableListOf<CheckResult>()
-                    out += healthCheck(probe, cfg, p.label, port, sem)
+                    val res = mutableListOf<CheckResult>()
+                    res += healthCheck(probe, cfg, label, port, sem)
                     val sub = mutableListOf<kotlinx.coroutines.Deferred<List<CheckResult>>>()
                     // В быстрой проверке из списка «через VPN» берём только мессенджеры: они важнее всего для связи.
                     val targets = if (full) cfg.vpnTargets else cfg.vpnTargets.filter { Analyzer.serviceOf(it.label) in Analyzer.MESSENGER_NAMES }
                     targets.forEach { t ->
-                        sub += async { io { listOf(probe.run(siteRequest(Category.VPN, t, p.label, port)).result) } }
+                        sub += async { io { listOf(probe.run(siteRequest(Category.VPN, t, label, port)).result) } }
                     }
                     if (full) {
                         sub += async {
                             io {
-                                val (check, ip) = publicIp(probe, Defaults.IP_VPN_URLS, p.label, port, "Ваш IP-адрес через VPN")
-                                if (ip != null) synchronized(publicIpVpn) { publicIpVpn[p.label] = ip }
+                                val (check, ip) = publicIp(probe, Defaults.IP_VPN_URLS, label, port, "Ваш IP-адрес через VPN")
+                                if (ip != null) synchronized(publicIpVpn) { publicIpVpn[label] = ip }
                                 listOf(check)
                             }
                         }
                         if (cfg.downloadEnabled) Target.parse(cfg.downloadForeignUrl)?.let { t ->
-                            sub += async { io { listOf(probe.run(downloadRequest(t, "Скачивание через VPN", p.label, port, cfg)).result) } }
+                            sub += async { io { listOf(probe.run(downloadRequest(t, "Скачивание через VPN", label, port, cfg)).result) } }
                         }
                     }
-                    out += sub.awaitAll().flatten()
-                    out
+                    res += sub.awaitAll().flatten()
+                    res
                 }
             }.awaitAll().flatten()
-            if (perProfile.any { it.target == HEALTH_LABEL && !it.ok }) {
-                session.diagnostics()?.takeIf { it.isNotBlank() }?.let { notes += "Технический журнал проверки VPN: $it" }
+            if (out.any { it.target == HEALTH_LABEL && !it.ok && it.status != ProbeStatus.SKIPPED }) {
+                session?.diagnostics()?.takeIf { it.isNotBlank() }?.let { notes += "Технический журнал проверки VPN: $it" }
             }
-            perProfile
+            out
         } finally {
-            withContext(Dispatchers.IO) { runCatching { session.close() } }
+            session?.let { sess -> withContext(Dispatchers.IO) { runCatching { sess.close() } } }
         }
+    }
+
+    private fun localPortOpen(port: Int): Boolean = try {
+        java.net.Socket().use { it.connect(java.net.InetSocketAddress(InetAddress.getByName("127.0.0.1"), port), 500) }
+        true
+    } catch (e: Exception) {
+        false
     }
 
     private suspend fun healthCheck(
@@ -379,6 +413,9 @@ class CycleEngine(
     companion object {
         // Имя не меняем: по нему находятся записи в старых журналах.
         const val HEALTH_LABEL = "VPN-туннель (generate_204)"
+
+        /** Маршрут через NekoBox: так ходят Telegram и другие приложения на телефоне. */
+        const val NEKOBOX = "NekoBox"
 
         /** Для обычных сайтов достаточно ответа сервера — тело читаем немного, чтобы не тратить трафик. */
         const val SITE_BYTES = 8L * 1024

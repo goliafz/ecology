@@ -80,9 +80,10 @@ class ReportBuilder(private val zone: ZoneId = ZoneId.systemDefault()) {
         }
         line()
 
-        line("=== 1. КАК РАБОТАЛ ИНТЕРНЕТ (по полным проверкам) ===")
-        val vPeriods = periods(fulls) { it.summary.verdict.takeIf { v -> v != Verdict.UNKNOWN } }
-        if (vPeriods.isEmpty()) line("Полных проверок пока не было.")
+        line("=== 1. КАК РАБОТАЛ ИНТЕРНЕТ (полные и быстрые проверки) ===")
+        // Быстрые проверки тоже считаем: они идут чаще и точнее ловят момент переключения.
+        val vPeriods = periods(all.filter { it.kind != CycleKind.SKIPPED }) { it.summary.verdict.takeIf { v -> v != Verdict.UNKNOWN } }
+        if (vPeriods.isEmpty()) line("Проверок пока не было.")
         vPeriods.forEach { p ->
             val ru = p.rate { it.summary.ruOk to it.summary.ruTotal }
             val fr = p.rate { it.summary.foreignOk to it.summary.foreignTotal }
@@ -102,7 +103,9 @@ class ReportBuilder(private val zone: ZoneId = ZoneId.systemDefault()) {
         line()
 
         line("=== 3. КОГДА ВКЛЮЧАЛИ И ОТКЛЮЧАЛИ БЕЛЫЕ СПИСКИ ===")
-        val wlPeriods = vPeriods.filter { it.value == Verdict.WHITELIST }
+        // Одна быстрая проверка (2 сайта) может ошибиться, например при смене сети: берём периоды
+        // хотя бы из двух проверок подряд или с полной проверкой.
+        val wlPeriods = vPeriods.filter { p -> p.value == Verdict.WHITELIST && (p.count >= 2 || p.items.any { it.kind == CycleKind.FULL }) }
         if (wlPeriods.isEmpty()) {
             line("За этот период белых списков не было.")
         } else {
@@ -148,7 +151,7 @@ class ReportBuilder(private val zone: ZoneId = ZoneId.systemDefault()) {
         line()
 
         line("=== 6. ВЫВОДЫ И КАК МОЖНО ОБОЙТИ ===")
-        (conclusions(all, fulls, wl, normal) + messengerConclusions(fulls) + signalConclusions(fulls))
+        (conclusions(all, fulls, wl, normal, wlPeriods.flatMap { it.items }) + messengerConclusions(fulls) + signalConclusions(fulls))
             .forEachIndexed { i, s -> line("${i + 1}. $s") }
         line()
 
@@ -185,7 +188,13 @@ class ReportBuilder(private val zone: ZoneId = ZoneId.systemDefault()) {
         }
     }
 
-    private fun conclusions(all: List<CycleRecord>, fulls: List<CycleRecord>, wl: List<CycleRecord>, normal: List<CycleRecord>): List<String> {
+    private fun conclusions(
+        all: List<CycleRecord>,
+        fulls: List<CycleRecord>,
+        wl: List<CycleRecord>,
+        normal: List<CycleRecord>,
+        wlTimeline: List<CycleRecord>,
+    ): List<String> {
         val out = mutableListOf<String>()
         if (fulls.isEmpty()) return listOf("Пока мало данных. Нужны полные проверки, лучше ночью, когда включают ограничения.")
         if (wl.isEmpty()) {
@@ -200,15 +209,24 @@ class ReportBuilder(private val zone: ZoneId = ZoneId.systemDefault()) {
             out += "При белых списках открывались российские сайты: ${allowed.joinToString().ifEmpty { "ни один" }}. " +
                 "Не открывались: ${blocked.joinToString().ifEmpty { "таких нет" }}."
 
+            val tlsAnySni = aggregate(wl, { it.category == Category.SERVER && it.target.startsWith("TLS ") }, { it.target })
+            // Если даже с разрешённым именем (ya.ru) шифрование до зарубежного адреса не проходит, режут по адресу, а не по имени.
+            val sniHelps = tlsAnySni.values.any { it.rate >= 0.7 }
             val fW = wl.flatMap { c -> c.checks.filter { it.category == Category.FOREIGN && !it.ok } }
             val stageHist = fW.groupingBy { it.status.stage }.eachCount()
             when (stageHist.maxByOrNull { it.value }?.key) {
                 Stage.TCP -> out += "Зарубежные сайты при белых списках не отвечают совсем, связь обрывается на первом шаге " +
                     "(TCP, ${pctOf(stageHist, Stage.TCP, fW.size)} отказов). Значит, оператор пропускает только адреса из своего списка, " +
                     "а всё остальное просто не доходит."
-                Stage.TLS -> out += "Зарубежные сайты при белых списках отвечают, но соединение рвётся на шифровании " +
-                    "(TLS, ${pctOf(stageHist, Stage.TLS, fW.size)} отказов). Оператор смотрит на имя сайта в запросе (SNI). " +
-                    "Может помочь подключение, которое называется именем разрешённого сайта."
+                Stage.TLS -> out += if (sniHelps || tlsAnySni.isEmpty()) {
+                    "Зарубежные сайты при белых списках отвечают, но соединение рвётся на шифровании " +
+                        "(TLS, ${pctOf(stageHist, Stage.TLS, fW.size)} отказов). Оператор смотрит на имя сайта в запросе (SNI). " +
+                        "Может помочь подключение, которое называется именем разрешённого сайта."
+                } else {
+                    "Зарубежные адреса при белых списках принимают подключение, но данные дальше не идут: шифрование зависает " +
+                        "(TLS, ${pctOf(stageHist, Stage.TLS, fW.size)} отказов). Это не помогает обойти даже имя разрешённого сайта: " +
+                        "до вашего сервера не проходит и с ya.ru. Значит, режут по адресу (IP), а не по имени сайта."
+                }
                 Stage.DNS -> out += "При белых списках у зарубежных сайтов не находится адрес (DNS). Может помочь другой DNS-сервер."
                 Stage.HTTP -> out += "Зарубежные сайты при белых списках соединяются, но не присылают ответ: данные режут уже после подключения."
                 else -> {}
@@ -251,8 +269,17 @@ class ReportBuilder(private val zone: ZoneId = ZoneId.systemDefault()) {
                 }
             }
 
-            val hosting = aggregate(wl, { it.category == Category.RU && it.target in Defaults.HOSTING }, { it.target })
+            val hosting = aggregate(
+                wl,
+                { it.category == Category.RU && Defaults.HOSTING.any { h -> it.target == h || it.target.endsWith("($h)") } },
+                { it.target },
+            )
             val hostingOk = hosting.filter { it.value.rate >= 0.7 }.keys
+            val hostingBad = hosting.filter { it.value.rate < 0.3 }.keys
+            if (hostingOk.isEmpty() && hostingBad.isNotEmpty()) {
+                out += "Сайты российских хостингов при белых списках не открывались (${hostingBad.joinToString()}). " +
+                    "Значит, их адреса в белый список не входят, и сервер-посредник у них, скорее всего, тоже не заработает."
+            }
             if (hostingOk.isNotEmpty()) {
                 out += "При белых списках открывались сайты российских хостингов: ${hostingOk.joinToString()}. " +
                     "У них можно попробовать взять сервер-посредник. Открытый сайт хостинга ещё не значит, что откроется любой их сервер, " +
@@ -262,6 +289,14 @@ class ReportBuilder(private val zone: ZoneId = ZoneId.systemDefault()) {
             val dnsW = aggregate(wl, { it.category == Category.DNS }, { it.target })
             val dnsBad = dnsW.filter { it.value.rate < 0.3 }.keys
             if (dnsBad.isNotEmpty()) out += "При белых списках не отвечают DNS-серверы: ${dnsBad.joinToString()}. Подойдёт DNS оператора или Яндекса (77.88.8.8)."
+        }
+
+        // Зарубежное уже не открывается, а VPN ещё работает: ограничения включают поэтапно.
+        val staged = wlTimeline.filter { it.summary.vpnAny }
+        if (staged.isNotEmpty()) {
+            val times = staged.take(6).joinToString { dm.format(Instant.ofEpochMilli(it.startedAt)) } + if (staged.size > 6) " и др." else ""
+            out += "Бывало, что зарубежные сайты уже не открывались, а VPN ещё работал: $times. " +
+                "Похоже, ограничения включают и снимают поэтапно: зарубежные сайты и ваш сервер отрезают не одновременно."
         }
 
         val corrupt = all.flatMap { c -> c.checks.filter { it.status == ProbeStatus.DATA_CORRUPT } }

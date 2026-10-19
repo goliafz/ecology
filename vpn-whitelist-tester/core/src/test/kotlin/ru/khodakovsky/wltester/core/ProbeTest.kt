@@ -256,6 +256,28 @@ class ProbeTest {
     }
 
     @Test
+    fun nekoboxRouteIsCheckedAndDecidesMessengers() = runBlocking {
+        val platform = object : EnginePlatform {
+            override fun resolve(host: String) = listOf(localhost)
+            override fun network() = NetworkSnapshot(transport = "CELLULAR")
+        }
+        val closed = ServerSocket(0).use { it.localPort }
+        val base = EngineConfig(
+            ruTargets = emptyList(), foreignTargets = emptyList(),
+            vpnTargets = Target.parseList("localhost:$tlsPort # Telegram, сайт"),
+            connectTimeoutMs = 2000, readTimeoutMs = 1500, downloadEnabled = false, dnsUdp = false, ping = false,
+            warmupHost = "", healthUrls = listOf("https://localhost:$tlsPort/204"),
+        )
+        val engine = CycleEngine(platform, null, sslFactory = ctx.socketFactory)
+        val ok = engine.run(CycleKind.QUICK, Trigger.WATCH, base.copy(externalProxies = listOf(ru.khodakovsky.wltester.core.engine.ExternalProxy(CycleEngine.NEKOBOX, socksPort))))
+        assertEquals(mapOf(CycleEngine.NEKOBOX to true), ok.summary.vpn)
+        assertEquals(mapOf("Telegram" to true), ok.summary.messengers)
+        val off = engine.run(CycleKind.QUICK, Trigger.WATCH, base.copy(externalProxies = listOf(ru.khodakovsky.wltester.core.engine.ExternalProxy(CycleEngine.NEKOBOX, closed))))
+        assertEquals(emptyMap(), off.summary.vpn)
+        assertEquals(ProbeStatus.SKIPPED, off.checks.single { it.route == CycleEngine.NEKOBOX }.status)
+    }
+
+    @Test
     fun fullCycleDetectsWhitelistAndReports() = runBlocking {
         val free = ServerSocket(0).use { it.localPort }
         val platform = object : EnginePlatform {

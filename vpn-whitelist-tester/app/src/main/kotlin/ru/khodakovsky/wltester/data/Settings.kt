@@ -10,7 +10,9 @@ import ru.khodakovsky.wltester.core.Target
 import ru.khodakovsky.wltester.core.VlessLinks
 import ru.khodakovsky.wltester.core.WlJson
 import ru.khodakovsky.wltester.core.analysis.MonitorMemory
+import ru.khodakovsky.wltester.core.engine.CycleEngine
 import ru.khodakovsky.wltester.core.engine.EngineConfig
+import ru.khodakovsky.wltester.core.engine.ExternalProxy
 
 @Serializable
 enum class ScheduleMode(val ru: String) {
@@ -57,6 +59,9 @@ data class AppSettings(
     val dnsUdp: Boolean = true,
     /** Пинг, разброс и потери до российского сайта: качество самой мобильной связи. */
     val quality: Boolean = true,
+    /** Проверять ещё и через сам NekoBox (его локальный прокси): так же, как ходят Telegram и другие приложения. */
+    val checkNekobox: Boolean = true,
+    val nekoboxPort: Int = 2080,
     val timeoutSec: Int = 6,
     val retentionDays: Int = 30,
 ) {
@@ -77,6 +82,7 @@ data class AppSettings(
         ping = ping,
         dnsUdp = dnsUdp,
         quality = quality,
+        externalProxies = if (checkNekobox) listOf(ExternalProxy(CycleEngine.NEKOBOX, nekoboxPort)) else emptyList(),
     )
 
     /** Примерный трафик одной полной проверки, КБ. */
@@ -114,7 +120,9 @@ class SettingsStore private constructor(ctx: Context) {
             runCatching { WlJson.decodeFromString(AppSettings.serializer(), it) }.getOrNull()
         } ?: return AppSettings()
         // Старый список «через VPN», если его не меняли, заменяем новым (с серверами Telegram).
-        return if (s.vpnSites.trim() == Defaults.VPN_SITES_V1.trim()) s.copy(vpnSites = Defaults.VPN_SITES) else s
+        var r = if (s.vpnSites.trim() == Defaults.VPN_SITES_V1.trim()) s.copy(vpnSites = Defaults.VPN_SITES) else s
+        if (r.ruSites.trim() == Defaults.RU_SITES_V1.trim()) r = r.copy(ruSites = Defaults.RU_SITES)
+        return r
     }
 
     fun get(): AppSettings = _settings.value

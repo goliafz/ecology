@@ -78,6 +78,40 @@ object Defaults {
         selectel.ru
         timeweb.cloud
         cloud.yandex.ru
+        # Хранилища в облаках хостингов: адреса ближе к их серверам, чем сайты
+        storage.yandexcloud.net # Яндекс Облако, хранилище
+        hb.bizmrg.com # VK Cloud, хранилище
+        s3.storage.selcloud.ru # Selectel, хранилище
+        s3.timeweb.cloud # Timeweb, хранилище
+    """.trimIndent()
+
+    /** Список российских сайтов из версий до 1.0.10: если его не меняли, заменяем на новый. */
+    val RU_SITES_V1 = """
+        yandex.ru
+        ya.ru
+        vk.ru
+        vk.com
+        ok.ru
+        gosuslugi.ru
+        ozon.ru
+        mail.ru
+        sberbank.ru
+        tbank.ru
+        avito.ru
+        wildberries.ru
+        rutube.ru
+        dzen.ru
+        max.ru
+        mos.ru
+        nalog.gov.ru
+        2gis.ru
+        kinopoisk.ru
+        rbc.ru
+        # Российские хостинги: если они открываются при белых списках, у них можно взять сервер-посредник
+        firstbyte.ru
+        selectel.ru
+        timeweb.cloud
+        cloud.yandex.ru
     """.trimIndent()
 
     val FOREIGN_SITES = """
@@ -92,7 +126,10 @@ object Defaults {
         amazon.com
     """.trimIndent()
 
-    val HOSTING = setOf("firstbyte.ru", "selectel.ru", "timeweb.cloud", "cloud.yandex.ru", "cloud.vk.com", "reg.ru")
+    val HOSTING = setOf(
+        "firstbyte.ru", "selectel.ru", "timeweb.cloud", "cloud.yandex.ru", "cloud.vk.com", "reg.ru",
+        "storage.yandexcloud.net", "hb.bizmrg.com", "s3.storage.selcloud.ru", "s3.timeweb.cloud",
+    )
 
     /** До этого сайта меряем пинг, разброс и потери: показывает качество самой мобильной связи. */
     const val QUALITY_PING_HOST = "ya.ru"

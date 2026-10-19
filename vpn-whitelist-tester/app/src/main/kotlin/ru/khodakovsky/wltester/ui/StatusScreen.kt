@@ -54,7 +54,9 @@ import ru.khodakovsky.wltester.core.CycleKind
 import ru.khodakovsky.wltester.core.CycleRecord
 import ru.khodakovsky.wltester.core.EventType
 import ru.khodakovsky.wltester.core.NetworkSnapshot
+import ru.khodakovsky.wltester.core.ProbeStatus
 import ru.khodakovsky.wltester.core.VlessLinks
+import ru.khodakovsky.wltester.core.engine.CycleEngine
 import ru.khodakovsky.wltester.data.AppSettings
 import ru.khodakovsky.wltester.data.LogStore
 import ru.khodakovsky.wltester.data.MonitorState
@@ -150,7 +152,11 @@ private fun NowCard(last: CycleRecord?, progress: String?) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Dot(if (ok) Green else Red)
                             Spacer(Modifier.width(8.dp))
-                            val who = if (vpn.size > 1) "VPN «$name»" else "VPN"
+                            val who = when {
+                                name == CycleEngine.NEKOBOX -> "NekoBox (через него работают приложения)"
+                                vpn.size > 1 -> "VPN «$name»"
+                                else -> "VPN"
+                            }
                             Text(
                                 if (ok) "$who работает" else "$who не работает",
                                 style = MaterialTheme.typography.titleMedium,
@@ -159,12 +165,16 @@ private fun NowCard(last: CycleRecord?, progress: String?) {
                         }
                     }
                 }
+                val via = if (vpn.containsKey(CycleEngine.NEKOBOX)) "через NekoBox" else "через VPN"
                 last.summary.messengers.forEach { (name, ok) ->
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Dot(if (ok) Green else Red)
                         Spacer(Modifier.width(8.dp))
-                        Text(if (ok) "$name через VPN работает" else "$name через VPN не работает", color = if (ok) Green else Red)
+                        Text(if (ok) "$name $via работает" else "$name $via не работает", color = if (ok) Green else Red)
                     }
+                }
+                last.checks.firstOrNull { it.route == CycleEngine.NEKOBOX && it.status == ProbeStatus.SKIPPED }?.let {
+                    Text("Через NekoBox не проверено: ${it.error}.", style = MaterialTheme.typography.bodySmall, color = Gray)
                 }
                 last.network.signalGrade()?.let { g ->
                     Row(verticalAlignment = Alignment.CenterVertically) {

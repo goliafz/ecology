@@ -49,11 +49,13 @@ object Analyzer {
         c.category == Category.VPN && c.status != ProbeStatus.SKIPPED && serviceOf(c.target) in MESSENGER_NAMES
 
     /**
-     * Работает ли мессенджер через VPN (хотя бы через один профиль). Приложение ходит на свои серверы,
+     * Работает ли мессенджер через VPN. Если проверялся путь через NekoBox, решает он (так работает само приложение),
+     * иначе достаточно одного профиля. Приложение ходит на свои серверы,
      * а не на сайт, поэтому если серверы проверялись, решают они; иначе смотрим на сайт.
      */
     fun messengers(checks: List<CheckResult>): Map<String, Boolean> =
         checks.filter { isMessengerCheck(it) }
+            .let { all -> all.filter { it.route == CycleEngine.NEKOBOX }.ifEmpty { all } } // через NekoBox ходят сами приложения
             .groupBy { serviceOf(it.target) }
             .mapValues { (_, list) ->
                 val servers = list.filter { it.sni == null }

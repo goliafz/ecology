@@ -243,6 +243,15 @@ private fun AdvancedSettings(s: AppSettings, upd: ((AppSettings) -> AppSettings)
         "Проверять сервер под разными именами (SNI)", s.sniMatrix,
         "Видно, режет ли оператор подключения по имени сайта",
     ) { v -> upd { it.copy(sniMatrix = v) } }
+    SwitchRow(
+        "Проверять через NekoBox", s.checkNekobox,
+        "Кроме своей проверки VPN, приложение проверяет Telegram и сайты через сам NekoBox, так же, как ходят ваши приложения",
+    ) { v -> upd { it.copy(checkNekobox = v) } }
+    if (s.checkNekobox) {
+        NumberField("Порт прокси NekoBox (в NekoBox: Настройки, «Порт прокси», обычно 2080)", s.nekoboxPort, 1..65535) { v ->
+            upd { it.copy(nekoboxPort = v) }
+        }
+    }
     SwitchRow("Пинг до VPN-сервера", s.ping) { v -> upd { it.copy(ping = v) } }
     SwitchRow(
         "Мерить качество связи", s.quality,
