@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Threading;
 using MasterVks.Core;
@@ -16,17 +17,41 @@ namespace MasterVks.Audio
         Error
     }
 
-    /// <summary>Захват звука компьютера (то, что играет в динамиках/на телевизоре) с коротким буфером.</summary>
-    internal sealed class LoopbackCapture : WasapiCapture
+    /// <summary>
+    /// Захват звука с заданными флагами Windows. Нужен, чтобы при отказе одного
+    /// способа подключения попробовать другой (некоторые драйверы и антивирусы
+    /// не принимают автоматическое преобразование формата или опрос по таймеру).
+    /// </summary>
+    internal sealed class FlexibleCapture : WasapiCapture
     {
-        public LoopbackCapture(MMDevice device, int bufferMs)
-            : base(device, false, bufferMs)
+        private readonly AudioClientStreamFlags _flags;
+
+        public FlexibleCapture(MMDevice device, bool eventSync, int bufferMs, AudioClientStreamFlags flags)
+            : base(device, eventSync, bufferMs)
         {
+            _flags = flags;
         }
 
         protected override AudioClientStreamFlags GetAudioClientStreamFlags()
         {
-            return AudioClientStreamFlags.Loopback | base.GetAudioClientStreamFlags();
+            return _flags;
+        }
+    }
+
+    /// <summary>Один способ подключения к устройству.</summary>
+    internal struct CaptureMode
+    {
+        public string Name;
+        public bool EventSync;
+        public int BufferMs;
+        public bool AutoConvert;
+
+        public CaptureMode(string name, bool eventSync, int bufferMs, bool autoConvert)
+        {
+            Name = name;
+            EventSync = eventSync;
+            BufferMs = bufferMs;
+            AutoConvert = autoConvert;
         }
     }
 
@@ -226,28 +251,62 @@ namespace MasterVks.Audio
                     return;
                 }
 
-                capture = IsLoopback ? new LoopbackCapture(device, CaptureBufferMs) : new WasapiCapture(device, false, CaptureBufferMs);
-                var converter = new CaptureConverter(capture.WaveFormat, Channels);
-                _captureStopped = false;
-                _stopError = null;
-                Interlocked.Exchange(ref _lastDataTicks, Clock.Now);
-                lock (_lock)
+                // Пробуем способы подключения по очереди, начиная с того, что сработал в прошлый раз.
+                Exception lastError = null;
+                CaptureConverter converter = null;
+                CaptureMode used = default(CaptureMode);
+                foreach (CaptureMode mode in ModesToTry())
                 {
-                    _ring.Clear();
-                    _buffering = true;
+                    try
+                    {
+                        capture = CreateCapture(device, mode);
+                        converter = new CaptureConverter(capture.WaveFormat, Channels);
+                        _captureStopped = false;
+                        _stopError = null;
+                        Interlocked.Exchange(ref _lastDataTicks, Clock.Now);
+                        lock (_lock)
+                        {
+                            _ring.Clear();
+                            _buffering = true;
+                        }
+                        _converter = converter;
+                        _capture = capture;
+                        capture.DataAvailable += OnDataAvailable;
+                        capture.RecordingStopped += OnRecordingStopped;
+                        capture.StartRecording();
+                        used = mode;
+                        lastError = null;
+                        break;
+                    }
+                    catch (Exception attemptError)
+                    {
+                        lastError = attemptError;
+                        Log.Warn(Title + ": способ «" + mode.Name + "» не подошёл: " + Humanize(attemptError) + " [" + attemptError.GetType().Name + "]", attemptError);
+                        if (capture != null)
+                        {
+                            capture.DataAvailable -= OnDataAvailable;
+                            capture.RecordingStopped -= OnRecordingStopped;
+                            DisposeWithTimeout(capture);
+                        }
+                        capture = null;
+                        _capture = null;
+                        _converter = null;
+                        // Устройство пропало или доступ запрещён: другие способы не помогут.
+                        if (IsFinal(attemptError)) break;
+                        device = Resolve(id, name, followDefault) ?? device;
+                    }
                 }
-                _converter = converter;
-                _capture = capture;
-                capture.DataAvailable += OnDataAvailable;
-                capture.RecordingStopped += OnRecordingStopped;
-                capture.StartRecording();
+                if (lastError != null) throw lastError;
+                if (capture == null) throw new InvalidOperationException("ни один способ подключения не подошёл");
 
+                _workingMode = used;
+                _hasWorkingMode = true;
                 _openedVersion = version;
                 _everActive = true;
                 _activeDeviceName = device.FriendlyName;
                 _lastErrorLogged = null;
                 SetState(SourceState.Active, "Работает");
-                Log.Info(Title + ": подключено «" + device.FriendlyName + "» (" + converter.Description + ")");
+                Log.Info(Title + ": подключено «" + device.FriendlyName + "» (" + converter.Description + ", способ «" + used.Name + "»)");
             }
             catch (Exception ex)
             {
@@ -269,6 +328,46 @@ namespace MasterVks.Audio
                 _nextRetry = Clock.Now + Clock.Frequency * 3;
                 ResetEnumerator();
             }
+        }
+
+        private CaptureMode _workingMode;
+        private bool _hasWorkingMode;
+
+        private IEnumerable<CaptureMode> ModesToTry()
+        {
+            var modes = new List<CaptureMode>
+            {
+                new CaptureMode("обычный", false, CaptureBufferMs, true),
+                new CaptureMode("без преобразования формата", false, 100, false),
+                new CaptureMode("по событиям", true, CaptureBufferMs, false),
+                new CaptureMode("по событиям с преобразованием", true, CaptureBufferMs, true)
+            };
+            if (_hasWorkingMode)
+            {
+                modes.RemoveAll(m => m.Name == _workingMode.Name);
+                modes.Insert(0, _workingMode);
+            }
+            return modes;
+        }
+
+        private WasapiCapture CreateCapture(MMDevice device, CaptureMode mode)
+        {
+            AudioClientStreamFlags flags = AudioClientStreamFlags.None;
+            if (mode.AutoConvert) flags |= AudioClientStreamFlags.AutoConvertPcm | AudioClientStreamFlags.SrcDefaultQuality;
+            if (IsLoopback) flags |= AudioClientStreamFlags.Loopback;
+            return new FlexibleCapture(device, mode.EventSync, mode.BufferMs, flags);
+        }
+
+        private static bool IsFinal(Exception ex)
+        {
+            uint code = (uint)ErrorCode(ex);
+            return code == 0x80070005 || code == 0x88890004 || code == 0x80070490 || code == 0x8889000A;
+        }
+
+        private static int ErrorCode(Exception ex)
+        {
+            var com = ex as COMException;
+            return com != null ? com.ErrorCode : (ex != null ? ex.HResult : 0);
         }
 
         private MMDevice Resolve(string id, string name, bool followDefault)
@@ -544,8 +643,7 @@ namespace MasterVks.Audio
 
         public static string Humanize(Exception ex)
         {
-            var com = ex as COMException;
-            int code = com != null ? com.ErrorCode : (ex != null ? ex.HResult : 0);
+            int code = ErrorCode(ex);
             switch ((uint)code)
             {
                 case 0x80070005:
@@ -559,7 +657,10 @@ namespace MasterVks.Audio
                 case 0x80070490:
                     return "устройство не найдено";
             }
-            return ex == null ? "неизвестная ошибка" : ex.Message;
+            if (ex == null) return "неизвестная ошибка";
+            // Код ошибки помогает понять причину по журналу; текст Windows бывает слишком коротким.
+            string message = (ex.Message ?? "").Trim().TrimEnd('.');
+            return message + " (код 0x" + ((uint)code).ToString("X8") + "). Если так у всех устройств сразу, скорее всего, запись звука блокирует антивирус или запрещён доступ к микрофону в Windows";
         }
 
         public void Dispose()
