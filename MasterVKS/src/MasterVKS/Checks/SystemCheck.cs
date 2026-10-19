@@ -69,6 +69,7 @@ namespace MasterVks.Checks
         public const string KeyScreen = "screen";
         public const string KeyMic1 = "mic1";
         public const string KeyMic2 = "mic2";
+        public const string KeyMic3 = "mic3";
         public const string KeySystem = "sys";
         public const string KeyTogether = "together";
         public const string KeyDisk = "disk";
@@ -99,8 +100,9 @@ namespace MasterVks.Checks
                 new CheckItem { Key = KeyScreen, Title = "Экран" },
                 new CheckItem { Key = KeyMic1, Title = "Микрофон 1" },
                 new CheckItem { Key = KeyMic2, Title = "Микрофон 2" },
+                new CheckItem { Key = KeyMic3, Title = "Микрофон 3" },
                 new CheckItem { Key = KeySystem, Title = "Звук собеседников" },
-                new CheckItem { Key = KeyTogether, Title = "Два микрофона вместе" },
+                new CheckItem { Key = KeyTogether, Title = "Микрофоны вместе" },
                 new CheckItem { Key = KeyDisk, Title = "Папка и место на диске" },
                 new CheckItem { Key = KeyPower, Title = "Питание", Group = GroupHealth },
                 new CheckItem { Key = KeyUpdates, Title = "Обновления Windows", Group = GroupHealth },
@@ -140,7 +142,7 @@ namespace MasterVks.Checks
             catch (Exception ex)
             {
                 Log.Error("Сбой проверки звука", ex);
-                foreach (string key in new[] { KeyMic1, KeyMic2, KeySystem, KeyTogether })
+                foreach (string key in new[] { KeyMic1, KeyMic2, KeyMic3, KeySystem, KeyTogether })
                     if (_items[key].Status == CheckStatus.Running) Set(key, CheckStatus.Error, "Проверка не удалась: " + ex.Message, "");
             }
 
@@ -428,7 +430,13 @@ namespace MasterVks.Checks
 
         private void CheckAudio()
         {
-            AudioSource mic1 = _engine.Mic1, mic2 = _engine.Mic2, sys = _engine.System;
+            AudioSource sys = _engine.System;
+            var mics = new[]
+            {
+                new MicResult { Key = KeyMic1, Number = 1, Source = _engine.Mic1, DeviceId = _settings.Mic1Id },
+                new MicResult { Key = KeyMic2, Number = 2, Source = _engine.Mic2, DeviceId = _settings.Mic2Id },
+                new MicResult { Key = KeyMic3, Number = 3, Source = _engine.Mic3, DeviceId = _settings.Mic3Id }
+            };
 
             // Ждём, пока устройства подключатся (сразу после запуска это может занять пару секунд).
             long deadline = Clock.Now + Clock.Frequency * 4;
@@ -439,7 +447,7 @@ namespace MasterVks.Checks
                 Thread.Sleep(100);
             }
 
-            long under1 = mic1.Underruns, under2 = mic2.Underruns;
+            foreach (MicResult m in mics) m.UnderrunsBefore = m.Source.Underruns;
             var collector = new AudioCollector();
             Action<AudioBlock> handler = collector.OnBlock;
             _engine.Subscribe(handler);
@@ -484,15 +492,18 @@ namespace MasterVks.Checks
             bool tonePlayed = playError == null;
             int ts = tonePlayed ? toneStart : -1;
 
-            SourceAnalysis a1 = AudioAnalyzer.Analyze(snap.Mic1, snap.Mic1Real, snap.TotalFrames, skip, ts, toneEnd, freqs);
-            SourceAnalysis a2 = AudioAnalyzer.Analyze(snap.Mic2, snap.Mic2Real, snap.TotalFrames, skip, ts, toneEnd, freqs);
+            mics[0].Analysis = AudioAnalyzer.Analyze(snap.Mic1, snap.Mic1Real, snap.TotalFrames, skip, ts, toneEnd, freqs);
+            mics[1].Analysis = AudioAnalyzer.Analyze(snap.Mic2, snap.Mic2Real, snap.TotalFrames, skip, ts, toneEnd, freqs);
+            mics[2].Analysis = AudioAnalyzer.Analyze(snap.Mic3, snap.Mic3Real, snap.TotalFrames, skip, ts, toneEnd, freqs);
             SourceAnalysis aS = AudioAnalyzer.Analyze(snap.Sys, snap.SysReal, snap.TotalFrames, skip, ts, toneEnd, freqs);
 
-            long drop1 = mic1.Underruns - under1, drop2 = mic2.Underruns - under2;
-            CheckStatus s1 = MicVerdict(KeyMic1, mic1, a1, drop1, tonePlayed);
-            CheckStatus s2 = MicVerdict(KeyMic2, mic2, a2, drop2, tonePlayed);
+            foreach (MicResult m in mics)
+            {
+                m.Dropouts = m.Source.Underruns - m.UnderrunsBefore;
+                m.Status = MicVerdict(m.Key, m.Source, m.Analysis, m.Dropouts, tonePlayed);
+            }
             SystemVerdict(sys, aS, playError);
-            TogetherVerdict(mic1, mic2, a1, a2, s1, s2, drop1, drop2, tonePlayed);
+            TogetherVerdict(mics, tonePlayed);
         }
 
         private CheckStatus MicVerdict(string key, AudioSource src, SourceAnalysis a, long dropouts, bool tonePlayed)
@@ -588,47 +599,72 @@ namespace MasterVks.Checks
                 "Проверьте, что звук в Windows не выключен и в списке «Звук собеседников» выбрано то устройство, через которое слышны собеседники (например, телевизор по HDMI). " + device);
         }
 
-        private void TogetherVerdict(AudioSource mic1, AudioSource mic2, SourceAnalysis a1, SourceAnalysis a2,
-                                     CheckStatus s1, CheckStatus s2, long drop1, long drop2, bool tonePlayed)
+        /// <summary>Итоги проверки одного микрофона.</summary>
+        private sealed class MicResult
         {
-            if (!mic1.IsConfigured && !mic2.IsConfigured)
+            public string Key;
+            public int Number;
+            public AudioSource Source;
+            public string DeviceId;
+            public long UnderrunsBefore;
+            public long Dropouts;
+            public SourceAnalysis Analysis;
+            public CheckStatus Status;
+        }
+
+        private void TogetherVerdict(IList<MicResult> all, bool tonePlayed)
+        {
+            List<MicResult> used = all.Where(m => m.Source.IsConfigured).ToList();
+            if (used.Count == 0)
             {
                 Set(KeyTogether, CheckStatus.Skipped, "Микрофоны не выбраны", "Выберите микрофоны в списках слева.");
                 return;
             }
-            if (!mic1.IsConfigured || !mic2.IsConfigured)
+            if (used.Count == 1)
             {
-                Set(KeyTogether, CheckStatus.Skipped, "Выбран только один микрофон", "Чтобы писать оба микрофона, выберите второй в списке слева.");
+                Set(KeyTogether, CheckStatus.Skipped, "Выбран только один микрофон", "Чтобы писать несколько микрофонов, выберите их в списках слева.");
                 return;
             }
-            bool sameDevice = (!string.IsNullOrEmpty(_settings.Mic1Id) && _settings.Mic1Id == _settings.Mic2Id)
-                              || (!string.IsNullOrEmpty(mic1.ActiveDeviceName) && mic1.ActiveDeviceName == mic2.ActiveDeviceName);
-            if (sameDevice)
+
+            // Одно и то же устройство в двух пунктах.
+            for (int i = 0; i < used.Count; i++)
+                for (int j = i + 1; j < used.Count; j++)
+                {
+                    bool sameId = !string.IsNullOrEmpty(used[i].DeviceId) && used[i].DeviceId == used[j].DeviceId;
+                    bool sameName = !string.IsNullOrEmpty(used[i].Source.ActiveDeviceName) && used[i].Source.ActiveDeviceName == used[j].Source.ActiveDeviceName;
+                    if (sameId || sameName)
+                    {
+                        Set(KeyTogether, CheckStatus.Warning, "Микрофон " + used[i].Number + " и микрофон " + used[j].Number + ": одно и то же устройство",
+                            "Выберите для «Микрофона " + used[j].Number + "» другое устройство.");
+                        return;
+                    }
+                }
+
+            List<MicResult> broken = used.Where(m => m.Status == CheckStatus.Error).ToList();
+            if (broken.Count > 0)
             {
-                Set(KeyTogether, CheckStatus.Warning, "В обоих пунктах выбрано одно и то же устройство", "Выберите для «Микрофона 2» другое устройство (например, микрофон камеры).");
-                return;
-            }
-            if (s1 == CheckStatus.Error || s2 == CheckStatus.Error)
-            {
-                string which = s1 == CheckStatus.Error && s2 == CheckStatus.Error ? "оба микрофона" : (s1 == CheckStatus.Error ? "микрофон 1" : "микрофон 2");
-                Set(KeyTogether, CheckStatus.Error, "Вместе не работают: не работает " + which, "Подробности в строке микрофона выше.");
+                string which = broken.Count == used.Count ? "ни один микрофон"
+                    : string.Join(", ", broken.Select(m => "микрофон " + m.Number));
+                Set(KeyTogether, CheckStatus.Error, "Вместе не работают: не работает " + which, "Подробности в строках микрофонов выше.");
                 return;
             }
 
             var problems = new List<string>();
-            if (drop1 > 2 || drop2 > 2)
-                problems.Add("при одновременной работе звук прерывается: подключите микрофон и камеру в разные USB-порты компьютера, без разветвителя");
-            if (a1.Hum || a2.Hum)
+            if (used.Any(m => m.Dropouts > 2))
+                problems.Add("при одновременной работе звук прерывается: подключите микрофоны и камеру в разные USB-порты компьютера, без разветвителя");
+            if (used.Any(m => m.Analysis.Hum))
                 problems.Add("есть наводка (гул 50 Гц), проверьте кабели и питание");
 
-            string details = "Оба микрофона пишутся одновременно, каждый ещё и на свою дорожку. Если в общей что-то не так, нужный микрофон можно включить отдельно.";
-            if (tonePlayed && _mode == CheckMode.Audible && a1.ToneOnset >= 0 && a2.ToneOnset >= 0)
+            string count = used.Count == 2 ? "Оба микрофона" : "Все " + used.Count + " микрофона";
+            string details = count + " пишутся одновременно, каждый ещё и на свою дорожку. Если в общей что-то не так, нужный микрофон можно включить отдельно.";
+            List<MicResult> heard = used.Where(m => m.Analysis.ToneOnset >= 0).ToList();
+            if (tonePlayed && _mode == CheckMode.Audible && heard.Count >= 2)
             {
-                int ms = Math.Abs(a1.ToneOnset - a2.ToneOnset) * 1000 / AudioEngine.Rate;
+                int ms = (heard.Max(m => m.Analysis.ToneOnset) - heard.Min(m => m.Analysis.ToneOnset)) * 1000 / AudioEngine.Rate;
                 if (ms > 100)
                     problems.Add("микрофоны слышат звук с разницей около " + ms + " мс, поэтому в общей дорожке возможно лёгкое эхо (отдельные дорожки чистые)");
                 else
-                    details = "Разница во времени между микрофонами около " + ms + " мс, эха не будет. " + details;
+                    details = "Разница во времени между микрофонами не больше " + ms + " мс, эха не будет. " + details;
             }
 
             if (problems.Count > 0)

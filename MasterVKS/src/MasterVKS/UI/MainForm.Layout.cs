@@ -24,8 +24,8 @@ namespace MasterVks.UI
             ForeColor = Theme.Text;
             Text = WindowTitleBase;
             StartPosition = FormStartPosition.CenterScreen;
-            ClientSize = new Size(Theme.S(1000), Theme.S(680));
-            MinimumSize = new Size(Theme.S(900), Theme.S(620));
+            ClientSize = new Size(Theme.S(1000), Theme.S(730));
+            MinimumSize = new Size(Theme.S(900), Theme.S(660));
             DoubleBuffered = true;
             KeyPreview = true;
             _tips = new ToolTip { AutoPopDelay = 20000, InitialDelay = 400, ReshowDelay = 200, ShowAlways = true };
@@ -142,20 +142,26 @@ namespace MasterVks.UI
             _mic1Box.SelectedIndexChanged += OnMicChanged;
             _mic2Box = CreateCombo();
             _mic2Box.SelectedIndexChanged += OnMicChanged;
+            _mic3Box = CreateCombo();
+            _mic3Box.SelectedIndexChanged += OnMicChanged;
             _outBox = CreateCombo();
             _outBox.SelectedIndexChanged += OnOutputChanged;
             _mic1Meter = new SourceMeter { Dock = DockStyle.Fill, Margin = new Padding(0, Theme.S(4), 0, 0) };
             _mic2Meter = new SourceMeter { Dock = DockStyle.Fill, Margin = new Padding(0, Theme.S(4), 0, 0) };
+            _mic3Meter = new SourceMeter { Dock = DockStyle.Fill, Margin = new Padding(0, Theme.S(4), 0, 0) };
             _sysMeter = new SourceMeter { Dock = DockStyle.Fill, Margin = new Padding(0, Theme.S(4), 0, 0) };
 
             AddRow(table, new FieldLabel("Экран"));
             AddRow(table, _screenBox);
-            AddRow(table, new FieldLabel("Микрофон 1 · например, USB-микрофон"));
+            AddRow(table, new FieldLabel("Микрофон 1 · например, USB-микрофон на столе"));
             AddRow(table, _mic1Box);
             AddRow(table, _mic1Meter);
-            AddRow(table, new FieldLabel("Микрофон 2 · например, микрофон камеры"));
+            AddRow(table, new FieldLabel("Микрофон 2 · например, второй USB-микрофон"));
             AddRow(table, _mic2Box);
             AddRow(table, _mic2Meter);
+            AddRow(table, new FieldLabel("Микрофон 3 · например, микрофон камеры"));
+            AddRow(table, _mic3Box);
+            AddRow(table, _mic3Meter);
             AddRow(table, new FieldLabel("Звук собеседников · всё, что слышно из динамиков или телевизора"));
             AddRow(table, _outBox);
             AddRow(table, _sysMeter);
@@ -201,7 +207,8 @@ namespace MasterVks.UI
 
             card.Controls.Add(table);
             _tips.SetToolTip(_mic1Box, "Основной микрофон. Звук с него пишется в общую дорожку и отдельно.");
-            _tips.SetToolTip(_mic2Box, "Второй микрофон (например, встроенный в камеру). Пишется вместе с первым.");
+            _tips.SetToolTip(_mic3Box, "Третий микрофон (например, встроенный в камеру). Пишется вместе с остальными и на свою дорожку.");
+            _tips.SetToolTip(_mic2Box, "Второй микрофон (например, второй на столе). Пишется вместе с первым.");
             _tips.SetToolTip(_outBox, "Отсюда берутся голоса участников конференции. Обычно подходит «Как в Windows»: программа сама переключится, если звук уйдёт на телевизор по HDMI.");
             return card;
         }
@@ -284,7 +291,7 @@ namespace MasterVks.UI
             var items = SystemCheck.CreateItems();
             for (int i = items.Count - 1; i >= 0; i--)
             {
-                var row = new CheckRowView(items[i]) { Dock = DockStyle.Top, Height = Theme.S(42) };
+                var row = new CheckRowView(items[i]) { Dock = DockStyle.Top, Height = Theme.S(40) };
                 row.Click += (s, e) => OnCheckRowClick(((CheckRowView)s).Item);
                 _rows[items[i].Key] = row;
                 (items[i].Group == SystemCheck.GroupHealth ? _healthList : _recordList).Controls.Add(row);

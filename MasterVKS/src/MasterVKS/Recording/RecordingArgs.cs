@@ -12,10 +12,12 @@ namespace MasterVks.Recording
             "Все вместе",
             "Микрофон 1",
             "Микрофон 2",
+            "Микрофон 3",
             "Звук собеседников"
         };
 
-        public const int AudioChannels = 6;
+        /// <summary>Каналы от программы: общая L, общая R, мик 1, мик 2, мик 3, компьютер L, компьютер R.</summary>
+        public const int AudioChannels = 7;
 
         public static int Crf(VideoQuality quality)
         {
@@ -61,12 +63,13 @@ namespace MasterVks.Recording
 
                 "-filter_complex",
                 "[0:v]scale=out_color_matrix=bt709:out_range=tv,format=yuv420p[v];" +
-                "[1:a]asplit=4[a0][a1][a2][a3];" +
+                "[1:a]asplit=5[a0][a1][a2][a3][a4];" +
                 "[a0]pan=stereo|c0=c0|c1=c1[mix];" +
                 "[a1]pan=mono|c0=c2[m1];" +
                 "[a2]pan=mono|c0=c3[m2];" +
-                "[a3]pan=stereo|c0=c4|c1=c5[sys]",
-                "-map", "[v]", "-map", "[mix]", "-map", "[m1]", "-map", "[m2]", "-map", "[sys]",
+                "[a3]pan=mono|c0=c4[m3];" +
+                "[a4]pan=stereo|c0=c5|c1=c6[sys]",
+                "-map", "[v]", "-map", "[mix]", "-map", "[m1]", "-map", "[m2]", "-map", "[m3]", "-map", "[sys]",
 
                 "-c:v", "libx264",
                 "-preset", Preset(quality),
@@ -75,7 +78,7 @@ namespace MasterVks.Recording
                 "-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709", "-color_range", "tv",
 
                 "-c:a", "aac",
-                "-b:a:0", "256k", "-b:a:1", "160k", "-b:a:2", "160k", "-b:a:3", "192k"
+                "-b:a:0", "256k", "-b:a:1", "160k", "-b:a:2", "160k", "-b:a:3", "160k", "-b:a:4", "192k"
             };
             AddTrackMetadata(a);
             a.AddRange(new[]
@@ -142,7 +145,7 @@ namespace MasterVks.Recording
                     break;
             }
             double videoBits = (double)width * height * fps * bitsPerPixel;
-            const double audioBits = (256 + 160 + 160 + 192) * 1000;
+            const double audioBits = (256 + 160 + 160 + 160 + 192) * 1000;
             return (videoBits + audioBits) / 8.0;
         }
     }

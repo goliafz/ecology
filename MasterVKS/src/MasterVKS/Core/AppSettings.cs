@@ -37,6 +37,9 @@ namespace MasterVks.Core
         public string Mic2Id { get; set; }
         public string Mic2Name { get; set; }
 
+        public string Mic3Id { get; set; }
+        public string Mic3Name { get; set; }
+
         /// <summary>Пусто — звук с устройства вывода по умолчанию (следуем за Windows).</summary>
         public string OutputDeviceId { get; set; }
         public string OutputDeviceName { get; set; }
@@ -56,6 +59,7 @@ namespace MasterVks.Core
 
         public bool MixMic1 { get; set; }
         public bool MixMic2 { get; set; }
+        public bool MixMic3 { get; set; }
         public bool MixSystem { get; set; }
 
         /// <summary>Задержка звука относительно видео, мс (компенсация буферов звука).</summary>
@@ -87,11 +91,12 @@ namespace MasterVks.Core
             KeepMkvAfterConvert = true;
             MixMic1 = true;
             MixMic2 = true;
+            MixMic3 = true;
             MixSystem = true;
             AudioOffsetMs = 70;
         }
 
-        public const int CurrentSettingsVersion = 2;
+        public const int CurrentSettingsVersion = 3;
 
         public void Normalize()
         {
@@ -99,6 +104,11 @@ namespace MasterVks.Core
             {
                 // Версия 1.0.2: исходный MKV по умолчанию сохраняется рядом с MP4.
                 KeepMkvAfterConvert = true;
+            }
+            if (SettingsVersion < 3)
+            {
+                // Версия 1.2: появился третий микрофон, по умолчанию он тоже в общей дорожке.
+                MixMic3 = true;
             }
             SettingsVersion = CurrentSettingsVersion;
             if (MeetingName == null) MeetingName = "";

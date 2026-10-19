@@ -13,7 +13,7 @@ namespace MasterVks.UI
         private readonly ComboBox _fps;
         private readonly ComboBox _quality;
         private readonly CheckBox _cursor;
-        private readonly CheckBox _mixMic1, _mixMic2, _mixSystem;
+        private readonly CheckBox _mixMic1, _mixMic2, _mixMic3, _mixSystem;
         private readonly NumericUpDown _offset;
         private readonly RadioButton _startupSilent, _startupAudible;
         private readonly CheckBox _confirmStop, _hotkeys, _autostart, _autostartMinimized, _keepMkv;
@@ -60,12 +60,14 @@ namespace MasterVks.UI
 
             // --- Звук ---
             var audio = Section("Звук", width);
-            audio.Controls.Add(Note("В файле всегда четыре звуковые дорожки: общая, «Микрофон 1», «Микрофон 2» и «Звук собеседников». Здесь можно выбрать, что попадает в общую:"));
+            audio.Controls.Add(Note("В файле всегда пять звуковых дорожек: общая, «Микрофон 1», «Микрофон 2», «Микрофон 3» и «Звук собеседников». Здесь можно выбрать, что попадает в общую:"));
             _mixMic1 = Check("Микрофон 1", settings.MixMic1);
             _mixMic2 = Check("Микрофон 2", settings.MixMic2);
+            _mixMic3 = Check("Микрофон 3", settings.MixMic3);
             _mixSystem = Check("Звук собеседников", settings.MixSystem);
             audio.Controls.Add(_mixMic1);
             audio.Controls.Add(_mixMic2);
+            audio.Controls.Add(_mixMic3);
             audio.Controls.Add(_mixSystem);
             _offset = new NumericUpDown { Minimum = -500, Maximum = 1000, Increment = 10, Value = settings.AudioOffsetMs, Width = Theme.S(100) };
             AddField(audio, "Сдвиг звука относительно картинки, мс (если губы не совпадают со звуком; обычно 70)", _offset);
@@ -158,6 +160,7 @@ namespace MasterVks.UI
             }
             s.MixMic1 = _mixMic1.Checked;
             s.MixMic2 = _mixMic2.Checked;
+            s.MixMic3 = _mixMic3.Checked;
             s.MixSystem = _mixSystem.Checked;
             s.AudioOffsetMs = (int)_offset.Value;
             s.StartupCheckMode = _startupAudible.Checked ? CheckMode.Audible : CheckMode.Silent;

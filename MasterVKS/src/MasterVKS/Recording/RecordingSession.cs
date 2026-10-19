@@ -322,7 +322,7 @@ namespace MasterVks.Recording
         private void OnAudioBlock(AudioBlock block)
         {
             RecordingSegment seg = _segment;
-            if (seg != null) seg.OnAudioBlock(block, _settings.MixMic1, _settings.MixMic2, _settings.MixSystem);
+            if (seg != null) seg.OnAudioBlock(block, _settings.MixMic1, _settings.MixMic2, _settings.MixMic3, _settings.MixSystem);
         }
 
         private void AddActive(double seconds)

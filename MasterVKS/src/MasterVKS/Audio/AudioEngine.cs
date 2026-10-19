@@ -14,10 +14,12 @@ namespace MasterVks.Audio
         public int Frames;
         public float[] Mic1;
         public float[] Mic2;
+        public float[] Mic3;
         /// <summary>Звук компьютера, стерео через один (L, R, L, R…).</summary>
         public float[] Sys;
         public int Mic1Real;
         public int Mic2Real;
+        public int Mic3Real;
         public int SysReal;
     }
 
@@ -35,6 +37,7 @@ namespace MasterVks.Audio
 
         public readonly AudioSource Mic1 = new AudioSource("Микрофон 1", false);
         public readonly AudioSource Mic2 = new AudioSource("Микрофон 2", false);
+        public readonly AudioSource Mic3 = new AudioSource("Микрофон 3", false);
         public readonly AudioSource System = new AudioSource("Звук собеседников", true);
 
         private readonly object _subscribersLock = new object();
@@ -57,6 +60,7 @@ namespace MasterVks.Audio
             {
                 yield return Mic1;
                 yield return Mic2;
+                yield return Mic3;
                 yield return System;
             }
         }
@@ -139,10 +143,12 @@ namespace MasterVks.Audio
                 SourceTicks = blockTicks - Clock.FromSeconds(_offsetMs / 1000.0),
                 Mic1 = new float[BlockFrames],
                 Mic2 = new float[BlockFrames],
+                Mic3 = new float[BlockFrames],
                 Sys = new float[BlockFrames * 2]
             };
             block.Mic1Real = Mic1.ReadBlock(block.Mic1, BlockFrames);
             block.Mic2Real = Mic2.ReadBlock(block.Mic2, BlockFrames);
+            block.Mic3Real = Mic3.ReadBlock(block.Mic3, BlockFrames);
             block.SysReal = System.ReadBlock(block.Sys, BlockFrames);
 
             Action<AudioBlock>[] handlers;

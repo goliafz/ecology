@@ -10,8 +10,9 @@ namespace MasterVks.Checks
         private readonly object _lock = new object();
         private readonly List<float> _mic1 = new List<float>();
         private readonly List<float> _mic2 = new List<float>();
+        private readonly List<float> _mic3 = new List<float>();
         private readonly List<float> _sys = new List<float>();
-        private int _mic1Real, _mic2Real, _sysReal, _blocks;
+        private int _mic1Real, _mic2Real, _mic3Real, _sysReal, _blocks;
 
         public void OnBlock(AudioBlock block)
         {
@@ -19,9 +20,11 @@ namespace MasterVks.Checks
             {
                 _mic1.AddRange(block.Mic1);
                 _mic2.AddRange(block.Mic2);
+                _mic3.AddRange(block.Mic3);
                 for (int i = 0; i < block.Frames; i++) _sys.Add((block.Sys[i * 2] + block.Sys[i * 2 + 1]) * 0.5f);
                 _mic1Real += block.Mic1Real;
                 _mic2Real += block.Mic2Real;
+                _mic3Real += block.Mic3Real;
                 _sysReal += block.SysReal;
                 _blocks++;
             }
@@ -41,9 +44,11 @@ namespace MasterVks.Checks
                 {
                     Mic1 = _mic1.ToArray(),
                     Mic2 = _mic2.ToArray(),
+                    Mic3 = _mic3.ToArray(),
                     Sys = _sys.ToArray(),
                     Mic1Real = _mic1Real,
                     Mic2Real = _mic2Real,
+                    Mic3Real = _mic3Real,
                     SysReal = _sysReal,
                     TotalFrames = _blocks * AudioEngine.BlockFrames
                 };
@@ -52,8 +57,8 @@ namespace MasterVks.Checks
 
         internal sealed class Snapshot
         {
-            public float[] Mic1, Mic2, Sys;
-            public int Mic1Real, Mic2Real, SysReal, TotalFrames;
+            public float[] Mic1, Mic2, Mic3, Sys;
+            public int Mic1Real, Mic2Real, Mic3Real, SysReal, TotalFrames;
         }
     }
 

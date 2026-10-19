@@ -374,7 +374,7 @@ namespace MasterVks.SelfTest
             Check(a.ToneSnrDb >= 20, "неслышный сигнал 14 кГц (−60 дБ) уверенно обнаружен: " + a.ToneSnrDb.ToString("0") + " дБ");
         }
 
-        private static AudioBlock Block(long ticks, float m1, float m2, float sl, float sr)
+        private static AudioBlock Block(long ticks, float m1, float m2, float sl, float sr, float m3 = 0f)
         {
             var b = new AudioBlock
             {
@@ -382,9 +382,11 @@ namespace MasterVks.SelfTest
                 Frames = 480,
                 Mic1 = Enumerable.Repeat(m1, 480).ToArray(),
                 Mic2 = Enumerable.Repeat(m2, 480).ToArray(),
+                Mic3 = Enumerable.Repeat(m3, 480).ToArray(),
                 Sys = new float[960],
                 Mic1Real = 480,
                 Mic2Real = 480,
+                Mic3Real = 480,
                 SysReal = 480
             };
             for (int i = 0; i < 480; i++)
@@ -404,7 +406,7 @@ namespace MasterVks.SelfTest
             seg.Gate.Close(t0 + f / 2);   // пауза с 0,5 с
             seg.Gate.Open(t0 + f * 7 / 10); // продолжение с 0,7 с
             long blockTicks = f / 100;
-            for (int i = -10; i < 120; i++) seg.OnAudioBlock(Block(t0 + i * blockTicks, 0.1f, 0.1f, 0, 0), true, true, true);
+            for (int i = -10; i < 120; i++) seg.OnAudioBlock(Block(t0 + i * blockTicks, 0.1f, 0.1f, 0, 0), true, true, true, true);
             long samples = GetField<long>(seg, "_audioSamples");
             long expected = (long)(48000 * (1.2 - 0.005 - 0.2));
             Check(Math.Abs(samples - expected) <= 2, "взято " + samples + " сэмплов, ожидалось " + expected + " (до старта и в паузе — ничего)");
@@ -417,23 +419,25 @@ namespace MasterVks.SelfTest
         {
             var seg = new RecordingSegment(1, Path.Combine(_work, "y.mkv"), 16);
             seg.Gate.Open(0);
-            seg.OnAudioBlock(Block(Clock.Frequency, 0.5f, 0.5f, 0.2f, -0.2f), true, true, true);
+            seg.OnAudioBlock(Block(Clock.Frequency, 0.5f, 0.5f, 0.2f, -0.2f, 0.3f), true, true, true, true);
             var queue = GetField<BlockingCollection<byte[]>>(seg, "_audioQueue");
             byte[] bytes;
-            Check(queue.TryTake(out bytes) && bytes.Length == 480 * 6 * 4, "блок 10 мс = 480 кадров × 6 каналов");
-            var s = new float[6];
-            Buffer.BlockCopy(bytes, 0, s, 0, 24);
-            Check(Math.Abs(s[2] - 0.5f) < 1e-6 && Math.Abs(s[3] - 0.5f) < 1e-6 && Math.Abs(s[4] - 0.2f) < 1e-6 && Math.Abs(s[5] + 0.2f) < 1e-6,
-                "отдельные дорожки без изменений: мик1=" + s[2] + " мик2=" + s[3] + " L=" + s[4] + " R=" + s[5]);
+            Check(queue.TryTake(out bytes) && bytes.Length == 480 * 7 * 4, "блок 10 мс = 480 кадров × 7 каналов");
+            var s = new float[7];
+            Buffer.BlockCopy(bytes, 0, s, 0, 28);
+            Check(Math.Abs(s[2] - 0.5f) < 1e-6 && Math.Abs(s[3] - 0.5f) < 1e-6 && Math.Abs(s[4] - 0.3f) < 1e-6 && Math.Abs(s[5] - 0.2f) < 1e-6 && Math.Abs(s[6] + 0.2f) < 1e-6,
+                "отдельные дорожки без изменений: мик1=" + s[2] + " мик2=" + s[3] + " мик3=" + s[4] + " L=" + s[5] + " R=" + s[6]);
             Check(s[0] < 1f && s[0] > 0.85f, "общая дорожка не перегружена (ограничитель): L=" + s[0].ToString("0.000"));
-            Check(Math.Abs(s[1] - 0.5f * 2 * 0.7071f + 0.2f) < 0.01, "правый канал: микрофоны + звук компьютера = " + s[1].ToString("0.000"));
+            double expectedRight = (0.5 + 0.5 + 0.3) / Math.Sqrt(3) - 0.2;
+            Check(Math.Abs(s[1] - expectedRight) < 0.01, "правый канал: три микрофона + звук компьютера = " + s[1].ToString("0.000") + " (ожидалось " + expectedRight.ToString("0.000") + ")");
 
             var seg2 = new RecordingSegment(2, Path.Combine(_work, "z.mkv"), 16);
             seg2.Gate.Open(0);
-            seg2.OnAudioBlock(Block(Clock.Frequency, 0.3f, 0.4f, 0.1f, 0.1f), true, false, false);
+            seg2.OnAudioBlock(Block(Clock.Frequency, 0.3f, 0.4f, 0.1f, 0.1f, 0.6f), true, false, false, false);
             GetField<BlockingCollection<byte[]>>(seg2, "_audioQueue").TryTake(out bytes);
-            Buffer.BlockCopy(bytes, 0, s, 0, 24);
-            Check(Math.Abs(s[0] - 0.3f) < 1e-6 && Math.Abs(s[3] - 0.4f) < 1e-6, "можно убрать микрофон 2 и звук компьютера из общей дорожки, отдельные остаются");
+            Buffer.BlockCopy(bytes, 0, s, 0, 28);
+            Check(Math.Abs(s[0] - 0.3f) < 1e-6 && Math.Abs(s[3] - 0.4f) < 1e-6 && Math.Abs(s[4] - 0.6f) < 1e-6,
+                "можно убрать микрофоны 2, 3 и звук компьютера из общей дорожки, отдельные остаются");
         }
 
         /// <summary>Разбор командной строки по правилам Windows (CommandLineToArgvW).</summary>
@@ -619,7 +623,7 @@ namespace MasterVks.SelfTest
 
         /// <summary>
         /// Пишет запись теми же аргументами, что и программа, только каналы — это FIFO Linux.
-        /// Видео: кадры 320×240, звук: мик1 = 440 Гц, мик2 = 660 Гц, компьютер = 880 Гц.
+        /// Видео: кадры 320×240, звук: мик1 = 440 Гц, мик2 = 660 Гц, мик3 = 550 Гц, компьютер = 880 Гц.
         /// </summary>
         private static string Record(string name, double seconds, double killAfter = -1)
         {
@@ -679,19 +683,21 @@ namespace MasterVks.SelfTest
                         for (int s0 = 0; s0 < total; s0 += 480)
                         {
                             while (start.Elapsed.TotalSeconds < s0 / 48000.0) Thread.Sleep(1);
-                            var buf = new float[480 * 6];
+                            var buf = new float[480 * 7];
                             for (int i = 0; i < 480; i++)
                             {
                                 double t = (s0 + i) / 48000.0;
                                 float m1 = (float)(0.3 * Math.Sin(2 * Math.PI * 440 * t));
                                 float m2 = (float)(0.3 * Math.Sin(2 * Math.PI * 660 * t));
+                                float m3 = (float)(0.3 * Math.Sin(2 * Math.PI * 550 * t));
                                 float sy = (float)(0.3 * Math.Sin(2 * Math.PI * 880 * t));
-                                buf[i * 6] = m1 + m2 + sy;
-                                buf[i * 6 + 1] = m1 + m2 + sy;
-                                buf[i * 6 + 2] = m1;
-                                buf[i * 6 + 3] = m2;
-                                buf[i * 6 + 4] = sy;
-                                buf[i * 6 + 5] = sy;
+                                buf[i * 7] = (m1 + m2 + m3) * 0.577f + sy;
+                                buf[i * 7 + 1] = (m1 + m2 + m3) * 0.577f + sy;
+                                buf[i * 7 + 2] = m1;
+                                buf[i * 7 + 3] = m2;
+                                buf[i * 7 + 4] = m3;
+                                buf[i * 7 + 5] = sy;
+                                buf[i * 7 + 6] = sy;
                             }
                             var bytes = FloatBytes(buf);
                             fs.Write(bytes, 0, bytes.Length);
@@ -741,14 +747,15 @@ namespace MasterVks.SelfTest
 
             Ffmpeg.RunResult info = Ffmpeg.Run(_ffmpeg, new[] { "-hide_banner", "-i", mkv }, 30000);
             int audioStreams = info.Error.Split('\n').Count(l => l.Contains("Audio: aac"));
-            Check(audioStreams == 4, "в файле 4 звуковые дорожки (" + audioStreams + ")");
+            Check(audioStreams == 5, "в файле 5 звуковых дорожек (" + audioStreams + ")");
             Check(info.Error.Contains("Video: h264") && info.Error.Contains("320x240"), "видео H.264 в исходном размере");
-            Check(info.Error.Contains("Все вместе") && info.Error.Contains("Микрофон 1") && info.Error.Contains("Звук собеседников"), "дорожки подписаны по-русски");
+            Check(info.Error.Contains("Все вместе") && info.Error.Contains("Микрофон 1") && info.Error.Contains("Микрофон 3") && info.Error.Contains("Звук собеседников"), "дорожки подписаны по-русски");
 
-            float[] mic1 = ExtractTrack(mkv, 1), mic2 = ExtractTrack(mkv, 2), sys = ExtractTrack(mkv, 3);
+            float[] mic1 = ExtractTrack(mkv, 1), mic2 = ExtractTrack(mkv, 2), mic3 = ExtractTrack(mkv, 3), sys = ExtractTrack(mkv, 4);
             Func<float[], double, double> amp = (x, fr) => x.Length > 96000 ? SignalMath.ToneAmplitude(x, 48000, 24000, fr, 48000) : 0;
             Check(amp(mic1, 440) > 0.2 && amp(mic1, 660) < 0.02, "дорожка «Микрофон 1» содержит только свой звук (440 Гц)");
             Check(amp(mic2, 660) > 0.2 && amp(mic2, 440) < 0.02, "дорожка «Микрофон 2» содержит только свой звук (660 Гц)");
+            Check(amp(mic3, 550) > 0.2 && amp(mic3, 440) < 0.02, "дорожка «Микрофон 3» содержит только свой звук (550 Гц)");
             Check(amp(sys, 880) > 0.2 && amp(sys, 440) < 0.02, "дорожка «Звук собеседников» — только звук компьютера (880 Гц)");
         }
 
@@ -764,7 +771,7 @@ namespace MasterVks.SelfTest
             Check(!File.Exists(mkv), "проверенный MKV удалён, место не занимается дважды");
             Check(!PendingJournal.LoadAll().Any(j => j.Id == job.Id), "запись убрана из журнала незавершённых");
             Ffmpeg.RunResult info = Ffmpeg.Run(_ffmpeg, new[] { "-hide_banner", "-i", r.Mp4Path }, 30000);
-            Check(info.Error.Split('\n').Count(l => l.Contains("Audio: aac")) == 4, "в MP4 все 4 звуковые дорожки");
+            Check(info.Error.Split('\n').Count(l => l.Contains("Audio: aac")) == 5, "в MP4 все 5 звуковых дорожек");
         }
 
         private static void TestFinalizeMulti()

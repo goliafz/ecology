@@ -69,8 +69,8 @@ namespace MasterVks.UI
         private Thread _previewThread;
 
         // Элементы окна
-        private ComboBox _screenBox, _mic1Box, _mic2Box, _outBox;
-        private SourceMeter _mic1Meter, _mic2Meter, _sysMeter;
+        private ComboBox _screenBox, _mic1Box, _mic2Box, _mic3Box, _outBox;
+        private SourceMeter _mic1Meter, _mic2Meter, _mic3Meter, _sysMeter;
         private TextBox _folderBox;
         private TextBox _nameBox;
         private ModernButton _folderButton;
@@ -220,6 +220,9 @@ namespace MasterVks.UI
                 _settings.Mic1Name = first.Name;
                 _settings.Mic2Id = second != null ? second.Id : null;
                 _settings.Mic2Name = second != null ? second.Name : null;
+                AudioDeviceInfo third = mics.FirstOrDefault(m => m.Id != first.Id && (second == null || m.Id != second.Id));
+                _settings.Mic3Id = third != null ? third.Id : null;
+                _settings.Mic3Name = third != null ? third.Name : null;
                 _settings.DevicesInitialized = true;
                 _settings.Save();
                 ApplyAudioSettingsToEngine();
@@ -235,6 +238,7 @@ namespace MasterVks.UI
             {
                 FillMicBox(_mic1Box, mics, _settings.Mic1Id, _settings.Mic1Name);
                 FillMicBox(_mic2Box, mics, _settings.Mic2Id, _settings.Mic2Name);
+                FillMicBox(_mic3Box, mics, _settings.Mic3Id, _settings.Mic3Name);
 
                 _outBox.Items.Clear();
                 _outBox.Items.Add(new ComboItem("Как в Windows (устройство по умолчанию)", null));
@@ -337,19 +341,30 @@ namespace MasterVks.UI
             var box = (ComboBox)sender;
             var item = box.SelectedItem as ComboItem;
             var device = item != null ? item.Value as AudioDeviceInfo : null;
+            string id = device != null ? device.Id : null;
+            string name = device != null ? device.Name : null;
+            string title;
             if (box == _mic1Box)
             {
-                _settings.Mic1Id = device != null ? device.Id : null;
-                _settings.Mic1Name = device != null ? device.Name : null;
+                _settings.Mic1Id = id;
+                _settings.Mic1Name = name;
+                title = "Микрофон 1";
+            }
+            else if (box == _mic2Box)
+            {
+                _settings.Mic2Id = id;
+                _settings.Mic2Name = name;
+                title = "Микрофон 2";
             }
             else
             {
-                _settings.Mic2Id = device != null ? device.Id : null;
-                _settings.Mic2Name = device != null ? device.Name : null;
+                _settings.Mic3Id = id;
+                _settings.Mic3Name = name;
+                title = "Микрофон 3";
             }
             _settings.Save();
             ApplyAudioSettingsToEngine();
-            Log.Info((box == _mic1Box ? "Микрофон 1" : "Микрофон 2") + ": выбрано «" + (device != null ? device.Name : "не использовать") + "»");
+            Log.Info(title + ": выбрано «" + (device != null ? device.Name : "не использовать") + "»");
         }
 
         private void OnOutputChanged(object sender, EventArgs e)
@@ -379,6 +394,7 @@ namespace MasterVks.UI
         {
             _engine.Mic1.Configure(_settings.Mic1Id, _settings.Mic1Name, false);
             _engine.Mic2.Configure(_settings.Mic2Id, _settings.Mic2Name, false);
+            _engine.Mic3.Configure(_settings.Mic3Id, _settings.Mic3Name, false);
             if (string.IsNullOrEmpty(_settings.OutputDeviceId))
                 _engine.System.Configure(null, null, true);
             else
@@ -698,6 +714,7 @@ namespace MasterVks.UI
         {
             UpdateMeter(_mic1Meter, _engine.Mic1);
             UpdateMeter(_mic2Meter, _engine.Mic2);
+            UpdateMeter(_mic3Meter, _engine.Mic3);
             UpdateMeter(_sysMeter, _engine.System);
 
             RecordingSession session = _session;
