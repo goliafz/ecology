@@ -59,6 +59,9 @@ namespace MasterVks.Recording
 
         private VideoPump _pump;
         private volatile RecordingSegment _segment;
+        /// <summary>Сведение общей дорожки. Живёт всю запись, а не одну часть: подстройка под комнату не теряется.</summary>
+        private readonly RoomMixer _mixer;
+        private int _mixBlocks;
         private PendingJournal _journal;
         private Thread _watchdog;
         private volatile bool _stopRequested;
@@ -96,6 +99,7 @@ namespace MasterVks.Recording
             _engine = engine;
             _ffmpegPath = ffmpegPath;
             _audioHandler = OnAudioBlock;
+            _mixer = new RoomMixer(_settings.SmartMix, _settings.MixMic1, _settings.MixMic2, _settings.MixMic3, _settings.MixSystem);
 
             MeetingName = RecordingNames.Sanitize(_settings.MeetingName);
             Folder = Path.Combine(_settings.OutputFolder, RecordingNames.FolderName(MeetingName, StartedAt));
@@ -321,8 +325,33 @@ namespace MasterVks.Recording
 
         private void OnAudioBlock(AudioBlock block)
         {
+            var mixL = new float[block.Frames];
+            var mixR = new float[block.Frames];
+            try
+            {
+                _mixer.Process(block, mixL, mixR);
+            }
+            catch (Exception ex)
+            {
+                // Обработка не должна ронять запись: на этот блок сводим просто.
+                Log.Warn("Сбой умного сведения, блок сведён просто", ex);
+                RoomMixer.SimpleMix(block, _settings.MixMic1, _settings.MixMic2, _settings.MixMic3, _settings.MixSystem, mixL, mixR);
+            }
+            if (_mixer.Smart && ++_mixBlocks % 6000 == 0) LogEchoState();
             RecordingSegment seg = _segment;
-            if (seg != null) seg.OnAudioBlock(block, _settings.MixMic1, _settings.MixMic2, _settings.MixMic3, _settings.MixSystem);
+            if (seg != null) seg.OnAudioBlock(block, mixL, mixR);
+        }
+
+        /// <summary>Раз в минуту пишет в журнал, что нашло подавление эха (для разбора, если что-то не так).</summary>
+        private void LogEchoState()
+        {
+            var parts = new List<string>();
+            for (int k = 0; k < 3; k++)
+            {
+                int delay = _mixer.EchoDelayMs(k);
+                parts.Add("мик " + (k + 1) + ": задержка " + (delay < 0 ? "ещё не найдена" : delay + " мс") + ", эхо −" + _mixer.EchoReductionDb(k).ToString("0") + " дБ");
+            }
+            Log.Info("Подавление эха: " + string.Join("; ", parts));
         }
 
         private void AddActive(double seconds)

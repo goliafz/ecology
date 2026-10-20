@@ -24,8 +24,8 @@ namespace MasterVks.UI
             ForeColor = Theme.Text;
             Text = WindowTitleBase;
             StartPosition = FormStartPosition.CenterScreen;
-            ClientSize = new Size(Theme.S(1140), Theme.S(784));
-            MinimumSize = new Size(Theme.S(1000), Theme.S(714));
+            ClientSize = new Size(Theme.S(1000), Theme.S(730));
+            MinimumSize = new Size(Theme.S(900), Theme.S(660));
             DoubleBuffered = true;
             KeyPreview = true;
             _tips = new ToolTip { AutoPopDelay = 20000, InitialDelay = 400, ReshowDelay = 200, ShowAlways = true };
@@ -138,11 +138,6 @@ namespace MasterVks.UI
 
             _screenBox = CreateCombo();
             _screenBox.SelectedIndexChanged += OnScreenChanged;
-            _cameraBox = CreateCombo();
-            _cameraBox.Items.Add(new ComboItem("Ищу камеры…", null));
-            _cameraBox.SelectedIndex = 0;
-            // Подписываемся после заглушки, иначе она сойдёт за выбор «не проверять».
-            _cameraBox.SelectedIndexChanged += OnCameraChanged;
             _mic1Box = CreateCombo();
             _mic1Box.SelectedIndexChanged += OnMicChanged;
             _mic2Box = CreateCombo();
@@ -158,8 +153,6 @@ namespace MasterVks.UI
 
             AddRow(table, new FieldLabel("Экран"));
             AddRow(table, _screenBox);
-            AddRow(table, new FieldLabel("Камера · проверяется перед ВКС, снимок с неё виден внизу"));
-            AddRow(table, _cameraBox);
             AddRow(table, new FieldLabel("Микрофон 1 · например, USB-микрофон на столе"));
             AddRow(table, _mic1Box);
             AddRow(table, _mic1Meter);
@@ -213,7 +206,6 @@ namespace MasterVks.UI
             table.RowCount = table.RowStyles.Count;
 
             card.Controls.Add(table);
-            _tips.SetToolTip(_cameraBox, "Камера, которую видят собеседники. Программа проверяет, что она подключена и даёт картинку, а во время записи следит, чтобы она не отключилась.\nСаму камеру в файл отдельно не пишет: её картинка и так попадает в запись вместе с окном ВКС.");
             _tips.SetToolTip(_mic1Box, "Основной микрофон. Звук с него пишется в общую дорожку и отдельно.");
             _tips.SetToolTip(_mic3Box, "Третий микрофон (например, встроенный в камеру). Пишется вместе с остальными и на свою дорожку.");
             _tips.SetToolTip(_mic2Box, "Второй микрофон (например, второй на столе). Пишется вместе с первым.");
@@ -291,7 +283,7 @@ namespace MasterVks.UI
                 Dock = DockStyle.Top,
                 Height = Theme.S(32)
             };
-            _tips.SetToolTip(_checkTabs, "«Запись и звук»: экран, камера, микрофоны, звук собеседников, место на диске.\n«Состояние ПК»: питание, обновления Windows, процессор и память, диски, сбои Windows.");
+            _tips.SetToolTip(_checkTabs, "«Запись и звук»: экран, микрофоны, звук собеседников, место на диске.\n«Состояние ПК»: питание, обновления Windows, процессор и память, диски, сбои Windows.");
             var tabGap = new Panel { Dock = DockStyle.Top, Height = Theme.S(6) };
 
             _recordList = new Panel { Dock = DockStyle.Fill };
@@ -360,26 +352,14 @@ namespace MasterVks.UI
         {
             var card = new CardPanel(null) { Dock = DockStyle.Fill, Margin = new Padding(Theme.S(4)) };
             card.Padding = new Padding(Theme.S(14));
-            var table = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 1 };
-            table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, Theme.S(184)));
-            table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, Theme.S(184)));
+            var table = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1 };
+            table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, Theme.S(196)));
             table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, Theme.S(392)));
 
-            _preview = new ScreenPreview { Dock = DockStyle.Fill, Margin = new Padding(0, 0, Theme.S(12), 0) };
+            _preview = new ScreenPreview { Dock = DockStyle.Fill, Margin = new Padding(0, 0, Theme.S(16), 0) };
             _tips.SetToolTip(_preview, "Так сейчас выглядит записываемый экран");
             table.Controls.Add(_preview, 0, 0);
-
-            _cameraView = new ScreenPreview
-            {
-                Dock = DockStyle.Fill,
-                Margin = new Padding(0, 0, Theme.S(14), 0),
-                Placeholder = "Камера проверится при запуске",
-                Cursor = Cursors.Hand
-            };
-            _cameraView.Click += (s, e) => OpenCameraView();
-            _tips.SetToolTip(_cameraView, "Снимок с камеры, сделанный при проверке.\nНажмите, чтобы посмотреть на камеру вживую.");
-            table.Controls.Add(_cameraView, 1, 0);
 
             var info = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4, Margin = new Padding(0) };
             info.RowStyles.Add(new RowStyle(SizeType.Absolute, Theme.S(52)));
@@ -392,7 +372,7 @@ namespace MasterVks.UI
             info.Controls.Add(_timerLabel, 0, 0);
             info.Controls.Add(_recordInfo, 0, 1);
             info.Controls.Add(_hintLabel, 0, 2);
-            table.Controls.Add(info, 2, 0);
+            table.Controls.Add(info, 1, 0);
 
             var buttons = new Panel { Dock = DockStyle.Fill, Margin = new Padding(0) };
             _recordButton = new ModernButton("Начать запись", ButtonKind.Danger, Glyph.Record)
@@ -426,7 +406,7 @@ namespace MasterVks.UI
                 _pauseButton.Location = new Point(_recordButton.Left - Theme.S(12) - _pauseButton.Width, Theme.S(4));
                 _openFolderButton.Location = new Point(w - _openFolderButton.Width, _recordButton.Bottom + Theme.S(8));
             };
-            table.Controls.Add(buttons, 3, 0);
+            table.Controls.Add(buttons, 2, 0);
 
             card.Controls.Add(table);
             return card;

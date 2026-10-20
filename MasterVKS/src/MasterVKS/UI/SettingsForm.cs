@@ -13,7 +13,7 @@ namespace MasterVks.UI
         private readonly ComboBox _fps;
         private readonly ComboBox _quality;
         private readonly CheckBox _cursor;
-        private readonly CheckBox _mixMic1, _mixMic2, _mixMic3, _mixSystem;
+        private readonly CheckBox _mixMic1, _mixMic2, _mixMic3, _mixSystem, _smartMix;
         private readonly NumericUpDown _offset;
         private readonly RadioButton _startupSilent, _startupAudible;
         private readonly CheckBox _confirmStop, _hotkeys, _autostart, _autostartMinimized, _keepMkv;
@@ -69,6 +69,9 @@ namespace MasterVks.UI
             audio.Controls.Add(_mixMic2);
             audio.Controls.Add(_mixMic3);
             audio.Controls.Add(_mixSystem);
+            _smartMix = Check("Убирать эхо в общей дорожке (рекомендуется)", settings.SmartMix);
+            audio.Controls.Add(_smartMix);
+            audio.Controls.Add(Note("Микрофоны слышат собеседников из телевизора с опозданием, и в общей дорожке это звучит как эхо. Программа вычитает этот звук из микрофонов и делает громче тот микрофон, рядом с которым говорят. Отдельные дорожки не меняются."));
             _offset = new NumericUpDown { Minimum = -500, Maximum = 1000, Increment = 10, Value = settings.AudioOffsetMs, Width = Theme.S(100) };
             AddField(audio, "Сдвиг звука относительно картинки, мс (если губы не совпадают со звуком; обычно 70)", _offset);
             stack.Controls.Add(audio);
@@ -162,6 +165,7 @@ namespace MasterVks.UI
             s.MixMic2 = _mixMic2.Checked;
             s.MixMic3 = _mixMic3.Checked;
             s.MixSystem = _mixSystem.Checked;
+            s.SmartMix = _smartMix.Checked;
             s.AudioOffsetMs = (int)_offset.Value;
             s.StartupCheckMode = _startupAudible.Checked ? CheckMode.Audible : CheckMode.Silent;
             s.ConfirmStop = _confirmStop.Checked;
@@ -294,7 +298,7 @@ namespace MasterVks.UI
             var version = new Label { Text = "Версия " + v.Major + "." + v.Minor + "." + v.Build, ForeColor = Theme.Muted, AutoSize = true, Location = new Point(Theme.S(106), Theme.S(60)), UseMnemonic = false };
             var body = new Label
             {
-                Text = "Надёжная запись видеоконференций: экран, три микрофона и голоса собеседников, с проверкой камеры.\n\n" +
+                Text = "Надёжная запись видеоконференций: экран, три микрофона и голоса собеседников.\n\n" +
                        "Разработчик: Ходаковский Александр\n\n" +
                        "Видео записывается с помощью FFmpeg (ffmpeg.org), звук берётся через библиотеку NAudio.",
                 AutoSize = false,

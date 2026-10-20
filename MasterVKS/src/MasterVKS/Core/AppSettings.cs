@@ -40,12 +40,6 @@ namespace MasterVks.Core
         public string Mic3Id { get; set; }
         public string Mic3Name { get; set; }
 
-        /// <summary>Камера для проверки: название и внутреннее имя DirectShow. Пусто — не проверять.</summary>
-        public string CameraName { get; set; }
-        public string CameraId { get; set; }
-        /// <summary>Камеру уже выбирали (сами или пользователь), поэтому пустое значение значит «не проверять».</summary>
-        public bool CameraInitialized { get; set; }
-
         /// <summary>Пусто — звук с устройства вывода по умолчанию (следуем за Windows).</summary>
         public string OutputDeviceId { get; set; }
         public string OutputDeviceName { get; set; }
@@ -67,6 +61,9 @@ namespace MasterVks.Core
         public bool MixMic2 { get; set; }
         public bool MixMic3 { get; set; }
         public bool MixSystem { get; set; }
+
+        /// <summary>Умное сведение общей дорожки: убирать эхо из динамиков и приглушать дальние микрофоны.</summary>
+        public bool SmartMix { get; set; }
 
         /// <summary>Задержка звука относительно видео, мс (компенсация буферов звука).</summary>
         public int AudioOffsetMs { get; set; }
@@ -99,10 +96,11 @@ namespace MasterVks.Core
             MixMic2 = true;
             MixMic3 = true;
             MixSystem = true;
+            SmartMix = true;
             AudioOffsetMs = 70;
         }
 
-        public const int CurrentSettingsVersion = 4;
+        public const int CurrentSettingsVersion = 5;
 
         public void Normalize()
         {
@@ -116,7 +114,11 @@ namespace MasterVks.Core
                 // Версия 1.2: появился третий микрофон, по умолчанию он тоже в общей дорожке.
                 MixMic3 = true;
             }
-            // Версия 1.3: появилась проверка камеры. Камера подберётся сама при первом запуске.
+            if (SettingsVersion < 5)
+            {
+                // Версия 1.4: умное сведение (без эха из динамиков) включено по умолчанию.
+                SmartMix = true;
+            }
             SettingsVersion = CurrentSettingsVersion;
             if (MeetingName == null) MeetingName = "";
             if (FrameRate != 15 && FrameRate != 25 && FrameRate != 30 && FrameRate != 60) FrameRate = 30;

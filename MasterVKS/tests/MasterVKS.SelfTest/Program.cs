@@ -12,7 +12,6 @@ using MasterVks.Audio;
 using MasterVks.Checks;
 using MasterVks.Core;
 using MasterVks.Recording;
-using MasterVks.Video;
 using NAudio.Wave;
 
 namespace MasterVks.SelfTest
@@ -46,17 +45,14 @@ namespace MasterVks.SelfTest
             Run("Анализ: тишина, гул, перегруз, мелодия", TestAnalyzer);
             Run("Фрагмент записи: отбор звука по времени и паузам", TestSegmentGating);
             Run("Фрагмент записи: сведение каналов и ограничитель", TestSegmentMix);
+            Run("Умное сведение: без обработки звук проходит точно, с задержкой 1024 сэмпла", TestRoomMixerTransparent);
+            Run("Умное сведение: эхо из телевизора в комнате с тремя микрофонами", TestRoomMixerEcho);
             Run("Командная строка Windows: экранирование", TestQuoting);
             Run("Человеческие подписи", TestFmt);
             Run("Имена папок и файлов с названием ВКС", TestNames);
             Run("Старые настройки: MKV теперь сохраняется по умолчанию", TestSettingsMigration);
             Run("Здоровье: правила оценки", TestHealthRules);
             Run("Здоровье: предупреждения во время работы", TestHealthWatch);
-            Run("Камера: список устройств из FFmpeg", TestCameraList);
-            Run("Камера: анализ картинки", TestCameraPicture);
-            Run("Камера: правила оценки", TestCameraRules);
-            Run("Камера: кто сейчас пользуется камерой", TestCameraUsage);
-            Run("Камера: предупреждения во время записи", TestCameraWatch);
             if (_ffmpeg != null)
             {
                 Run("FFmpeg: запись по аргументам программы (видео + 7 каналов звука)", TestFfmpegRecording);
@@ -64,7 +60,6 @@ namespace MasterVks.SelfTest
                 Run("FFmpeg: склейка двух частей после сбоя", TestFinalizeMulti);
                 Run("FFmpeg: в папке остаются и MKV, и MP4", TestFinalizeKeepBoth);
                 Run("FFmpeg: восстановление оборванной записи (имитация синего экрана)", TestFinalizeTruncated);
-                Run("FFmpeg: кадры с камеры по трубе (тестовый источник вместо камеры)", TestCameraGrabber);
             }
 
             Console.WriteLine();
@@ -447,6 +442,198 @@ namespace MasterVks.SelfTest
                 "можно убрать микрофоны 2, 3 и звук компьютера из общей дорожки, отдельные остаются");
         }
 
+        // ===================== Умное сведение =====================
+
+        /// <summary>Похожий на речь сигнал: слоги с меняющимся тоном и паузы.</summary>
+        private static float[] Speech(int seed, int samples, double level)
+        {
+            var rnd = new Random(seed);
+            var x = new float[samples];
+            int pos = 0;
+            double phase = 0;
+            while (pos < samples)
+            {
+                int on = (int)(48000 * (0.12 + rnd.NextDouble() * 0.25));
+                int off = (int)(48000 * (0.04 + rnd.NextDouble() * (rnd.NextDouble() < 0.15 ? 0.6 : 0.15)));
+                double f0 = 100 + rnd.NextDouble() * 120, f1 = f0 * (0.8 + rnd.NextDouble() * 0.4);
+                double amp = level * (0.5 + rnd.NextDouble() * 0.7);
+                for (int i = 0; i < on && pos < samples; i++, pos++)
+                {
+                    double t = i / (double)on;
+                    double f = f0 + (f1 - f0) * t;
+                    phase += 2 * Math.PI * f / 48000;
+                    double v = 0;
+                    for (int h = 1; h <= 25; h++) v += Math.Sin(phase * h + h * 0.7) / h;
+                    double env = Math.Sin(Math.PI * t);
+                    x[pos] = (float)(amp * env * (0.6 * v + 0.15 * (rnd.NextDouble() * 2 - 1)));
+                }
+                pos += off;
+            }
+            return x;
+        }
+
+        /// <summary>Комната: задержка, затухающий отзвук (гребенчатые фильтры) и громкость.</summary>
+        private static float[] Room(float[] src, int delay, double gain, int seed)
+        {
+            var y = new float[src.Length];
+            int[] combs = { 1499 + seed * 37, 2311 + seed * 53, 3121 + seed * 17 };
+            var outs = new float[combs.Length][];
+            for (int c = 0; c < combs.Length; c++) outs[c] = new float[src.Length];
+            for (int i = 0; i < src.Length; i++)
+            {
+                float dry = i >= delay ? src[i - delay] : 0f;
+                float wet = 0;
+                for (int c = 0; c < combs.Length; c++)
+                {
+                    float fb = i >= combs[c] ? outs[c][i - combs[c]] : 0f;
+                    outs[c][i] = dry + 0.55f * fb;
+                    wet += outs[c][i];
+                }
+                y[i] = (float)(gain * (dry + 0.25f * (wet - combs.Length * dry)));
+            }
+            return y;
+        }
+
+        private static AudioBlock MakeBlock(float[] m1, float[] m2, float[] m3, float[] sys, int offset)
+        {
+            var b = new AudioBlock { Frames = 480, Mic1 = new float[480], Mic2 = new float[480], Mic3 = new float[480], Sys = new float[960] };
+            for (int i = 0; i < 480; i++)
+            {
+                int j = offset + i;
+                b.Mic1[i] = m1 != null && j < m1.Length ? m1[j] : 0f;
+                b.Mic2[i] = m2 != null && j < m2.Length ? m2[j] : 0f;
+                b.Mic3[i] = m3 != null && j < m3.Length ? m3[j] : 0f;
+                float v = sys != null && j < sys.Length ? sys[j] : 0f;
+                b.Sys[i * 2] = v;
+                b.Sys[i * 2 + 1] = v;
+            }
+            return b;
+        }
+
+        private static float[] RunMixer(RoomMixer mixer, float[] m1, float[] m2, float[] m3, float[] sys, int samples)
+        {
+            var result = new float[samples];
+            var l = new float[480];
+            var r = new float[480];
+            for (int off = 0; off + 480 <= samples; off += 480)
+            {
+                mixer.Process(MakeBlock(m1, m2, m3, sys, off), l, r);
+                Array.Copy(l, 0, result, off, 480);
+            }
+            return result;
+        }
+
+        private static double Energy(float[] x, int from, int to)
+        {
+            double e = 0;
+            for (int i = Math.Max(0, from); i < Math.Min(to, x.Length); i++) e += x[i] * x[i];
+            return e;
+        }
+
+        private static void TestRoomMixerTransparent()
+        {
+            int n = 48000 * 2;
+            var rnd = new Random(5);
+            var noise = new float[n];
+            for (int i = 0; i < n; i++) noise[i] = (float)(0.3 * (rnd.NextDouble() * 2 - 1));
+            float[] outp = RunMixer(new RoomMixer(true, true, false, false, false), noise, null, null, null, n);
+            double err = 0, sig = 0;
+            for (int i = 4800; i < n; i++)
+            {
+                double d = outp[i] - noise[i - RoomMixer.Latency];
+                err += d * d;
+                sig += noise[i - RoomMixer.Latency] * noise[i - RoomMixer.Latency];
+            }
+            Check(10 * Math.Log10(sig / Math.Max(err, 1e-20)) > 60, "один микрофон, собеседники молчат: сигнал совпадает с исходным (точность " + (10 * Math.Log10(sig / Math.Max(err, 1e-20))).ToString("0") + " дБ)");
+
+            var impulse = new float[n];
+            impulse[1000] = 0.5f;
+            float[] sysOut = RunMixer(new RoomMixer(true, true, true, true, true), null, null, null, impulse, n);
+            int peak = Array.IndexOf(sysOut, sysOut.Max());
+            Check(peak == 1000 + RoomMixer.Latency && Math.Abs(sysOut[peak] - 0.5f) < 1e-6, "звук собеседников в общей дорожке задержан ровно настолько же: " + (peak - 1000) + " сэмплов");
+
+            var silent = RunMixer(new RoomMixer(true, true, true, true, true), new float[n], new float[n], new float[n], new float[n], n);
+            Check(silent.All(v => v == 0f), "тишина на входе: тишина на выходе, без шума и ошибок");
+
+            float[] simple = RunMixer(new RoomMixer(false, true, false, false, false), noise, null, null, null, n);
+            Check(simple.Take(1000).Select((v, i) => Math.Abs(v - noise[i])).Max() < 1e-6, "умное сведение выключено: как раньше, без задержки");
+        }
+
+        private static void TestRoomMixerEcho()
+        {
+            const int rate = 48000;
+            int n = rate * 50;
+            // Собеседники говорят первые 25 с, человек в комнате 25–40 с, последние 10 с говорят одновременно.
+            float[] far = Speech(11, n, 0.25);
+            for (int i = 25 * rate; i < 40 * rate; i++) far[i] = 0;
+            float[] near = Speech(23, n, 0.3);
+            for (int i = 0; i < 25 * rate; i++) near[i] = 0;
+
+            int tv = (int)(0.150 * rate);
+            var rnd = new Random(3);
+            Func<float[], float[], float[], float[]> sum = (a, b, c) =>
+            {
+                var r = new float[n];
+                for (int i = 0; i < n; i++) r[i] = a[i] + b[i] + (c != null ? c[i] : 0f) + (float)(0.0005 * (rnd.NextDouble() * 2 - 1));
+                return r;
+            };
+            // Микрофоны 1 и 2 на столе (говорящий ближе к первому), микрофон 3 над телевизором.
+            float[] m1 = sum(Room(near, 0, 1.0, 1), Room(far, tv + 400, 0.25, 2), null);
+            float[] m2 = sum(Room(near, 240, 0.35, 3), Room(far, tv + 300, 0.3, 4), null);
+            float[] m3 = sum(Room(near, 600, 0.15, 5), Room(far, tv, 0.9, 6), null);
+            float[] farOnly = Room(far, 0, 1.0, 9);
+
+            var smart = new RoomMixer(true, true, true, true, false);
+            var plain = new RoomMixer(false, true, true, true, false);
+            var watch = Stopwatch.StartNew();
+            float[] outSmart = RunMixer(smart, m1, m2, m3, far, n);
+            double seconds = watch.Elapsed.TotalSeconds;
+            float[] outPlain = RunMixer(plain, m1, m2, m3, far, n);
+
+            Check(outSmart.All(v => !float.IsNaN(v) && !float.IsInfinity(v)), "без сбоев в числах");
+            Check(seconds < 5, "50 секунд звука обработаны за " + seconds.ToString("0.00") + " с (запас по скорости больше чем в 10 раз)");
+
+            for (int k = 0; k < 3; k++)
+            {
+                int ms = smart.EchoDelayMs(k);
+                int expected = k == 0 ? 158 : k == 1 ? 156 : 150;
+                Check(ms >= 0 && Math.Abs(ms - expected) <= 25, "микрофон " + (k + 1) + ": задержка телевизора найдена: " + ms + " мс (на самом деле " + expected + ")");
+            }
+
+            int L = RoomMixer.Latency;
+            double echoPlain = Energy(outPlain, 12 * rate, 25 * rate);
+            double echoSmart = Energy(outSmart, 12 * rate + L, 25 * rate + L);
+            double erle = 10 * Math.Log10(echoPlain / Math.Max(echoSmart, 1e-12));
+            Check(erle > 12, "говорят только собеседники: эхо в общей дорожке тише на " + erle.ToString("0.0") + " дБ");
+
+            double nearPlain = Energy(outPlain, 28 * rate, 40 * rate);
+            double nearSmart = Energy(outSmart, 28 * rate + L, 40 * rate + L);
+            double nearDb = 10 * Math.Log10(nearSmart / nearPlain);
+            Check(nearDb > -3, "говорит только человек в комнате: голос не приглушён (" + nearDb.ToString("+0.0;-0.0") + " дБ к простому сведению)");
+
+            // Одновременный разговор: сколько голоса из комнаты осталось (по совпадению с чистым голосом в микрофоне 1).
+            float[] nearInMic1 = Room(near, 0, 1.0, 1);
+            double dot = 0, ref2 = 0;
+            for (int i = 40 * rate; i < 50 * rate - L; i++)
+            {
+                dot += outSmart[i + L] * nearInMic1[i];
+                ref2 += nearInMic1[i] * nearInMic1[i];
+            }
+            double kept = dot / ref2;
+            Check(kept > 0.4, "говорят одновременно: голос из комнаты сохранён (" + (20 * Math.Log10(Math.Max(kept, 1e-6))).ToString("0.0") + " дБ)");
+
+            // Телевизор с «улучшайзерами» картинки запаздывает сильнее; звук там же по одному микрофону.
+            int n2 = rate * 20;
+            float[] far2 = Speech(31, n2, 0.25);
+            float[] tvMic = Room(far2, (int)(0.320 * rate), 0.8, 7);
+            var slow = new RoomMixer(true, true, false, false, false);
+            float[] o2 = RunMixer(slow, tvMic, null, null, far2, n2);
+            float[] p2 = RunMixer(new RoomMixer(false, true, false, false, false), tvMic, null, null, far2, n2);
+            double erle2 = 10 * Math.Log10(Energy(p2, 8 * rate, 20 * rate - L) / Math.Max(Energy(o2, 8 * rate + L, 20 * rate), 1e-12));
+            Check(slow.EchoDelayMs(0) >= 300 && slow.EchoDelayMs(0) <= 350 && erle2 > 12,
+                "медленный телевизор (320 мс): задержка " + slow.EchoDelayMs(0) + " мс, эхо тише на " + erle2.ToString("0.0") + " дБ");
+        }
+
         /// <summary>Разбор командной строки по правилам Windows (CommandLineToArgvW).</summary>
         private static List<string> ParseWindows(string cmd)
         {
@@ -619,256 +806,6 @@ namespace MasterVks.SelfTest
             Check(n.Count == 2, "мало памяти и Windows ждёт перезагрузки: два предупреждения");
             n = step(new HealthSample { OnAc = true, CpuPercent = 20, PerformancePercent = 100, AvailableMb = 500, RebootPending = true });
             Check(n.Count == 0, "без повторов");
-        }
-
-        // ===================== Камера =====================
-
-        private static void TestCameraList()
-        {
-            string modern =
-                "[dshow @ 0000020f] \"ARDOR GAMING Rune\" (video)\r\n" +
-                "[dshow @ 0000020f]   Alternative name \"@device_pnp_\\\\?\\usb#vid_1bcf&pid_2284&mi_00#7&1#{65e8773d-8f56-11d0-a3b9-00a0c9223196}\\global\"\r\n" +
-                "[dshow @ 0000020f] \"OBS Virtual Camera\" (video)\r\n" +
-                "[dshow @ 0000020f]   Alternative name \"@device_sw_{860BB310}\\{A3FCE0F5}\"\r\n" +
-                "[dshow @ 0000020f] \"Микрофон (ARDOR GAMING Rune)\" (audio)\r\n" +
-                "[dshow @ 0000020f]   Alternative name \"@device_cm_{33D9A762}\\wave_{1}\"\r\n" +
-                "dummy: Immediate exit requested\r\n";
-            List<CameraDevice> list = CameraDevices.Parse(modern);
-            Check(list.Count == 2, "новый формат: две камеры, микрофон не попал в список (" + list.Count + ")");
-            Check(list.Count > 0 && list[0].Name == "ARDOR GAMING Rune" && list[0].AltName.StartsWith("@device_pnp_"), "название и внутреннее имя камеры");
-            Check(list.Count > 1 && list[1].IsVirtual && !list[0].IsVirtual, "OBS распознана как программная камера");
-            Check(CameraDevices.PickDefault(list) == list[0], "по умолчанию выбирается настоящая камера");
-            Check(CameraDevices.InputArgs(list[0]).Last() == "video=" + list[0].AltName, "камера открывается по внутреннему имени");
-
-            string old =
-                "[dshow @ 03b8] DirectShow video devices (some may be both video and audio devices)\n" +
-                "[dshow @ 03b8]  \"Integrated Camera\"\n" +
-                "[dshow @ 03b8]     Alternative name \"@device_pnp_int\"\n" +
-                "[dshow @ 03b8] DirectShow audio devices\n" +
-                "[dshow @ 03b8]  \"Microphone Array\"\n" +
-                "[dshow @ 03b8]     Alternative name \"@device_cm_mic\"\n";
-            List<CameraDevice> oldList = CameraDevices.Parse(old);
-            Check(oldList.Count == 1 && oldList[0].Name == "Integrated Camera" && oldList[0].AltName == "@device_pnp_int", "старый формат FFmpeg 4");
-            Check(CameraDevices.Parse("[dshow @ 01] Could not enumerate video devices (or none found).").Count == 0, "камер нет: пустой список");
-
-            var twins = new List<CameraDevice>
-            {
-                new CameraDevice { Name = "USB Camera", AltName = "@a" },
-                new CameraDevice { Name = "USB Camera", AltName = "@b" }
-            };
-            Check(CameraDevices.Find(twins, "USB Camera", "@b") == twins[1], "две одинаковые камеры различаются по внутреннему имени");
-            Check(CameraDevices.Find(twins, "USB Camera", "@moved") == twins[0], "камеру переключили в другой порт: находится по названию");
-            Check(CameraDevices.Find(twins, "Другая", null) == null, "чужая камера не находится");
-
-            var s = new AppSettings();
-            Check(CameraTest.Resolve(s, list) == list[0], "первый запуск: камера подбирается сама");
-            s.CameraInitialized = true;
-            s.CameraName = "";
-            Check(CameraTest.Resolve(s, list) == null, "«Не проверять камеру» соблюдается");
-        }
-
-        private static CameraFrame SyntheticFrame(double seconds, Func<int, int, int> luma, int w = 64, int h = 36)
-        {
-            var data = new byte[w * h * 3];
-            for (int y = 0; y < h; y++)
-                for (int x = 0; x < w; x++)
-                {
-                    byte v = (byte)Math.Max(0, Math.Min(255, luma(x, y)));
-                    int i = (y * w + x) * 3;
-                    data[i] = data[i + 1] = data[i + 2] = v;
-                }
-            return new CameraFrame { Data = data, Width = w, Height = h, Seconds = seconds };
-        }
-
-        private static void TestCameraPicture()
-        {
-            var rnd = new Random(1);
-            var normal = Enumerable.Range(0, 30).Select(i => SyntheticFrame(i / 30.0, (x, y) => 60 + x * 2 + rnd.Next(-4, 5))).ToList();
-            CameraPicture p = CameraPicture.Analyze(normal);
-            Check(!p.Frozen && p.Brightness > 80 && p.Contrast > 10, "обычная картинка: не застыла, яркая, с деталями (яркость " + (int)p.Brightness + ", контраст " + (int)p.Contrast + ")");
-            Check(Math.Abs(p.Fps - 30) < 0.5, "частота кадров 30 (" + p.Fps.ToString("0.0") + ")");
-
-            CameraFrame still = SyntheticFrame(0, (x, y) => 60 + x * 2);
-            var frozen = Enumerable.Range(0, 10).Select(i => new CameraFrame { Data = still.Data, Width = 64, Height = 36, Seconds = i / 30.0 }).ToList();
-            Check(CameraPicture.Analyze(frozen).Frozen, "одинаковые до байта кадры: камера зависла");
-
-            var black = Enumerable.Range(0, 10).Select(i => SyntheticFrame(i / 30.0, (x, y) => rnd.Next(0, 4))).ToList();
-            CameraPicture b = CameraPicture.Analyze(black);
-            Check(b.Brightness < 14 && b.Contrast < 8 && !b.Frozen, "закрытая шторка: тёмная картинка с шумом");
-        }
-
-        private static void TestCameraRules()
-        {
-            var good = new CameraProbe
-            {
-                DeviceName = "ARDOR GAMING Rune",
-                Available = { "ARDOR GAMING Rune" },
-                Picture = new CameraPicture { Frames = 30, Fps = 30, Brightness = 110, Contrast = 40 },
-                NativeSize = new System.Drawing.Size(1280, 720)
-            };
-            HealthVerdict v = CameraRules.Verdict(good);
-            Check(v.Status == CheckStatus.Ok && v.Summary == "Камера работает, картинка есть" && v.Details.Contains("1280 × 720") && v.Details.Contains("30 кадров/с"),
-                "картинка есть: зелёный, с разрешением и частотой");
-
-            v = CameraRules.Verdict(new CameraProbe { DeviceName = "ARDOR GAMING Rune", Missing = true, Available = { "Integrated Camera" } });
-            Check(v.Status == CheckStatus.Error && v.Summary.Contains("не подключена") && v.Details.Contains("Integrated Camera"), "камера отключена: красный и список того, что подключено");
-
-            v = CameraRules.Verdict(new CameraProbe { DeviceName = "X", PrivacyBlock = "Windows не пускает к камере классические приложения: «Параметры → Конфиденциальность → Камера»" });
-            Check(v.Status == CheckStatus.Error && v.Details.StartsWith("Windows не пускает"), "запрет в настройках Windows: красный с подсказкой");
-
-            v = CameraRules.Verdict(new CameraProbe { DeviceName = "X", InUseBy = { "Телемост" } });
-            Check(v.Status == CheckStatus.Ok && v.Summary == "Камера включена в Телемост", "камеру держит Телемост: зелёный, камеру не трогаем");
-
-            v = CameraRules.Verdict(new CameraProbe { DeviceName = "X", Failure = CameraFailure.Busy, Picture = new CameraPicture() });
-            Check(v.Status == CheckStatus.Warning && v.Summary.Contains("занята"), "занята неизвестной программой: жёлтый");
-
-            v = CameraRules.Verdict(new CameraProbe { DeviceName = "X", NoFrames = true, Picture = new CameraPicture() });
-            Check(v.Status == CheckStatus.Error && v.Summary == "Камера не присылает картинку" && v.Details.Contains("ffmpeg.exe"), "включилась, но молчит: красный, с подсказкой про антивирус");
-
-            v = CameraRules.Verdict(new CameraProbe { DeviceName = "X", Failure = CameraFailure.Other, ErrorLine = "Could not RenderStream", Picture = new CameraPicture() });
-            Check(v.Status == CheckStatus.Error && v.Details.Contains("Could not RenderStream"), "непонятная ошибка драйвера показывается в подробностях");
-
-            var sys = new List<SystemCamera>
-            {
-                new SystemCamera { Name = "HP TrueVision HD Camera", Class = "Camera", ErrorCode = 0 },
-                new SystemCamera { Name = "HP IR Camera", Class = "Camera", ErrorCode = 0 },
-                new SystemCamera { Name = "Canon LiDE 300", Class = "Image", ErrorCode = 0 },
-                new SystemCamera { Name = "ARDOR GAMING Rune", Class = "Camera", ErrorCode = 0 }
-            };
-            List<SystemCamera> hidden = SystemCameras.NotInDirectShow(sys, new[] { "ARDOR GAMING Rune" });
-            Check(hidden.Count == 1 && hidden[0].Name == "HP TrueVision HD Camera", "из диспетчера устройств: без ИК-камеры, сканера и уже найденной камеры");
-            v = CameraRules.NoCamera(hidden, null);
-            Check(v.Status == CheckStatus.Warning && v.Summary.Contains("HP TrueVision") && v.Details.Contains("«Камера» Windows"), "камера есть в Windows, но не в DirectShow: объяснение");
-            hidden[0].ErrorCode = 22;
-            v = CameraRules.NoCamera(hidden, null);
-            Check(v.Status == CheckStatus.Warning && v.Summary.EndsWith("выключена") && v.Details.Contains("перечёркнутой камерой"), "камера выключена клавишей или в диспетчере");
-            hidden[0].ErrorCode = 10;
-            v = CameraRules.NoCamera(hidden, null);
-            Check(v.Summary.Contains("сбой драйвера") && v.Details.Contains("код 10"), "сбой драйвера с кодом");
-            v = CameraRules.NoCamera(new List<SystemCamera>(), null);
-            Check(v.Status == CheckStatus.Skipped && v.Details.Contains("BIOS"), "камер нет совсем: серый, с подсказками для ноутбука");
-            v = CameraRules.NoCamera(new List<SystemCamera>(), "доступ к камере запрещён групповой политикой");
-            Check(v.Status == CheckStatus.Error, "запрет доступа важнее, чем «не найдена»");
-
-            Func<CameraPicture, string> sum = pic => CameraRules.Verdict(new CameraProbe { DeviceName = "X", Picture = pic }).Summary;
-            Check(sum(new CameraPicture { Frames = 20, Fps = 30, Brightness = 3, Contrast = 2 }) == "Картинка с камеры чёрная", "чёрная картинка");
-            Check(sum(new CameraPicture { Frames = 20, Fps = 30, Brightness = 120, Contrast = 1 }) == "Картинка с камеры однотонная", "однотонная картинка (заглушка)");
-            Check(sum(new CameraPicture { Frames = 20, Fps = 30, Brightness = 100, Contrast = 30, Frozen = true }) == "Камера отвечает, но картинка застыла", "застывшая картинка");
-            Check(sum(new CameraPicture { Frames = 20, Fps = 30, Brightness = 25, Contrast = 12 }) == "Картинка с камеры очень тёмная", "очень тёмная комната");
-            Check(sum(new CameraPicture { Frames = 6, Fps = 2, Brightness = 100, Contrast = 30 }).StartsWith("Камера присылает мало кадров"), "2 кадра в секунду: предупреждение");
-
-            Check(CameraErrors.Classify("[dshow @ 01] Could not run graph (sometimes caused by a device already in use by other application)") == CameraFailure.Busy, "сообщение «already in use»: камера занята");
-            Check(CameraErrors.Classify("[dshow @ 01] Could not find video device with name [X] among source devices of type video.") == CameraFailure.NotFound, "сообщение «could not find»: камеры нет");
-            Check(CameraErrors.Classify("") == CameraFailure.None, "пустой вывод: ошибки нет");
-            Check(CameraErrors.LastError("Input #0\n[dshow @ 01] Could not RenderStream to connect pins\nvideo=X: I/O error\n") == "video=X: I/O error", "последняя строка ошибки без служебной приставки");
-
-            foreach (string text in new[] { CameraRules.AntivirusHint, CameraRules.Verdict(good).Details })
-                Check(text.IndexOf('—') < 0, "без длинных тире: " + text.Substring(0, 30) + "…");
-        }
-
-        private static void TestCameraUsage()
-        {
-            var entries = new List<CameraUseEntry>
-            {
-                new CameraUseEntry { Key = "C:#Users#user#AppData#Local#Yandex#Telemost#Telemost.exe", LastStart = 133000000000000000, LastStop = 0 },
-                new CameraUseEntry { Key = "C:#Program Files#Google#Chrome#Application#chrome.exe", LastStart = 133000000000000000, LastStop = 133000000000000500 },
-                new CameraUseEntry { Key = "C:#Program Files#Zoom#bin#Zoom.exe", LastStart = 133000000000000000, LastStop = 0 },
-                new CameraUseEntry { Key = "C:#MasterVKS#ffmpeg.exe", LastStart = 133000000000000000, LastStop = 0 },
-                new CameraUseEntry { Key = "Microsoft.WindowsCamera_8wekyb3d8bbwe", LastStart = 133000000000000000, LastStop = 0, Packaged = true }
-            };
-            List<string> apps = CameraUsage.InUse(entries, @"C:\MasterVKS\ffmpeg.exe", exe => exe != "Zoom");
-            Check(apps.SequenceEqual(new[] { "Телемост", "Камера Windows" }), "сейчас камеру держат Телемост и Камера Windows: " + string.Join(", ", apps));
-            Check(!apps.Contains("Google Chrome"), "Chrome уже закончил: не считается");
-            Check(!apps.Contains("Zoom"), "Zoom упал, не отметив конец: не считается, раз процесса нет");
-            Check(!apps.Contains("ffmpeg"), "собственный ffmpeg программы не считается");
-            Check(CameraUsage.AppTitle("C:#Users#u#AppData#Local#Yandex#YandexBrowser#Application#browser.exe") == "Яндекс Браузер", "browser.exe из папки Яндекса: Яндекс Браузер");
-            Check(CameraUsage.AppTitle("C:#Program Files (x86)#Microsoft#Edge#Application#msedge.exe") == "Microsoft Edge", "Edge");
-            Check(CameraUsage.AppTitle("C:#Tools#SomeApp.exe") == "SomeApp", "неизвестная программа: имя файла");
-        }
-
-        private static void TestCameraWatch()
-        {
-            var w = new CameraWatch();
-            double t = 0;
-            var none = new string[0];
-            var telemost = new[] { "Телемост" };
-            Func<bool?, string[], bool, List<Notice>> step = (present, apps, rec) => { t += 3; return w.Feed("ARDOR", present, apps, rec, t); };
-
-            int n = 0;
-            for (int i = 0; i < 5; i++) n += step(true, telemost, false).Count;
-            Check(n == 0, "до записи, камера в Телемосте: тихо");
-            for (int i = 0; i < 60; i++) n += step(i % 5 == 0 ? (bool?)true : null, telemost, true).Count;
-            Check(n == 0 && !w.Missing, "запись, камера включена: тихо");
-
-            List<Notice> a = step(false, none, true);
-            Check(a.Count == 0, "один неудачный опрос: ещё не тревожимся");
-            a = step(false, none, true);
-            Check(a.Any(x => x.Level == NoticeLevel.Warning && x.Text.Contains("отключилась")) && w.Missing, "камера пропала два опроса подряд: предупреждение");
-            Check(!a.Any(x => x.Text.Contains("выключил камеру")), "при пропаже не дублирует «выключил камеру»");
-            n = 0;
-            for (int i = 0; i < 5; i++) n += step(false, none, true).Count;
-            Check(n == 0, "без повторов");
-            a = step(true, none, true);
-            Check(a.Count == 1 && a[0].Level == NoticeLevel.Success && !w.Missing, "камеру вернули: сообщение");
-            step(true, telemost, true);
-            a = step(true, telemost, true);
-            Check(a.Count == 1 && a[0].Text.Contains("снова включена"), "Телемост снова включил камеру");
-            step(null, none, true);
-            a = step(null, none, true);
-            Check(a.Count == 1 && a[0].Text.StartsWith("Телемост выключил камеру"), "видео выключили в ВКС: сообщение");
-
-            var w2 = new CameraWatch();
-            double t2 = 0;
-            int idle = 0;
-            for (int i = 0; i < 40; i++)
-            {
-                t2 += 3;
-                idle += w2.Feed("ARDOR", null, none, true, t2).Count(x => x.Text.StartsWith("Камеру сейчас не использует"));
-            }
-            Check(idle == 1, "полторы минуты записи без камеры в ВКС: одна подсказка включить камеру");
-            Check(w2.Feed("", false, none, true, 200).Count == 0 && w2.Feed("", false, none, true, 203).Count == 0 && !w2.Missing, "камера не выбрана: никаких предупреждений");
-        }
-
-        private static void TestCameraGrabber()
-        {
-            var frames = new List<CameraFrame>();
-            var input = new[] { "-re", "-f", "lavfi", "-i", "testsrc2=size=1280x720:rate=30" };
-            using (var g = new CameraGrabber(_ffmpeg, input, 320, 180, f => { lock (frames) frames.Add(f); }))
-            {
-                var sw = Stopwatch.StartNew();
-                while (sw.ElapsedMilliseconds < 2500) Thread.Sleep(50);
-                Check(g.NativeSize.Width == 1280 && g.NativeSize.Height == 720, "размер исходной картинки узнан из сообщений: " + g.NativeSize);
-            }
-            CameraPicture p;
-            // Как и в проверке, первую секунду не считаем: в начале ffmpeg может выдать кадры пачкой.
-            lock (frames) p = CameraPicture.Analyze(frames.Where(f => f.Seconds >= frames[0].Seconds + 1.0).ToList());
-            Check(p.Frames >= 30 && frames.Count >= 50, "кадры идут по трубе: " + frames.Count + " за 2,5 с");
-            Check(p.Fps > 25 && p.Fps < 35, "около 30 кадров в секунду: " + p.Fps.ToString("0.0"));
-            Check(!p.Frozen && p.Contrast > 20, "тестовая картинка живая и с деталями");
-            Check(frames.Count > 0 && frames[0].Data.Length == 320 * 180 * 3, "кадр уменьшен до 320 × 180");
-
-            var dark = new List<CameraFrame>();
-            using (new CameraGrabber(_ffmpeg, new[] { "-re", "-f", "lavfi", "-i", "color=c=black:size=640x480:rate=15" }, 320, 180, f => { lock (dark) dark.Add(f); }))
-                Thread.Sleep(1500);
-            CameraPicture d;
-            lock (dark) d = CameraPicture.Analyze(dark);
-            HealthVerdict v = CameraRules.Verdict(new CameraProbe { DeviceName = "Тест", Picture = d });
-            Check(d.Frames > 5 && v.Summary == "Картинка с камеры чёрная", "чёрный источник распознан: " + v.Summary);
-
-            var none = new List<CameraFrame>();
-            CameraGrabber bad = new CameraGrabber(_ffmpeg, new[] { "-f", "lavfi", "-i", "nosuchfilter" }, 320, 180, f => none.Add(f));
-            var wait = Stopwatch.StartNew();
-            while (!bad.Exited && wait.ElapsedMilliseconds < 5000) Thread.Sleep(50);
-            Thread.Sleep(200);
-            Check(bad.Exited && none.Count == 0, "источник не открылся: ffmpeg завершился без кадров");
-            Check(CameraErrors.Classify(bad.LogText) == CameraFailure.Other && CameraErrors.LastError(bad.LogText).Length > 0, "ошибка видна: " + CameraErrors.LastError(bad.LogText));
-            bad.Dispose();
-
-            var sw2 = Stopwatch.StartNew();
-            var held = new CameraGrabber(_ffmpeg, input, 160, 90, null);
-            Thread.Sleep(500);
-            held.Dispose();
-            Check(sw2.ElapsedMilliseconds < 4000 && held.Exited, "камера отпускается быстро: " + sw2.ElapsedMilliseconds + " мс");
         }
 
         // ===================== FFmpeg =====================

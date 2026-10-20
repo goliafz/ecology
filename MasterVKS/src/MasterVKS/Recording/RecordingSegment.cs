@@ -223,7 +223,17 @@ namespace MasterVks.Recording
         /// Принимает блок звука от ядра и оставляет из него только ту часть, что
         /// попадает во время записи (с учётом пауз). Вызывается из потока сведения.
         /// </summary>
+        /// <summary>Блок звука с простым сведением общей дорожки (без обработки).</summary>
         public void OnAudioBlock(AudioBlock block, bool mixMic1, bool mixMic2, bool mixMic3, bool mixSystem)
+        {
+            var mixL = new float[block.Frames];
+            var mixR = new float[block.Frames];
+            RoomMixer.SimpleMix(block, mixMic1, mixMic2, mixMic3, mixSystem, mixL, mixR);
+            OnAudioBlock(block, mixL, mixR);
+        }
+
+        /// <summary>Блок звука с уже сведённой общей дорожкой (<see cref="RoomMixer"/>).</summary>
+        public void OnAudioBlock(AudioBlock block, float[] mixL, float[] mixR)
         {
             if (!_acceptAudio) return;
 
@@ -252,28 +262,17 @@ namespace MasterVks.Recording
             if (count > 0)
             {
                 var samples = new float[count * RecordingArgs.AudioChannels];
-                // Несколько микрофонов слышат одного человека: приглушаем сумму, чтобы общая дорожка не хрипела.
-                int micsInMix = (mixMic1 ? 1 : 0) + (mixMic2 ? 1 : 0) + (mixMic3 ? 1 : 0);
-                float micGain = micsInMix > 1 ? (float)(1.0 / Math.Sqrt(micsInMix)) : 1f;
                 int o = 0;
                 for (int i = from; i < block.Frames; i++)
                 {
                     if (mask != null && !mask[i]) continue;
-                    float m1 = block.Mic1[i];
-                    float m2 = block.Mic2[i];
-                    float m3 = block.Mic3[i];
-                    float sl = block.Sys[i * 2];
-                    float sr = block.Sys[i * 2 + 1];
-                    float mic = ((mixMic1 ? m1 : 0f) + (mixMic2 ? m2 : 0f) + (mixMic3 ? m3 : 0f)) * micGain;
-                    float left = mic + (mixSystem ? sl : 0f);
-                    float right = mic + (mixSystem ? sr : 0f);
-                    samples[o++] = SoftLimit(left);
-                    samples[o++] = SoftLimit(right);
-                    samples[o++] = m1;
-                    samples[o++] = m2;
-                    samples[o++] = m3;
-                    samples[o++] = sl;
-                    samples[o++] = sr;
+                    samples[o++] = mixL[i];
+                    samples[o++] = mixR[i];
+                    samples[o++] = block.Mic1[i];
+                    samples[o++] = block.Mic2[i];
+                    samples[o++] = block.Mic3[i];
+                    samples[o++] = block.Sys[i * 2];
+                    samples[o++] = block.Sys[i * 2 + 1];
                 }
                 var bytes = new byte[samples.Length * 4];
                 Buffer.BlockCopy(samples, 0, bytes, 0, bytes.Length);
@@ -289,15 +288,6 @@ namespace MasterVks.Recording
             }
 
             if (end >= stopAt) CompleteAudio();
-        }
-
-        private static float SoftLimit(float x)
-        {
-            const float knee = 0.85f;
-            float a = x < 0 ? -x : x;
-            if (a <= knee) return x;
-            float limited = knee + (1f - knee) * (float)Math.Tanh((a - knee) / (1f - knee));
-            return x < 0 ? -limited : limited;
         }
 
         public void CompleteAudio()

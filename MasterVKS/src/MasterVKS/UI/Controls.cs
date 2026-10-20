@@ -769,8 +769,6 @@ namespace MasterVks.UI
         private Image _image;
         private string _badge;
         private Color _badgeColor;
-        private string _placeholder = "Нет картинки";
-        private string _caption;
 
         public ScreenPreview()
         {
@@ -779,36 +777,10 @@ namespace MasterVks.UI
 
         public void SetImage(Image image)
         {
-            if (image == _image) return;
             Image old = _image;
             _image = image;
             Invalidate();
             if (old != null) old.Dispose();
-        }
-
-        /// <summary>Надпись, пока картинки нет.</summary>
-        public string Placeholder
-        {
-            get { return _placeholder; }
-            set
-            {
-                if (value == _placeholder) return;
-                _placeholder = value;
-                Invalidate();
-            }
-        }
-
-        public bool HasImage
-        {
-            get { return _image != null; }
-        }
-
-        /// <summary>Подпись внизу картинки (например, когда сделан снимок).</summary>
-        public void SetCaption(string caption)
-        {
-            if (caption == _caption) return;
-            _caption = caption;
-            Invalidate();
         }
 
         public void SetBadge(string badge, Color color)
@@ -840,20 +812,7 @@ namespace MasterVks.UI
                 }
                 else
                 {
-                    var textRect = Rectangle.Round(RectangleF.Inflate(rect, -Theme.Sf(8), -Theme.Sf(4)));
-                    Theme.DrawText(g, _placeholder ?? "", Theme.Small, textRect, Theme.Faint,
-                        TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.WordBreak);
-                }
-                if (!string.IsNullOrEmpty(_caption))
-                {
-                    int h = TextRenderer.MeasureText(_caption, Theme.Small).Height + Theme.S(6);
-                    var strip = new RectangleF(rect.X, rect.Bottom - h, rect.Width, h);
-                    Region oldClip = g.Clip;
-                    g.SetClip(path);
-                    using (var shade = new SolidBrush(Color.FromArgb(170, 17, 24, 39))) g.FillRectangle(shade, strip);
-                    g.Clip = oldClip;
-                    Theme.DrawText(g, _caption, Theme.Small, Rectangle.Round(new RectangleF(strip.X + Theme.Sf(8), strip.Y, strip.Width - Theme.Sf(16), strip.Height)),
-                        Color.White, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
+                    Theme.DrawText(g, "Нет картинки", Theme.Small, Rectangle.Round(rect), Theme.Faint, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
                 }
                 using (var pen = new Pen(Theme.Border)) g.DrawPath(pen, path);
             }
