@@ -20,9 +20,13 @@ async function main() {
   document.documentElement.lang = doc.documentElement.lang || 'ru';
   document.body.replaceWith(document.importNode(doc.body, true));
 
-  await Promise.all(Array.from(document.images, (img) => img.decode().catch(() => {})));
-  if (document.fonts?.ready) await document.fonts.ready;
-  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+  // The page lives in a background tab: Chrome pauses requestAnimationFrame there and may defer
+  // image decoding, so nothing here waits for a frame and every wait is bounded.
+  const bounded = (/** @type {Promise<unknown>} */ p, /** @type {number} */ ms) => Promise.race([p.catch(() => {}), new Promise((r) => setTimeout(r, ms))]);
+  await bounded(Promise.all(Array.from(document.images, (img) => img.decode())), 10_000);
+  if (document.fonts?.ready) await bounded(document.fonts.ready, 5_000);
+  // Read by the service worker through the debugger if the message below gets lost.
+  document.documentElement.dataset.ceReady = '1';
 
   if (dialog) {
     window.print();

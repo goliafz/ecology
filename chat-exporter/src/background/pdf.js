@@ -5,7 +5,7 @@
 // chrome.debugger. While attached, Chrome shows the bar "<extension> started debugging this
 // browser" — this is a Chrome safety feature and cannot be hidden.
 // "dialog" method: the same page opens the regular print dialog; the user saves manually.
-import { ErrorCode, ExportError, withTimeout } from '../core/util.js';
+import { ErrorCode, ExportError, sleep, withTimeout } from '../core/util.js';
 import { base64ToBytes } from './downloads.js';
 import { openBackgroundTab } from './tabs.js';
 import { updateKey } from './storage.js';
@@ -33,6 +33,32 @@ export function isDebuggerAvailable() {
   return typeof chrome.debugger?.attach === 'function';
 }
 
+/**
+ * Waits for the print page's "ready" message; if it does not arrive, asks the page directly
+ * through the debugger (the flag is set right before the message is sent).
+ * @param {number} tabId
+ * @param {Promise<unknown>} readyMessage
+ */
+async function waitUntilReady(tabId, readyMessage) {
+  const deadline = Date.now() + 60_000;
+  const gotMessage = await Promise.race([readyMessage.then(() => true), sleep(15_000).then(() => false)]);
+  if (gotMessage) return;
+  while (Date.now() < deadline) {
+    try {
+      const res = /** @type {any} */ (await chrome.debugger.sendCommand({ tabId }, 'Runtime.evaluate', {
+        expression: "document.documentElement.dataset.ceReady === '1'",
+        returnByValue: true,
+      }));
+      if (res?.result?.value === true) return;
+    } catch {
+      // the page may still be navigating
+    }
+    const done = await Promise.race([readyMessage.then(() => true), sleep(1000).then(() => false)]);
+    if (done) return;
+  }
+  throw new ExportError(ErrorCode.PDF_FAILED, 'Страница для PDF не подготовилась за 60 с. Попробуйте ещё раз; если повторится — выберите в настройках печать через окно.');
+}
+
 const FOOTER = '<div style="width:100%;font-size:8px;color:#888;text-align:center;font-family:sans-serif"><span class="pageNumber"></span> / <span class="totalPages"></span></div>';
 
 /**
@@ -54,11 +80,14 @@ export async function htmlToPdf(html, title) {
   let tabId;
   let attached = false;
   try {
-    tabId = await openBackgroundTab(chrome.runtime.getURL(`src/pages/print.html?job=${job}`));
-    const readyTab = await withTimeout(readyPromise, 90_000, 'подготовка страницы для PDF');
-    tabId = /** @type {number} */ (readyTab);
+    // The tab is opened blank and the debugger attached first: with focus emulation the
+    // background tab behaves like a visible one (rendering is not paused).
+    tabId = await openBackgroundTab('about:blank');
     await chrome.debugger.attach({ tabId }, '1.3');
     attached = true;
+    await chrome.debugger.sendCommand({ tabId }, 'Emulation.setFocusEmulationEnabled', { enabled: true }).catch(() => {});
+    await chrome.tabs.update(tabId, { url: chrome.runtime.getURL(`src/pages/print.html?job=${job}`) });
+    await waitUntilReady(tabId, readyPromise);
     const result = /** @type {{ data: string }} */ (await withTimeout(chrome.debugger.sendCommand({ tabId }, 'Page.printToPDF', {
       printBackground: true,
       preferCSSPageSize: true,

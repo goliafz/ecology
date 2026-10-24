@@ -37,7 +37,10 @@ function textOf(el) {
 export const chatGptDom = {
   messages() {
     const nodes = outermost(Array.from(document.querySelectorAll('[data-message-author-role]')));
-    if (nodes.length === 0) return chatGptTurns();
+    if (nodes.length === 0) {
+      const units = chatGptSearchUnits();
+      return units.length ? units : chatGptTurns();
+    }
     return nodes.map((node) => {
       const roleAttr = node.getAttribute('data-message-author-role');
       const role = roleAttr === 'user' ? 'user' : 'assistant';
@@ -51,15 +54,44 @@ export const chatGptDom = {
     return Boolean(document.querySelector('[data-testid="stop-button"], button[aria-label*="Stop" i], .result-streaming'));
   },
   messageIds() {
-    return Array.from(document.querySelectorAll('[data-message-id]'))
-      .map((el) => el.getAttribute('data-message-id') || '')
-      .filter(Boolean);
+    const ids = Array.from(document.querySelectorAll('[data-message-id]')).map((el) => el.getAttribute('data-message-id') || '');
+    for (const el of document.querySelectorAll('[data-chatgpt-search-message-ids]')) ids.push(...splitIds(el.getAttribute('data-chatgpt-search-message-ids')));
+    return [...new Set(ids.filter(Boolean))];
   },
   userMessageCount() {
     const direct = document.querySelectorAll('[data-message-author-role="user"]').length;
-    return direct || chatGptTurns().filter((m) => m.role === 'user').length;
+    if (direct) return direct;
+    const units = chatGptSearchUnits();
+    return (units.length ? units : chatGptTurns()).filter((m) => m.role === 'user').length;
   },
 };
+
+/** @param {string | null} value */
+function splitIds(value) {
+  return String(value || '').split(/[\s,]+/).filter(Boolean);
+}
+
+/**
+ * ChatGPT markup seen in October 2026 (diagnostics of a real chat): each message is wrapped in
+ * an element with data-chatgpt-search-unit-key="<turn>:<n>:<role>" and
+ * data-chatgpt-search-message-ids="<message ids>". Verified for the user role; the "assistant"
+ * suffix is assumed by analogy.
+ * @returns {DomMessage[]}
+ */
+function chatGptSearchUnits() {
+  const units = outermost(Array.from(document.querySelectorAll('[data-chatgpt-search-unit-key]')));
+  return units.flatMap((unit) => {
+    const roleAttr = String(unit.getAttribute('data-chatgpt-search-unit-key') || '').split(':').pop();
+    if (roleAttr !== 'user' && roleAttr !== 'assistant') return [];
+    const role = /** @type {'user' | 'assistant'} */ (roleAttr);
+    const ids = splitIds(unit.getAttribute('data-chatgpt-search-message-ids'));
+    const content = role === 'user'
+      ? unit.querySelector('.whitespace-pre-wrap') || unit
+      : unit.querySelector('.markdown') || unit;
+    const text = textOf(content);
+    return [{ key: ids.length ? `id:${ids.join(',')}` : `${role}:${fnv1a(text)}`, id: ids[ids.length - 1] || null, role, el: content, text }];
+  });
+}
 
 /**
  * Fallback for ChatGPT markup without data-message-author-role: conversation turns marked with
@@ -78,7 +110,8 @@ function chatGptTurns() {
 }
 
 const PROBE_SELECTORS = [
-  '[data-message-author-role]', '[data-message-id]', '[data-testid^="conversation-turn-"]', '[data-turn]',
+  '[data-message-author-role]', '[data-message-id]', '[data-chatgpt-search-unit-key]', '[data-chatgpt-search-message-ids]',
+  '[data-content-search-turn-key]', '[data-user-message-bubble]', '[data-talvt-turn-state]', '[data-testid^="conversation-turn-"]', '[data-turn]',
   'article', '.markdown', '[data-testid="user-message"]', '.font-claude-response', '[data-is-streaming]',
 ];
 

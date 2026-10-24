@@ -94,3 +94,30 @@ test('ChatGPT fallback selectors and diagnostics probe (no text in the probe)', 
     delete g.NodeFilter;
   }
 });
+
+test('ChatGPT markup from the diagnostics of a real chat (October 2026)', async () => {
+  // Attribute structure copied from the reported domProbe (text replaced); the assistant unit is
+  // assumed by analogy with the user unit.
+  const dom = new JSDOM(`<!DOCTYPE html><body>
+    <div data-content-search-turn-key="fallback-turn-0"><div class="flex flex-col gap-1.5"><div class="group flex flex-col" data-talvt-turn-state="complete">
+      <div class="group/user-message flex flex-col items-end gap-2" data-chatgpt-search-unit-key="fallback-turn-0:0:user" data-chatgpt-search-message-ids="e45bb71d-a971-4f70-9ae0-1e1f65bb6fac">
+        <div class="w-full" data-content-search-unit-key="fallback-turn-0:0:user"><div data-user-message-bubble="true"><div class="text-size-chat whitespace-pre-wrap" dir="auto">Покажи как составлен промт</div></div></div>
+      </div>
+      <div data-chatgpt-search-unit-key="fallback-turn-0:1:assistant" data-chatgpt-search-message-ids="ef577f8c-ed1e-470e-8aa4-346b33849a95">
+        <div data-content-search-unit-key="fallback-turn-0:1:assistant"><pre><code class="language-markdown"># Промпт</code></pre></div>
+      </div>
+    </div></div></div>
+  </body>`);
+  const g = /** @type {any} */ (globalThis);
+  g.document = dom.window.document;
+  try {
+    const { chatGptDom } = await import('../src/content/dom-adapters.js');
+    const msgs = chatGptDom.messages();
+    assert.deepEqual(msgs.map((m) => [m.role, m.id]), [['user', 'e45bb71d-a971-4f70-9ae0-1e1f65bb6fac'], ['assistant', 'ef577f8c-ed1e-470e-8aa4-346b33849a95']]);
+    assert.equal(msgs[0].text, 'Покажи как составлен промт');
+    assert.deepEqual(chatGptDom.messageIds(), ['e45bb71d-a971-4f70-9ae0-1e1f65bb6fac', 'ef577f8c-ed1e-470e-8aa4-346b33849a95']);
+    assert.equal(chatGptDom.userMessageCount(), 1);
+  } finally {
+    delete g.document;
+  }
+});

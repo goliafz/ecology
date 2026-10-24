@@ -5,7 +5,7 @@ import { chatKey, serviceFromUrl, SERVICES } from '../adapters/registry.js';
 import { serializeError } from '../core/util.js';
 import { getCachedList, listChats } from './changes.js';
 import { addLog, clearLog } from './log.js';
-import { isDebuggerAvailable, printMessageHandlers } from './pdf.js';
+import { htmlToPdf, isDebuggerAvailable, printMessageHandlers } from './pdf.js';
 import { broadcastState, cancelQueue, enqueue, getQueue, processQueue, QUEUE_ALARM, resumeQueue, summarize } from './queue.js';
 import { BACKUP_ALARM, CATCHUP_ALARM, checkMissedRun, getSchedule, onScheduleAlarm, runBackup, syncSchedule } from './scheduler.js';
 import { loadSettings, saveSettings, DEFAULT_SETTINGS } from './settings.js';
@@ -48,7 +48,7 @@ async function init() {
 init().catch((err) => console.error('[Chat Exporter] init failed', err));
 
 // Handles for the DevTools console of the service worker (diagnostics and e2e tests).
-/** @type {any} */ (globalThis).chatExporterDebug = { checkMissedRun, runBackup, syncSchedule, processQueue };
+/** @type {any} */ (globalThis).chatExporterDebug = { checkMissedRun, runBackup, syncSchedule, processQueue, htmlToPdf };
 
 // ---- Message router -----------------------------------------------------------------------
 
