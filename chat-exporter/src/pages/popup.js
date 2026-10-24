@@ -1,8 +1,7 @@
-import { call, COMPLETENESS_TEXT, fmtDate, formatCheckboxes, h, readFormats } from './ui.js';
+import { call, COMPLETENESS_TEXT, fmtDate, FORMAT_LABELS, h } from './ui.js';
 
 const $ = (/** @type {string} */ id) => /** @type {HTMLElement} */ (document.getElementById(id));
 const DAYS = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
-let formatsRendered = false;
 /** @type {any} */
 let state = null;
 
@@ -31,10 +30,10 @@ function render() {
   }
   /** @type {HTMLButtonElement} */ ($('export-current')).disabled = !(tab?.service && tab.chatId);
 
-  if (!formatsRendered) {
-    $('formats').replaceChildren(formatCheckboxes(settings.formats, 'popup-formats'));
-    formatsRendered = true;
-  }
+  // Formats are chosen in the settings only.
+  const names = settings.formats.map((/** @type {keyof typeof FORMAT_LABELS} */ f) => FORMAT_LABELS[f]).join(', ');
+  $('formats').replaceChildren(`Формат: ${names} · `, h('button', { class: 'link small', onclick: () => chrome.runtime.openOptionsPage() }, 'изменить'));
+  /** @type {HTMLButtonElement} */ ($('save-raw')).disabled = !(tab?.service && tab.chatId);
 
   // Auto mode
   /** @type {HTMLInputElement} */ ($('auto-toggle')).checked = settings.auto.enabled;
@@ -113,9 +112,7 @@ async function guarded(fn) {
 }
 
 $('export-current').addEventListener('click', () => guarded(async () => {
-  const formats = readFormats($('formats'));
-  if (!formats.length) throw new Error('Выберите хотя бы один формат');
-  await call('exportCurrent', { formats });
+  await call('exportCurrent');
 }));
 
 $('choose-chats').addEventListener('click', () => {
@@ -129,9 +126,7 @@ $('export-selected').addEventListener('click', () => guarded(async () => {
     chrome.tabs.create({ url: chrome.runtime.getURL('src/pages/chats.html') });
     throw new Error('Чаты не выбраны: отметьте их на открывшейся странице.');
   }
-  const formats = readFormats($('formats'));
-  if (!formats.length) throw new Error('Выберите хотя бы один формат');
-  await call('exportSelected', { items, formats });
+  await call('exportSelected', { items });
 }));
 
 $('auto-toggle').addEventListener('change', (e) => guarded(async () => {
@@ -141,6 +136,11 @@ $('auto-toggle').addEventListener('change', (e) => guarded(async () => {
 $('backup-now').addEventListener('click', () => guarded(async () => {
   const res = await call('runBackupNow');
   if (res.queued === 0) showResult(res.errors.length ? 'err' : 'ok', res.errors.length ? res.errors.join('; ') : 'Изменившихся чатов нет.');
+}));
+
+$('save-raw').addEventListener('click', () => guarded(async () => {
+  const res = await call('saveRawCurrent');
+  showResult('ok', `Данные чата сохранены для диагностики: ${res.path}. Файл содержит текст переписки — передавайте его только тому, кому доверяете.`);
 }));
 
 $('cancel').addEventListener('click', () => guarded(() => call('cancel')));

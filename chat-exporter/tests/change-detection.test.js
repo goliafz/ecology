@@ -73,13 +73,19 @@ test('candidate cap and ordering by update time', () => {
 });
 
 test('settings normalization: defaults, clamping, invalid values', () => {
-  const s = normalizeSettings({ formats: ['pdf', 'bogus', 'pdf'], versioning: 'x', auto: { time: '7:30', days: [1, 9, 1], maxChatsPerRun: 99999, delayMs: 1 } });
-  assert.deepEqual(s.formats, ['pdf']);
-  assert.equal(s.versioning, 'overwrite');
+  const s = normalizeSettings({ schema: 2, formats: ['md', 'bogus', 'md'], onConflict: 'x', auto: { time: '7:30', days: [1, 9, 1], maxChatsPerRun: 99999, delayMs: 1 } });
+  assert.deepEqual(s.formats, ['md']);
+  assert.equal(s.onConflict, 'overwrite');
+  assert.equal(s.writeMeta, false);
+  assert.equal(s.fileMask, '%name%_%date%');
   assert.equal(s.auto.time, '7:30');
   assert.deepEqual(s.auto.days, [1]);
   assert.equal(s.auto.maxChatsPerRun, 1000);
   assert.equal(s.auto.delayMs, 500);
   assert.deepEqual(normalizeSettings(null).formats, DEFAULT_SETTINGS.formats);
-  assert.deepEqual(normalizeSettings({ formats: [] }).formats, ['html', 'md']);
+  assert.deepEqual(normalizeSettings({ formats: [] }).formats, ['pdf']);
+  const legacy = normalizeSettings({ schema: 1, formats: ['html', 'md'], auto: { formats: ['html', 'md'] } });
+  assert.deepEqual(legacy.formats, ['pdf'], 'old implicit defaults are replaced by PDF');
+  assert.deepEqual(legacy.auto.formats, ['pdf']);
+  assert.equal(normalizeSettings({ schema: 2, folderMask: '' }).folderMask, '', 'empty folder mask allowed');
 });

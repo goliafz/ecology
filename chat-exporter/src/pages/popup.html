@@ -23,7 +23,7 @@
 
 <section class="card stack">
   <div id="current-chat" class="small"></div>
-  <div id="formats"></div>
+  <div id="formats" class="small muted"></div>
   <button class="primary wide" id="export-current">Экспорт текущего чата</button>
 </section>
 
@@ -50,6 +50,7 @@
 
 <footer class="row small">
   <button class="link" id="open-log">Журнал операций</button>
+  <button class="link" id="save-raw" title="Сохраняет исходные данные открытого чата (JSON), чтобы разобраться, если экспорт получился неправильным">Данные для диагностики</button>
   <span class="spacer"></span>
   <span class="muted" id="version"></span>
 </footer>

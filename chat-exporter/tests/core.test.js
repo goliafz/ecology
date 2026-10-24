@@ -27,22 +27,26 @@ test('sanitizeSegment: forbidden chars, reserved names, length, Cyrillic', () =>
 test('expandTemplate: no traversal, slashes in values do not create folders', () => {
   assert.equal(expandTemplate('{service}/{title}', { service: 'ChatGPT', title: '../../etc/passwd' }), 'ChatGPT/etc passwd');
   assert.equal(expandTemplate('../{a}/./b', { a: 'x' }), 'x/b');
-  assert.equal(expandTemplate('{missing}/x', {}), 'x');
+  assert.equal(expandTemplate('%service%/%name%', { service: 'ChatGPT', name: 'a/b' }), 'ChatGPT/a b');
 });
 
-test('buildChatFolder / buildFilePaths: unique id enforced, versions', () => {
+test('masks: default %name%/%name%_%date%, dated history, collisions, legacy {tokens}', () => {
   const now = new Date(2026, 9, 24, 23, 5);
-  const chat = { service: /** @type {const} */ ('chatgpt'), id: '11111111-2222-3333', title: 'Мой чат' };
-  assert.equal(buildChatFolder({ rootFolder: 'ChatBackups', folderTemplate: '{service}/{title}' }, chat, now), 'ChatBackups/ChatGPT/Мой чат__11111111');
-  const folder = buildChatFolder({ rootFolder: 'ChatBackups', folderTemplate: '{service}/{title}__{shortId}' }, chat, now);
-  assert.equal(folder, 'ChatBackups/ChatGPT/Мой чат__11111111');
-  const p1 = buildFilePaths(folder, { fileTemplate: 'chat', versioning: 'overwrite' }, chat, ['md', 'html', 'pdf'], now);
-  assert.deepEqual(p1.files, { md: `${folder}/chat.md`, html: `${folder}/chat.html`, pdf: `${folder}/chat.pdf` });
-  assert.equal(p1.meta, `${folder}/chat.meta.json`);
-  const p2 = buildFilePaths(folder, { fileTemplate: '{title}', versioning: 'versions' }, chat, ['md'], now);
-  assert.equal(p2.files.md, `${folder}/Мой чат_2026-10-24_23-05.md`);
-  assert.equal(p2.meta, `${folder}/Мой чат.meta.json`);
-  assert.ok(isSafeRelativePath(p1.files.md || ''));
+  const chat = { service: /** @type {const} */ ('chatgpt'), id: '11111111-2222-3333', title: 'Мой чат: план', updatedAt: '2026-10-20T10:00:00Z' };
+  const folder = buildChatFolder({ rootFolder: 'ChatBackups', folderMask: '%name%' }, chat, now);
+  assert.equal(folder, 'ChatBackups/Мой чат план');
+  const p = buildFilePaths(folder, { fileMask: '%name%_%date%' }, chat, ['pdf'], now);
+  assert.deepEqual(p.files, { pdf: 'ChatBackups/Мой чат план/Мой чат план_2026-10-24.pdf' });
+  assert.equal(p.meta, 'ChatBackups/Мой чат план/Мой чат план_2026-10-24.meta.json');
+  const next = buildFilePaths(folder, { fileMask: '%name%_%date%' }, chat, ['pdf'], new Date(2026, 9, 25, 9, 0));
+  assert.equal(next.files.pdf, 'ChatBackups/Мой чат план/Мой чат план_2026-10-25.pdf', 'next day -> new file');
+  assert.equal(buildChatFolder({ rootFolder: 'ChatBackups', folderMask: '%name%' }, chat, now, new Set([folder])), 'ChatBackups/Мой чат план (11111111)', 'another chat owns the folder');
+  assert.equal(buildChatFolder({ rootFolder: 'ChatBackups', folderMask: '' }, chat, now), 'ChatBackups', 'empty mask: one common folder');
+  assert.equal(buildChatFolder({ rootFolder: 'Архив', folderMask: '%service%/%name%' }, chat, now), 'Архив/ChatGPT/Мой чат план');
+  assert.equal(buildFilePaths(folder, { fileMask: '%date%_%time% %name% (%updated%)' }, chat, ['md'], now).files.md, `${folder}/2026-10-24_23-05 Мой чат план (2026-10-20).md`);
+  assert.equal(buildFilePaths(folder, { fileMask: '{title}_{date}' }, chat, ['md'], now).files.md, `${folder}/Мой чат план_2026-10-24.md`, 'legacy tokens');
+  assert.equal(buildFilePaths(folder, { fileMask: '%nmae%' }, chat, ['md'], now).files.md, `${folder}/nmae.md`, 'typo stays visible');
+  assert.ok(isSafeRelativePath(p.files.pdf || ''));
   assert.ok(!isSafeRelativePath('/abs/x'));
   assert.ok(!isSafeRelativePath('a/../b'));
   assert.ok(!isSafeRelativePath('C:/x'));

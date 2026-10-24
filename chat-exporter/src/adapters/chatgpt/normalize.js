@@ -9,6 +9,10 @@ import { SCHEMA_VERSION, toIso } from '../../core/model.js';
 import { truncate } from '../../core/util.js';
 
 const HIDDEN_CONTENT_TYPES = new Set(['user_editable_context', 'model_editable_context']);
+/** Block types that count as a visible answer (tool calls and thinking alone do not). */
+const VISIBLE_BLOCKS = new Set(['markdown', 'code', 'artifact', 'image']);
+/** Keys whose string values are message text in unknown content shapes. */
+const TEXT_KEYS = new Set(['text', 'parts', 'content', 'markdown', 'value', 'summary', 'result', 'fallbackMarkdown']);
 const TOOL_TEXT_LIMIT = 20_000;
 
 /**
@@ -51,26 +55,83 @@ export function normalizeChatGpt(raw, options = {}) {
   let generating = false;
   let lastModel = null;
   let imagesFailed = 0;
+  let rescuedTurns = 0;
+  let lastPathRole = null;
+  /** Ids the DOM may show that are accounted for (exported or deliberately hidden). */
+  const knownIds = new Set();
+  /** Assistant/tool messages of the current turn that produced nothing visible. */
+  /** @type {Array<{ id: string, text: string, type: string, time: unknown, nodeParent: string | null, recipient: string }>} */
+  let turnSkipped = [];
+  let turnHasOutput = false;
+  /** @type {string[]} */
+  const unextracted = [];
+  const ctx = { canvas: /** @type {{ title: string, type: string, content: string } | null} */ (null) };
+
+  // An answer must never disappear silently: if a turn produced no visible content but its
+  // messages carry text in a format this adapter does not know, that text is saved as-is.
+  const flushTurn = () => {
+    if (!turnHasOutput && turnSkipped.length > 0) {
+      const types = [...new Set(turnSkipped.map((t) => t.recipient && t.recipient !== 'all' ? `${t.type} → ${t.recipient}` : t.type))].join(', ');
+      /** @type {import('../../core/model.js').Block[]} */
+      const blocks = [{ type: 'notice', level: 'warning', text: `Ответ сохранён в исходном виде: его формат не распознан (${types}).` }];
+      for (const t of turnSkipped) {
+        blocks.push(t.type === 'code' ? { type: 'code', language: '', code: t.text } : { type: 'markdown', text: t.text });
+      }
+      const last = turnSkipped[turnSkipped.length - 1];
+      messages.push({
+        id: last.id,
+        parentId: last.nodeParent,
+        role: 'assistant',
+        createdAt: toIso(last.time),
+        model: null,
+        blocks,
+        meta: { sourceIds: turnSkipped.map((t) => t.id) },
+      });
+      rescuedTurns += 1;
+    }
+    for (const t of turnSkipped) knownIds.add(t.id);
+    turnSkipped = [];
+    turnHasOutput = false;
+  };
 
   for (const nodeId of path) {
     const node = mapping[nodeId];
     const msg = node?.message;
-    if (!msg) continue;
+    if (!msg) {
+      knownIds.add(nodeId);
+      continue;
+    }
+    const msgId = String(msg.id || nodeId);
     const role = msg.author?.role;
     const contentType = msg.content?.content_type;
-    if (role === 'system') continue;
-    if (msg.metadata?.is_visually_hidden_from_conversation) continue;
-    if (HIDDEN_CONTENT_TYPES.has(contentType)) continue;
+    if (role === 'user') flushTurn();
+    if (role === 'system' || msg.metadata?.is_visually_hidden_from_conversation || HIDDEN_CONTENT_TYPES.has(contentType)) {
+      knownIds.add(msgId).add(nodeId);
+      continue;
+    }
+    if (role === 'user' || role === 'assistant' || role === 'tool') lastPathRole = role === 'user' ? 'user' : 'assistant';
 
     if (msg.status === 'in_progress') generating = true;
     if (role === 'assistant' && msg.metadata?.model_slug) lastModel = msg.metadata.model_slug;
 
-    const converted = convertContent(msg, role, options);
+    const converted = convertContent(msg, role, options, ctx);
     imagesFailed += converted.imagesFailed;
     const blocks = [...attachmentBlocks(msg), ...converted.blocks];
-    if (blocks.length === 0) continue;
+    if (blocks.length === 0) {
+      const text = role === 'user' ? '' : anyText(msg);
+      if (text.trim()) {
+        turnSkipped.push({ id: msgId, text, type: String(contentType || 'unknown'), time: msg.create_time, nodeParent: node.parent || null, recipient: String(msg.recipient || '') });
+      } else if (contentType === 'thoughts' || contentType === 'reasoning_recap') {
+        knownIds.add(msgId).add(nodeId);
+      } else {
+        unextracted.push(msgId);
+      }
+      continue;
+    }
+    knownIds.add(msgId).add(nodeId);
 
     const normalizedRole = role === 'user' ? 'user' : 'assistant';
+    if (normalizedRole === 'assistant' && blocks.some((b) => VISIBLE_BLOCKS.has(b.type))) turnHasOutput = true;
     const parent = mapping[node.parent];
     const branchCount = parent && Array.isArray(parent.children) ? parent.children.length : 1;
     const meta = {};
@@ -85,9 +146,9 @@ export function normalizeChatGpt(raw, options = {}) {
     // ChatGPT shows tool calls, tool output and the final answer as one assistant turn.
     if (normalizedRole === 'assistant' && prev && prev.role === 'assistant') {
       prev.blocks.push(...blocks);
-      /** @type {any} */ (prev.meta).sourceIds.push(msg.id || nodeId);
+      /** @type {any} */ (prev.meta).sourceIds.push(msgId);
       if (role === 'assistant' && hasText(blocks)) {
-        prev.id = msg.id || nodeId; // DOM uses the id of the message holding the text
+        prev.id = msgId; // DOM uses the id of the message holding the text
         prev.model = msg.metadata?.model_slug || prev.model;
       }
       Object.assign(prev.meta, meta, { sourceIds: /** @type {any} */ (prev.meta).sourceIds });
@@ -95,16 +156,19 @@ export function normalizeChatGpt(raw, options = {}) {
     }
 
     messages.push({
-      id: msg.id || nodeId,
+      id: msgId,
       parentId: node.parent || null,
       role: normalizedRole,
       createdAt: toIso(msg.create_time),
       model: role === 'assistant' ? msg.metadata?.model_slug || null : null,
       blocks,
-      meta: { ...meta, sourceIds: [msg.id || nodeId] },
+      meta: { ...meta, sourceIds: [msgId] },
     });
   }
+  flushTurn();
 
+  if (rescuedTurns > 0) notes.push(`Ответов в нераспознанном формате: ${rescuedTurns}. Они сохранены в исходном виде; проверьте их оформление.`);
+  if (unextracted.length > 0) notes.push(`Сообщений без извлекаемого содержимого: ${unextracted.length}.`);
   if (imagesFailed > 0) notes.push(`Не удалось встроить изображений: ${imagesFailed}. Вместо них в документе указана пометка.`);
 
   return {
@@ -126,7 +190,10 @@ export function normalizeChatGpt(raw, options = {}) {
       leafId,
       generating,
       imagesFailed,
-      pathIds: [...new Set(path.flatMap((n) => [n, mapping[n]?.message?.id].filter(Boolean)))],
+      pathIds: [...knownIds],
+      rescuedTurns,
+      unextracted: unextracted.length,
+      lastPathRole,
     },
     notes,
   };
@@ -222,17 +289,105 @@ export function cleanCitations(text, metadata) {
 }
 
 /**
+ * Best-effort text of any message content, used so an answer in an unknown or new format is
+ * saved as-is instead of disappearing.
+ * @param {any} msg
+ */
+export function anyText(msg) {
+  const fallback = msg?.metadata?.model_dil_v2?.fallbackMarkdown;
+  if (typeof fallback === 'string' && fallback.trim()) return fallback;
+  /** @type {string[]} */
+  const out = [];
+  const visit = (/** @type {any} */ v, /** @type {number} */ depth, /** @type {string} */ key) => {
+    if (depth > 8 || v === null || v === undefined) return;
+    if (typeof v === 'string') {
+      if (v.trim() && TEXT_KEYS.has(key)) out.push(v);
+    } else if (Array.isArray(v)) {
+      for (const x of v) visit(x, depth + 1, key === 'parts' ? 'text' : key);
+    } else if (typeof v === 'object') {
+      for (const [k, x] of Object.entries(v)) visit(x, depth + 1, k);
+    }
+  };
+  visit(msg?.content, 0, '');
+  return out.join('\n\n');
+}
+
+/**
+ * ChatGPT canvas ("canmore"): the document arrives as a call with JSON arguments.
+ * create_textdoc -> { name, type: 'document' | 'code/<lang>', content };
+ * update_textdoc -> { updates: [{ pattern, multiple, replacement }] } applied to the last document.
+ * @param {any} msg
+ * @param {{ canvas: { title: string, type: string, content: string } | null }} ctx
+ * @param {ChatGptNormalizeOptions} options
+ * @returns {import('../../core/model.js').Block[] | null} null when the call cannot be parsed
+ */
+export function canvasBlocks(msg, ctx, options) {
+  const action = String(msg.recipient).slice('canmore.'.length);
+  const raw = typeof msg.content?.text === 'string' ? msg.content.text
+    : Array.isArray(msg.content?.parts) && typeof msg.content.parts[0] === 'string' ? msg.content.parts[0] : '';
+  let data;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (action === 'create_textdoc' && typeof data?.content === 'string') {
+    ctx.canvas = { title: String(data.name || 'Холст'), type: String(data.type || 'document'), content: data.content };
+    return [canvasBlock(ctx.canvas, false)];
+  }
+  if (action === 'update_textdoc' && Array.isArray(data?.updates)) {
+    if (!ctx.canvas) return [{ type: 'notice', level: 'warning', text: 'Правка холста без исходного документа; сохранены сами правки.' }, { type: 'code', language: 'json', code: JSON.stringify(data, null, 2) }];
+    let text = ctx.canvas.content;
+    let failed = 0;
+    for (const u of data.updates) {
+      try {
+        const re = new RegExp(String(u.pattern), u.multiple ? 'g' : '');
+        if (!re.test(text)) failed += 1;
+        re.lastIndex = 0;
+        // A function keeps "$&" and similar sequences in the replacement literal.
+        text = text.replace(re, () => String(u.replacement ?? ''));
+      } catch {
+        failed += 1;
+      }
+    }
+    ctx.canvas = { ...ctx.canvas, content: text };
+    const blocks = [canvasBlock(ctx.canvas, true)];
+    if (failed) blocks.unshift({ type: 'notice', level: 'warning', text: `Не удалось применить правок холста: ${failed}; показан результат остальных.` });
+    return blocks;
+  }
+  if (action === 'comment_textdoc') return options.includeTools ? [{ type: 'tool', name: 'canvas: комментарии', input: truncate(raw, TOOL_TEXT_LIMIT) }] : [];
+  return null;
+}
+
+/**
+ * @param {{ title: string, type: string, content: string }} doc
+ * @param {boolean} updated
+ * @returns {import('../../core/model.js').Block}
+ */
+function canvasBlock(doc, updated) {
+  const title = updated ? `${doc.title} (обновлено)` : doc.title;
+  if (doc.type.startsWith('code/')) return { type: 'artifact', kind: 'canvas', title, language: doc.type.slice(5), content: doc.content };
+  return { type: 'artifact', kind: 'canvas-document', title, language: 'markdown', content: doc.content };
+}
+
+/**
  * @param {any} msg
  * @param {string} role
  * @param {ChatGptNormalizeOptions} options
+ * @param {{ canvas: { title: string, type: string, content: string } | null }} ctx
  * @returns {{ blocks: import('../../core/model.js').Block[], imagesFailed: number }}
  */
-function convertContent(msg, role, options) {
+function convertContent(msg, role, options, ctx) {
   const content = msg.content || {};
   const type = content.content_type;
   /** @type {import('../../core/model.js').Block[]} */
   const blocks = [];
   let imagesFailed = 0;
+
+  if (role === 'assistant' && typeof msg.recipient === 'string' && msg.recipient.startsWith('canmore.')) {
+    const canvas = canvasBlocks(msg, ctx, options);
+    if (canvas) return { blocks: canvas, imagesFailed: 0 };
+  }
 
   const pushImage = (/** @type {any} */ part, /** @type {any} */ origin) => {
     const pointer = String(part.asset_pointer || part.image_url || '');

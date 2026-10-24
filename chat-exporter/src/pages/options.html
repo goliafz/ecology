@@ -23,17 +23,20 @@
 
 <section class="card">
   <h2>Сохранение файлов</h2>
-  <p class="small muted">Chrome разрешает расширениям сохранять файлы только внутри папки загрузок (можно с подпапками). Абсолютные пути недоступны. Если в настройках Chrome включено «Всегда указывать место для скачивания», Chrome будет спрашивать путь для каждого файла — для автоматического режима это нужно отключить (chrome://settings/downloads).</p>
+  <p class="small muted">Chrome разрешает расширениям сохранять файлы только внутри папки загрузок (можно с подпапками). Если в Chrome включено «Всегда указывать место для скачивания», он будет спрашивать путь для каждого файла — для автоматического режима это нужно отключить (chrome://settings/downloads).</p>
   <label class="field"><span>Папка внутри «Загрузок»</span><input type="text" name="rootFolder"></label>
-  <label class="field"><span>Шаблон папки чата</span><input type="text" name="folderTemplate"></label>
-  <label class="field"><span>Шаблон имени файла</span><input type="text" name="fileTemplate"></label>
-  <p class="small muted">Переменные: <code>{service}</code> <code>{title}</code> <code>{id}</code> <code>{shortId}</code> <code>{date}</code> <code>{time}</code>. В папке всегда есть уникальный id, иначе чаты с одинаковыми названиями смешались бы. Папка чата фиксируется при первом экспорте, поэтому переименование чата не создаёт вторую папку.</p>
-  <div class="field"><span>Повторный экспорт</span>
+  <label class="field"><span>Маска папки чата</span><input type="text" name="folderMask" placeholder="пусто — все файлы в одной папке"></label>
+  <label class="field"><span>Маска имени файла</span><input type="text" name="fileMask"></label>
+  <div class="field"><span>Пример</span><code id="mask-preview" class="preview"></code></div>
+  <div class="small muted" id="mask-tokens"></div>
+  <p class="small muted">С <code>%date%</code> в имени файла каждый день получается отдельный файл, и в папке чата складывается хронология по датам. Новый файл появляется, только если переписка изменилась или вы экспортируете чат вручную. Папка запоминается при первом сохранении: после переименования чата файлы продолжат складываться туда же. Если у двух чатов одинаковое название, ко второй папке добавляется начало идентификатора.</p>
+  <div class="field"><span>Если файл с таким именем уже есть</span>
     <div class="stack">
-      <label><input type="radio" name="versioning" value="overwrite"> Обновлять текущую копию (файлы перезаписываются только при изменениях)</label>
-      <label><input type="radio" name="versioning" value="versions"> Создавать новую версию с датой и временем</label>
+      <label><input type="radio" name="onConflict" value="overwrite"> Заменить (за один день остаётся последняя версия)</label>
+      <label><input type="radio" name="onConflict" value="uniquify"> Сохранить рядом с номером: «… (1).pdf»</label>
     </div>
   </div>
+  <label class="check"><input type="checkbox" name="writeMeta"> Сохранять рядом служебный файл .meta.json (отчёт о полноте и контрольные суммы)</label>
   <label class="check"><input type="checkbox" name="eraseFromDownloadList"> Убирать сохранённые файлы из списка загрузок Chrome (сами файлы остаются)</label>
 </section>
 

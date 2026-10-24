@@ -1,4 +1,5 @@
 import { call, fmtDate, formatCheckboxes, h, readFormats } from './ui.js';
+import { buildChatFolder, buildFilePaths, MASK_TOKENS } from '../core/filenames.js';
 
 const form = /** @type {HTMLFormElement} */ (document.getElementById('form'));
 const $ = (/** @type {string} */ id) => /** @type {HTMLElement} */ (document.getElementById(id));
@@ -22,9 +23,11 @@ function fill() {
   $('formats').replaceChildren(formatCheckboxes(s.formats, 'formats'));
   $('auto-formats').replaceChildren(formatCheckboxes(s.auto.formats, 'auto-formats'));
   field('rootFolder').value = s.rootFolder;
-  field('folderTemplate').value = s.folderTemplate;
-  field('fileTemplate').value = s.fileTemplate;
-  setRadio('versioning', s.versioning);
+  field('folderMask').value = s.folderMask;
+  field('fileMask').value = s.fileMask;
+  setRadio('onConflict', s.onConflict);
+  field('writeMeta').checked = s.writeMeta;
+  updatePreview();
   field('eraseFromDownloadList').checked = s.eraseFromDownloadList;
   field('includeImages').checked = s.includeImages;
   field('maxImageMb').value = String(Math.round((s.maxImageBytes / 1024 / 1024) * 10) / 10);
@@ -51,6 +54,19 @@ function fill() {
   renderExcluded();
 }
 
+/** Shows where a chat would be saved with the masks currently typed in. */
+function updatePreview() {
+  const chat = { service: /** @type {const} */ ('chatgpt'), id: '6ad9ca9b-c008-83eb-a4a9-d534310d6a17', title: 'Показ промта улучшателя', updatedAt: new Date().toISOString() };
+  const folder = buildChatFolder({ rootFolder: field('rootFolder').value, folderMask: field('folderMask').value }, chat, new Date());
+  const format = readFormats($('formats'))[0] || 'pdf';
+  const path = buildFilePaths(folder, { fileMask: field('fileMask').value }, chat, [/** @type {any} */ (format)], new Date()).files[format];
+  $('mask-preview').textContent = `Загрузки/${path}`;
+}
+
+$('mask-tokens').replaceChildren('Подстановки: ', ...Object.entries(MASK_TOKENS).flatMap(([k, v], i) => [i ? ', ' : '', h('code', {}, `%${k}%`), ` — ${v}`]));
+for (const name of ['rootFolder', 'folderMask', 'fileMask']) field(name).addEventListener('input', updatePreview);
+$('formats').addEventListener('change', updatePreview);
+
 function renderExcluded() {
   const entries = Object.entries(settings.excluded || {});
   if (!entries.length) {
@@ -72,9 +88,10 @@ function collect() {
     ...settings,
     formats: readFormats($('formats')),
     rootFolder: field('rootFolder').value,
-    folderTemplate: field('folderTemplate').value,
-    fileTemplate: field('fileTemplate').value,
-    versioning: getRadio('versioning'),
+    folderMask: field('folderMask').value,
+    fileMask: field('fileMask').value,
+    onConflict: getRadio('onConflict'),
+    writeMeta: field('writeMeta').checked,
     eraseFromDownloadList: field('eraseFromDownloadList').checked,
     includeImages: field('includeImages').checked,
     maxImageBytes: Math.round(Number(field('maxImageMb').value) * 1024 * 1024),

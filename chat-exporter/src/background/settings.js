@@ -24,9 +24,10 @@ import { getKey, setKey } from './storage.js';
  * @property {number} schema
  * @property {ExportFormat[]} formats
  * @property {string} rootFolder
- * @property {string} folderTemplate
- * @property {string} fileTemplate
- * @property {'overwrite' | 'versions'} versioning
+ * @property {string} folderMask
+ * @property {string} fileMask
+ * @property {'overwrite' | 'uniquify'} onConflict
+ * @property {boolean} writeMeta
  * @property {boolean} includeImages
  * @property {number} maxImageBytes
  * @property {'omit' | 'embed'} mdImages
@@ -45,14 +46,18 @@ import { getKey, setKey } from './storage.js';
 
 /** @type {Readonly<Settings>} */
 export const DEFAULT_SETTINGS = Object.freeze({
-  schema: 1,
+  schema: 2,
   /** Formats for manual exports. */
-  formats: /** @type {ExportFormat[]} */ (['html', 'md']),
+  formats: /** @type {ExportFormat[]} */ (['pdf']),
   rootFolder: 'ChatBackups',
-  folderTemplate: '{service}/{title}__{shortId}',
-  fileTemplate: 'chat',
-  /** overwrite: one copy per chat, replaced on change; versions: a new dated file per export. */
-  versioning: /** @type {'overwrite' | 'versions'} */ ('overwrite'),
+  /** Folder of a chat inside rootFolder; %tokens% as in core/filenames.js MASK_TOKENS. */
+  folderMask: '%name%',
+  /** File name without extension. With %date% every day gets its own file: a dated history. */
+  fileMask: '%name%_%date%',
+  /** A file with the same name already exists: replace it or add a number. */
+  onConflict: /** @type {'overwrite' | 'uniquify'} */ ('overwrite'),
+  /** Write <file>.meta.json with the completeness report and checksums next to the files. */
+  writeMeta: false,
   includeImages: true,
   maxImageBytes: 8 * 1024 * 1024,
   /** Markdown: embed images as data URIs (large files) or leave a placeholder. */
@@ -74,7 +79,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
     time: '23:00',
     /** 0 = Sunday … 6 = Saturday; empty = every day. */
     days: /** @type {number[]} */ ([]),
-    formats: /** @type {ExportFormat[]} */ (['html', 'md']),
+    formats: /** @type {ExportFormat[]} */ (['pdf']),
     /** What to do after a missed run (browser closed or computer asleep). */
     missedRun: /** @type {'auto' | 'ask' | 'skip'} */ ('ask'),
     maxChatsPerRun: 100,
@@ -115,13 +120,17 @@ export function normalizeSettings(stored) {
   const oneOf = (/** @type {any} */ v, /** @type {readonly string[]} */ list, /** @type {string} */ fb) => (list.includes(v) ? v : fb);
   const bool = (/** @type {any} */ v, /** @type {boolean} */ fb) => (typeof v === 'boolean' ? v : fb);
 
+  // Schema 1 (version 1.0.0) saved HTML + Markdown as the default formats; they were never an
+  // explicit choice, so they are replaced by the new default (PDF).
+  const legacy = typeof s.schema === 'number' && s.schema < 2;
   return {
-    schema: 1,
-    formats: formats(s.formats, d.formats),
+    schema: 2,
+    formats: legacy ? [...d.formats] : formats(s.formats, d.formats),
     rootFolder: str(s.rootFolder, d.rootFolder),
-    folderTemplate: str(s.folderTemplate, d.folderTemplate),
-    fileTemplate: str(s.fileTemplate, d.fileTemplate),
-    versioning: /** @type {any} */ (oneOf(s.versioning, ['overwrite', 'versions'], d.versioning)),
+    folderMask: typeof s.folderMask === 'string' ? s.folderMask.trim() : d.folderMask,
+    fileMask: str(s.fileMask, d.fileMask),
+    onConflict: /** @type {any} */ (oneOf(s.onConflict, ['overwrite', 'uniquify'], d.onConflict)),
+    writeMeta: bool(s.writeMeta, d.writeMeta),
     includeImages: bool(s.includeImages, d.includeImages),
     maxImageBytes: int(s.maxImageBytes, d.maxImageBytes, 64 * 1024, 50 * 1024 * 1024),
     mdImages: /** @type {any} */ (oneOf(s.mdImages, ['omit', 'embed'], d.mdImages)),
@@ -140,7 +149,7 @@ export function normalizeSettings(stored) {
       enabled: bool(a.enabled, d.auto.enabled),
       time: /^\d{1,2}:\d{2}$/.test(String(a.time)) ? String(a.time) : d.auto.time,
       days: Array.isArray(a.days) ? [...new Set(a.days.map(Number).filter((n) => Number.isInteger(n) && n >= 0 && n <= 6))] : [],
-      formats: formats(a.formats, d.auto.formats),
+      formats: legacy ? [...d.auto.formats] : formats(a.formats, d.auto.formats),
       missedRun: /** @type {any} */ (oneOf(a.missedRun, ['auto', 'ask', 'skip'], d.auto.missedRun)),
       maxChatsPerRun: int(a.maxChatsPerRun, d.auto.maxChatsPerRun, 1, 1000),
       delayMs: int(a.delayMs, d.auto.delayMs, 500, 60_000),

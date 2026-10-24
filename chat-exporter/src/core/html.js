@@ -5,7 +5,7 @@ import { roleLabel, SERVICE_LABELS } from './model.js';
 import { STATUS_LABELS } from './completeness.js';
 import { escapeHtml, isDataImage, renderMarkdown, safeHref } from './md-render.js';
 import { formatBytes, formatDateTime } from './util.js';
-import { fence } from './markdown.js';
+import { artifactLabel, fence } from './markdown.js';
 
 export const EXPORT_CSP = "default-src 'none'; img-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'";
 
@@ -58,6 +58,7 @@ th{background:var(--code-bg)}
 .attachment{border:1px solid var(--border);border-radius:8px;padding:8px 12px;margin:.6em 0;font-size:.92em}
 .attachment .note{color:var(--muted);font-size:.9em}
 .artifact-title{font-weight:600;margin:.8em 0 .2em}
+.canvas-doc{border:1px solid var(--border);border-radius:8px;padding:2px 14px}
 details{border:1px solid var(--border);border-radius:8px;padding:6px 12px;margin:.6em 0}
 details>summary{cursor:pointer;color:var(--muted);font-size:.92em}
 .notice{border-left:3px solid var(--warn-border);background:var(--warn-bg);padding:6px 12px;margin:.6em 0;font-size:.92em}
@@ -119,8 +120,9 @@ export function blockToHtml(block, options) {
       return `${html}</div>`;
     }
     case 'artifact': {
-      const label = block.kind === 'file' ? 'Файл' : block.kind === 'widget' ? 'Виджет' : 'Артефакт';
-      return `<div class="artifact-title">${label}: ${escapeHtml(block.title)}</div>${renderMarkdown(fence(block.content, block.language))}`;
+      const title = `<div class="artifact-title">${artifactLabel(block.kind)}: ${escapeHtml(block.title)}</div>`;
+      if (block.kind === 'canvas-document') return `${title}<div class="canvas-doc">${renderMarkdown(block.content)}</div>`;
+      return `${title}${renderMarkdown(fence(block.content, block.language))}`;
     }
     case 'thinking':
       return `<details${open}><summary>Размышления модели</summary>${renderMarkdown(block.text)}</details>`;

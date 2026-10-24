@@ -76,6 +76,7 @@ export function updateKey(key, fn, area = 'local') {
  * @property {string} title
  * @property {string | null} updatedAt latest update time known from the chat list
  * @property {string} [folder] fixed at the first export
+ * @property {string} [folderKey] root folder + folder mask the folder was built with
  * @property {LastExport} [lastExport]
  * @property {boolean} [dirty] activity seen while working (Scenario C)
  * @property {number} [dirtyAt]

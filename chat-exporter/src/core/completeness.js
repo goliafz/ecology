@@ -44,6 +44,19 @@ export function evaluateCompleteness(chat, ctx = {}) {
   }
   add('unique', dups.length ? 'fail' : 'pass', dups.length ? `Дублирующиеся сообщения: ${dups.length}.` : 'Дубликатов нет.');
 
+  // 3b. The source branch ends with an answer, but the export ends with the question:
+  //     the answer was lost (unknown format). This must never pass as complete.
+  const lastExported = (chat.messages || [])[chat.messages.length - 1];
+  if (integ.lastPathRole === 'assistant' && (!lastExported || lastExported.role === 'user')) {
+    add('answer', 'fail', 'Ответ модели есть в данных чата, но не попал в документ (нераспознанный формат).');
+  }
+  if ((integ.unextracted || 0) > 0) {
+    add('unextracted', 'warn', `Сообщений, содержимое которых не удалось извлечь: ${integ.unextracted}.`);
+  }
+  if ((integ.rescuedTurns || 0) > 0) {
+    add('raw-format', 'warn', `Ответов сохранено в исходном виде из-за нераспознанного формата: ${integ.rescuedTurns}.`);
+  }
+
   // 4. Answer still being generated.
   if (integ.generating) add('generating', 'fail', 'Ответ ещё генерируется — последнее сообщение может быть неполным.');
 

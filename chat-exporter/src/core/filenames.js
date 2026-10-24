@@ -34,17 +34,18 @@ export function sanitizeSegment(input, maxLength = 80) {
 }
 
 /**
- * Expands a template like "{service}/{title}__{shortId}" into a safe relative path.
+ * Expands a mask like "%name%_%date%" into a safe relative path. "{name}" is accepted too.
  * Each "/"-separated segment is sanitized individually; empty segments and ".." are dropped.
  * @param {string} template
  * @param {Record<string, string>} vars
  * @returns {string}
  */
 export function expandTemplate(template, vars) {
-  const raw = String(template || '').replace(/\{(\w+)\}/g, (_, key) => {
-    const value = vars[key];
-    // Slashes inside values must not create folders.
-    return value === undefined ? '' : String(value).replace(/[/\\]/g, ' ');
+  const raw = String(template || '').replace(/%(\w+)%|\{(\w+)\}/g, (match, a, b) => {
+    const value = vars[a || b];
+    // Unknown tokens stay visible so a typo in the mask is noticed; slashes inside values must
+    // not create folders.
+    return value === undefined ? match.replace(/[%{}]/g, '') : String(value).replace(/[/\\]/g, ' ');
   });
   return raw
     .split(/[/\\]+/)
@@ -54,20 +55,35 @@ export function expandTemplate(template, vars) {
     .join('/');
 }
 
+/** Tokens available in folder and file masks (shown in the settings). */
+export const MASK_TOKENS = /** @type {const} */ ({
+  name: 'название чата',
+  date: 'дата сохранения, ГГГГ-ММ-ДД',
+  time: 'время сохранения, ЧЧ-ММ',
+  updated: 'дата последнего изменения чата, ГГГГ-ММ-ДД',
+  service: 'ChatGPT или Claude',
+  id: 'идентификатор чата',
+  shortId: 'первые 8 символов идентификатора',
+});
+
 /**
- * Template variables for a chat.
- * @param {{ service: import('./model.js').ServiceId, id: string, title: string }} chat
+ * Mask variables for a chat.
+ * @param {{ service: import('./model.js').ServiceId, id: string, title: string, updatedAt?: string | null }} chat
  * @param {Date} now
  */
 export function templateVars(chat, now) {
   const { date, time } = localStamp(now);
+  const updated = chat.updatedAt ? localStamp(new Date(chat.updatedAt)).date : date;
+  const name = chat.title || 'Без названия';
   return {
+    name,
+    title: name,
     service: SERVICE_LABELS[chat.service] || chat.service,
-    title: chat.title || 'Без названия',
     id: chat.id,
     shortId: shortId(chat.id),
     date,
     time,
+    updated,
   };
 }
 
@@ -77,40 +93,38 @@ export function shortId(id) {
 }
 
 /**
- * Builds the chat folder (relative to Downloads). Folders are fixed at the first export
- * (stored in the index) so that renaming a chat does not create a second folder.
- * The template is forced to contain a unique id, otherwise chats with equal titles collide.
- * @param {{ rootFolder: string, folderTemplate: string }} settings
- * @param {{ service: import('./model.js').ServiceId, id: string, title: string }} chat
+ * Builds the chat folder (relative to Downloads). The folder is remembered at the first export
+ * so that all dated files of a chat stay together even if the chat is renamed later.
+ * If another chat already uses the same folder (equal titles), the short id is appended.
+ * @param {{ rootFolder: string, folderMask: string }} settings
+ * @param {{ service: import('./model.js').ServiceId, id: string, title: string, updatedAt?: string | null }} chat
  * @param {Date} now
+ * @param {Set<string>} [taken] folders used by other chats
  */
-export function buildChatFolder(settings, chat, now) {
-  let template = settings.folderTemplate || '{service}/{title}__{shortId}';
-  if (!/\{(id|shortId)\}/.test(template)) template += '__{shortId}';
+export function buildChatFolder(settings, chat, now, taken = new Set()) {
   const vars = templateVars(chat, now);
   const root = expandTemplate(settings.rootFolder || 'ChatBackups', {});
-  const sub = expandTemplate(template, vars);
-  return [root, sub].filter(Boolean).join('/');
+  const sub = expandTemplate(settings.folderMask ?? '%name%', vars);
+  let folder = [root, sub].filter(Boolean).join('/') || 'ChatBackups';
+  if (taken.has(folder)) folder = `${folder} (${vars.shortId})`;
+  return folder;
 }
 
 /**
  * File paths for one export.
  * @param {string} folder
- * @param {{ fileTemplate: string, versioning: 'overwrite' | 'versions' }} settings
- * @param {{ service: import('./model.js').ServiceId, id: string, title: string }} chat
+ * @param {{ fileMask: string }} settings
+ * @param {{ service: import('./model.js').ServiceId, id: string, title: string, updatedAt?: string | null }} chat
  * @param {import('./model.js').ExportFormat[]} formats
  * @param {Date} now
  * @returns {{ files: Partial<Record<import('./model.js').ExportFormat, string>>, meta: string }}
  */
 export function buildFilePaths(folder, settings, chat, formats, now) {
   const vars = templateVars(chat, now);
-  let base = expandTemplate(settings.fileTemplate || 'chat', vars).replace(/\//g, ' ');
-  if (!base) base = 'chat';
-  const suffix = settings.versioning === 'versions' ? `_${vars.date}_${vars.time}` : '';
+  const base = expandTemplate(settings.fileMask || '%name%_%date%', vars).replace(/\//g, ' ') || 'chat';
   /** @type {Partial<Record<import('./model.js').ExportFormat, string>>} */
   const files = {};
-  for (const f of formats) files[f] = `${folder}/${base}${suffix}.${f}`;
-  // The metadata file is always "latest": it describes the newest successful export.
+  for (const f of formats) files[f] = `${folder}/${base}.${f}`;
   return { files, meta: `${folder}/${base}.meta.json` };
 }
 

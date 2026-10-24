@@ -44,7 +44,7 @@ export const SCHEMA_VERSION = 1;
 /**
  * @typedef {Object} ArtifactBlock
  * @property {'artifact'} type
- * @property {string} kind  artifact | file | widget
+ * @property {string} kind  artifact | file | widget | canvas | canvas-document
  * @property {string} title
  * @property {string} language
  * @property {string} content
@@ -111,7 +111,10 @@ export const SCHEMA_VERSION = 1;
  * @property {boolean} [reachedBottom]
  * @property {number} [imagesFailed]
  * @property {string[]} [crossCheckMissing] Ids visible in the DOM but absent from the API result.
- * @property {string[]} [pathIds] Message ids on the current branch (hidden ones included), for the DOM cross-check.
+ * @property {string[]} [pathIds] Message ids accounted for (exported or deliberately hidden), for the DOM cross-check.
+ * @property {number} [rescuedTurns] Answers in an unrecognized format saved as raw text.
+ * @property {number} [unextracted] Messages whose content could not be extracted at all.
+ * @property {'user' | 'assistant' | null} [lastPathRole] Role of the last visible message in the source branch.
  */
 
 /**

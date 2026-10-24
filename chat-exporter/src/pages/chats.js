@@ -1,4 +1,4 @@
-import { call, COMPLETENESS_TEXT, fmtDate, formatCheckboxes, h, readFormats } from './ui.js';
+import { call, COMPLETENESS_TEXT, fmtDate, FORMAT_LABELS, h } from './ui.js';
 
 const $ = (/** @type {string} */ id) => /** @type {HTMLElement} */ (document.getElementById(id));
 /** @type {any[]} */
@@ -119,12 +119,10 @@ $('select-none').addEventListener('click', () => {
   render();
 });
 $('export').addEventListener('click', async () => {
-  const formats = readFormats($('formats'));
-  if (!formats.length) return message('err', 'Выберите хотя бы один формат.');
   if (!selected.size) return message('err', 'Не выбрано ни одного чата.');
   try {
     const list = [...selected.values()];
-    const res = await call('exportSelected', { items: list, formats, force: /** @type {HTMLInputElement} */ ($('force')).checked });
+    const res = await call('exportSelected', { items: list, force: /** @type {HTMLInputElement} */ ($('force')).checked });
     message('ok', `В очередь добавлено: ${res.added}. Чаты сохраняются по одному; прогресс — в окне расширения. Эту страницу можно закрыть.`);
   } catch (err) {
     message('err', err instanceof Error ? err.message : String(err));
@@ -133,7 +131,8 @@ $('export').addEventListener('click', async () => {
 
 (async () => {
   const state = await call('getState');
-  $('formats').replaceChildren(formatCheckboxes(state.settings.formats, 'formats'));
+  const names = state.settings.formats.map((/** @type {keyof typeof FORMAT_LABELS} */ f) => FORMAT_LABELS[f]).join(', ');
+  $('formats').replaceChildren(h('span', { class: 'small muted' }, `Формат: ${names} (меняется в `), h('a', { href: 'options.html', class: 'small' }, 'настройках'), h('span', { class: 'small muted' }, ')'));
   const { selection } = await chrome.storage.local.get('selection');
   for (const it of Array.isArray(selection) ? selection : []) selected.set(keyOf(it), it);
   await load(true);

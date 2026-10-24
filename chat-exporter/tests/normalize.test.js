@@ -131,3 +131,77 @@ test('Claude: helpers', () => {
   assert.equal(claudeIdFromUrl('https://claude.ai/new'), null);
   assert.throws(() => normalizeClaude({}), /chat_messages/);
 });
+
+/** Chat with a root, a question and one answer message (like the reported chat). */
+function threeNodeChat(answer) {
+  return {
+    title: 'Показ промта улучшателя',
+    current_node: 'a',
+    mapping: {
+      root: { id: 'root', parent: null, children: ['q'], message: null },
+      q: { id: 'q', parent: 'root', children: ['a'], message: { id: 'q', author: { role: 'user' }, content: { content_type: 'text', parts: ['Покажи как составлен промт'] }, create_time: 1, status: 'finished_successfully' } },
+      a: { id: 'a', parent: 'q', children: [], message: { id: 'a', author: { role: 'assistant' }, create_time: 2, status: 'finished_successfully', recipient: 'all', ...answer } },
+    },
+  };
+}
+
+test('ChatGPT canvas answer (canmore.create_textdoc) is exported, not dropped', async () => {
+  const { evaluateCompleteness } = await import('../src/core/completeness.js');
+  const doc = '# Промт\n\n### Шаг 4. Сделай промпт проверяемым\n\nЗаменяй абстрактные требования конкретными.';
+  const chat = normalizeChatGpt(threeNodeChat({
+    recipient: 'canmore.create_textdoc',
+    content: { content_type: 'code', language: 'json', text: JSON.stringify({ name: 'Промт-улучшатель', type: 'code/markdown', content: doc }) },
+  }));
+  assert.equal(chat.messages.length, 2);
+  const art = /** @type {any} */ (chat.messages[1].blocks[0]);
+  assert.equal(art.type, 'artifact');
+  assert.equal(art.kind, 'canvas');
+  assert.equal(art.language, 'markdown');
+  assert.equal(art.content, doc);
+  assert.equal(evaluateCompleteness(chat).status, 'complete');
+});
+
+test('ChatGPT canvas: document type and updates', () => {
+  const raw = threeNodeChat({ recipient: 'canmore.create_textdoc', content: { content_type: 'code', text: JSON.stringify({ name: 'Док', type: 'document', content: 'Версия 1 $&' }) } });
+  raw.mapping.a.children = ['u'];
+  raw.mapping.u = { id: 'u', parent: 'a', children: [], message: { id: 'u', author: { role: 'assistant' }, recipient: 'canmore.update_textdoc', content: { content_type: 'code', text: JSON.stringify({ updates: [{ pattern: 'Версия 1', multiple: false, replacement: 'Версия 2 $1' }] }) } } };
+  raw.current_node = 'u';
+  const chat = normalizeChatGpt(raw);
+  const arts = chat.messages[1].blocks.filter((b) => b.type === 'artifact');
+  assert.equal(arts.length, 2);
+  assert.equal(/** @type {any} */ (arts[0]).kind, 'canvas-document');
+  assert.equal(/** @type {any} */ (arts[1]).content, 'Версия 2 $1 $&');
+  assert.match(/** @type {any} */ (arts[1]).title, /обновлено/);
+});
+
+test('ChatGPT: unknown answer format is saved as raw text with a warning', async () => {
+  const { evaluateCompleteness } = await import('../src/core/completeness.js');
+  const chat = normalizeChatGpt(threeNodeChat({
+    recipient: 'some.new_tool',
+    content: { content_type: 'code', text: 'Текст ответа в новом формате' },
+  }));
+  assert.equal(chat.messages.length, 2);
+  assert.equal(chat.messages[1].blocks[0].type, 'notice');
+  assert.equal(/** @type {any} */ (chat.messages[1].blocks[1]).code, 'Текст ответа в новом формате');
+  assert.equal(chat.integrity.rescuedTurns, 1);
+  assert.equal(evaluateCompleteness(chat).status, 'complete_with_warnings');
+
+  const nested = normalizeChatGpt(threeNodeChat({ content: { content_type: 'brand_new', parts: [{ kind: 'block', markdown: 'Вложенный **текст**' }] } }));
+  assert.ok(nested.messages[1].blocks.some((b) => b.type === 'markdown' && b.text.includes('Вложенный')));
+});
+
+test('ChatGPT: an answer without any extractable text makes the export INCOMPLETE', async () => {
+  const { evaluateCompleteness } = await import('../src/core/completeness.js');
+  const chat = normalizeChatGpt(threeNodeChat({ content: { content_type: 'mystery', payload: { id: 42 } } }));
+  assert.equal(chat.messages.length, 1);
+  const report = evaluateCompleteness(chat);
+  assert.equal(report.status, 'incomplete');
+  assert.ok(report.checks.some((c) => c.id === 'answer' && c.result === 'fail'));
+  assert.ok(!chat.integrity.pathIds?.includes('a'), 'DOM cross-check will also flag it');
+});
+
+test('ChatGPT: tool calls skipped by settings do not trigger rescue when the turn has an answer', () => {
+  const chat = normalizeChatGpt(chatGptFixture(), {});
+  assert.equal(chat.integrity.rescuedTurns, 0);
+  assert.ok(chat.integrity.pathIds?.includes('a2'), 'skipped tool call is accounted for');
+});

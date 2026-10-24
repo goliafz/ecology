@@ -25,6 +25,20 @@ const CHATGPT_ID = '11111111-2222-3333-4444-555555555555';
 const CLAUDE_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
 const ORG = '99999999-8888-7777-6666-555555555555';
 const CLAUDE_DOM_ID = 'cccccccc-1111-2222-3333-444444444444';
+const CANVAS_ID = '6ad9ca9b-c008-83eb-a4a9-d534310d6a17';
+const CANVAS_DOC = '# Промт-улучшатель\n\n### Шаг 4. Сделай промпт проверяемым\n\nЗаменяй абстрактные требования конкретными.';
+
+// Shape of the reported chat: root, question, one answer delivered as a ChatGPT canvas document.
+function canvasConversation() {
+  return {
+    title: 'Показ промта улучшателя', create_time: 1792658076, update_time: 1792658164, current_node: 'a', conversation_id: CANVAS_ID,
+    mapping: {
+      root: { id: 'root', parent: null, children: ['q'], message: null },
+      q: { id: 'q', parent: 'root', children: ['a'], message: { id: 'q', author: { role: 'user' }, create_time: 1792658085, content: { content_type: 'text', parts: ['Покажи как составлен промт для улучшения промтов.'] }, status: 'finished_successfully', recipient: 'all' } },
+      a: { id: 'a', parent: 'q', children: [], message: { id: 'a', author: { role: 'assistant' }, create_time: 1792658160, recipient: 'canmore.create_textdoc', status: 'finished_successfully', content: { content_type: 'code', language: 'json', text: JSON.stringify({ name: 'Промт-улучшатель', type: 'code/markdown', content: CANVAS_DOC }) } } },
+    },
+  };
+}
 
 // A virtualized message list: only messages near the viewport exist in the DOM.
 const VIRTUAL_LIST = `<main id="scroller" style="height:500px;overflow:auto"><div id="spacer" style="position:relative"></div></main>
@@ -72,6 +86,7 @@ async function routeSites(context) {
       if (route.request().headers().authorization !== 'Bearer test-token') return route.fulfill({ status: 401, body: '{}' });
       return json(chatGptConversation());
     }
+    if (url.pathname === `/backend-api/conversation/${CANVAS_ID}`) return json(canvasConversation());
     if (url.pathname.startsWith('/backend-api/files/download/')) return json({ status: 'success', download_url: 'https://chatgpt.com/files/img.png' });
     if (url.pathname === '/files/img.png') return route.fulfill({ status: 200, contentType: 'image/png', body: PNG });
     if (url.pathname === `/c/${CHATGPT_ID}`) {
@@ -162,7 +177,10 @@ async function main() {
     // Settings: all formats, tools on.
     const st0 = await call('getState');
     assert.ok(st0.ok, JSON.stringify(st0));
-    await call('saveSettings', { settings: { ...st0.data.settings, formats: ['md', 'html', 'pdf'], auto: { ...st0.data.settings.auto, formats: ['md', 'html'], delayMs: 500 } } });
+    // Defaults of a fresh install: PDF only, masks %name% / %name%_%date%, no meta.json.
+    assert.deepEqual(st0.data.settings.formats, ['pdf']);
+    assert.equal(st0.data.settings.writeMeta, false);
+    await call('saveSettings', { settings: { ...st0.data.settings, formats: ['md', 'html', 'pdf'], folderMask: '%service%/%name%', writeMeta: true, auto: { ...st0.data.settings.auto, formats: ['md', 'html'], delayMs: 500 } } });
 
     // Open the ChatGPT chat in a tab (the user's tab).
     const chatTab = await context.newPage();
@@ -210,6 +228,7 @@ async function main() {
       assert.ok(['complete', 'complete_with_warnings'].includes(meta.completeness.status));
       assert.deepEqual(Object.keys(meta.files).sort(), ['html', 'md', 'pdf']);
     }
+    assert.ok(complete.every((i) => /_\d{4}-\d{2}-\d{2}\.(md|html|pdf|meta\.json)$/.test(i.filename)), 'file names follow %name%_%date%');
     const md = complete.find((i) => i.filename.includes('ChatGPT') && i.filename.endsWith('.md'));
     assert.ok(md, 'ChatGPT markdown saved');
     const mdText = readItem(md).toString('utf8');
@@ -259,7 +278,7 @@ async function main() {
     console.log('dom job:', JSON.stringify(s.jobs[0]));
     assert.equal(s.jobs[0].status, 'done', 'DOM fallback export succeeded');
     assert.equal(s.jobs[0].completeness, 'complete_with_warnings', 'DOM source is flagged with a warning, not as complete');
-    const domMd = (await sw.evaluate(() => chrome.downloads.search({ state: 'complete' }))).find((i) => i.filename.includes('cccccccc') && i.filename.endsWith('.md'));
+    const domMd = (await sw.evaluate(() => chrome.downloads.search({ state: 'complete' }))).find((i) => /Длинный чат|Dlinnyy chat/.test(i.filename) && i.filename.endsWith('.md'));
     const domText = readFileSync(domMd.filename, 'utf8');
     const userCount = (domText.match(/^## Пользователь/gm) || []).length;
     const aiCount = (domText.match(/^## Claude/gm) || []).length;
@@ -270,6 +289,25 @@ async function main() {
     assert.match(domText, /Ответ номер 59/);
     assert.equal((domText.match(/^Ок$/gm) || []).length, 12, 'repeated identical messages are kept, not merged');
     await domTab.close();
+
+    // 4c. The reported case: an answer given as a ChatGPT canvas, PDF only, no meta.json.
+    const cur = (await call('getState')).data.settings;
+    await call('saveSettings', { settings: { ...cur, formats: ['pdf', 'md'], folderMask: '%name%', writeMeta: false } });
+    const beforeCanvas = (await sw.evaluate(() => chrome.downloads.search({ state: 'complete' }))).length;
+    r = await call('exportSelected', { items: [{ service: 'chatgpt', id: CANVAS_ID, title: 'Показ промта улучшателя' }] });
+    s = await waitIdle('canvas');
+    console.log('canvas job:', JSON.stringify({ status: s.jobs[0].status, completeness: s.jobs[0].completeness, error: s.jobs[0].error }));
+    assert.equal(s.jobs[0].completeness, 'complete');
+    const canvasFiles = (await sw.evaluate(() => chrome.downloads.search({ state: 'complete', orderBy: ['-startTime'] }))).slice(0, 2);
+    console.log('canvas files:', canvasFiles.map((i) => i.filename));
+    assert.equal((await sw.evaluate(() => chrome.downloads.search({ state: 'complete' }))).length - beforeCanvas, 2, 'exactly pdf + md, no meta.json');
+    const canvasMd = canvasFiles.find((i) => i.filename.endsWith('.md'));
+    assert.match(canvasMd.filename, /ChatBackups[\\/](Показ промта улучшателя|Pokaz promta uluchshatelya)[\\/](Показ промта улучшателя|Pokaz promta uluchshatelya)_\d{4}-\d{2}-\d{2}\.md$/);
+    const canvasText = readFileSync(canvasMd.filename, 'utf8');
+    assert.match(canvasText, /\*\*Холст: Промт-улучшатель\*\*/);
+    assert.match(canvasText, /Шаг 4\. Сделай промпт проверяемым/);
+    const canvasPdf = canvasFiles.find((i) => i.filename.endsWith('.pdf'));
+    assert.ok(canvasPdf && canvasPdf.fileSize > 1000);
 
     // 5. Missed run detection: pretend the 23:00 run was missed while the browser was closed.
     await sw.evaluate(async () => {

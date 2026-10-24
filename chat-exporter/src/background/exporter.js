@@ -181,12 +181,14 @@ async function exportChatInner(req, settings, progress) {
   }
 
   const now = new Date();
-  const folder = entry?.folder || buildChatFolder(settings, chat, now);
-  const fileSettings = { fileTemplate: settings.fileTemplate, versioning: settings.versioning };
-  const paths = buildFilePaths(folder, fileSettings, chat, formats, now);
+  // The folder is remembered per chat (dated files stay together after a rename) and recomputed
+  // only when the folder settings change. Folders of other chats are avoided.
+  const folderKey = `${settings.rootFolder}|${settings.folderMask}`;
+  const taken = new Set(Object.values(index).filter((e) => e !== entry && e.folder).map((e) => /** @type {string} */ (e.folder)));
+  const folder = entry?.folder && entry.folderKey === folderKey ? entry.folder : buildChatFolder(settings, chat, now, taken);
+  const paths = buildFilePaths(folder, { fileMask: settings.fileMask }, chat, formats, now);
   const incompleteSuffix = report.status === 'incomplete' ? '_НЕПОЛНЫЙ' : '';
-  const conflictAction = settings.versioning === 'versions' ? 'uniquify' : 'overwrite';
-  const writeOpts = { conflictAction: /** @type {'overwrite' | 'uniquify'} */ (conflictAction), eraseFromList: settings.eraseFromDownloadList };
+  const writeOpts = { conflictAction: settings.onConflict, eraseFromList: settings.eraseFromDownloadList };
   /** @type {Record<string, import('./storage.js').ExportedFile>} */
   const written = {};
   /** @type {Record<string, string>} */
@@ -219,9 +221,9 @@ async function exportChatInner(req, settings, progress) {
     absolute[format] = res.absolutePath;
   }
 
-  // meta.json is written last: its presence marks a finished export set.
+  // Optional meta.json, written last: its presence marks a finished export set.
   const allFiles = { ...(sameContent ? last.files : {}), ...written };
-  if (Object.keys(written).length > 0) {
+  if (settings.writeMeta && Object.keys(written).length > 0) {
     const meta = {
       generator: `Chat Exporter ${VERSION}`,
       schemaVersion: chat.schemaVersion,
@@ -250,6 +252,7 @@ async function exportChatInner(req, settings, progress) {
     id: req.id,
     title: chat.title,
     folder,
+    folderKey,
     updatedAt: chat.updatedAt || e?.updatedAt || null,
     dirty: false,
     failures: 0,

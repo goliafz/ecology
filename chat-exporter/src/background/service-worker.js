@@ -10,6 +10,9 @@ import { broadcastState, cancelQueue, enqueue, getQueue, processQueue, QUEUE_ALA
 import { BACKUP_ALARM, CATCHUP_ALARM, checkMissedRun, getSchedule, onScheduleAlarm, runBackup, syncSchedule } from './scheduler.js';
 import { loadSettings, saveSettings, DEFAULT_SETTINGS } from './settings.js';
 import { getIndex, getKey, setKey, updateIndexEntry, updateKey } from './storage.js';
+import { ensureContentScript, sendToTab } from './tabs.js';
+import { writeFile } from './downloads.js';
+import { expandTemplate } from '../core/filenames.js';
 
 // ---- Lifecycle ----------------------------------------------------------------------------
 
@@ -146,6 +149,20 @@ const handlers = {
     await chrome.action.setBadgeText({ text: '' });
     broadcastState();
     return true;
+  },
+
+  // Saves the raw data of the open chat so a wrong export can be analysed (stays on this computer).
+  async saveRawCurrent() {
+    const tab = await activeTabInfo();
+    if (!tab.service || !tab.chatId || tab.tabId === undefined) throw Object.assign(new Error('Откройте чат ChatGPT или Claude в активной вкладке'), { code: 'NOT_A_CHAT' });
+    const settings = await loadSettings();
+    await ensureContentScript(tab.tabId);
+    const data = await sendToTab(tab.tabId, { cmd: 'fetchChat', id: tab.chatId, includeImages: false, maxImageBytes: 0 }, 120_000);
+    const root = expandTemplate(settings.rootFolder, {}) || 'ChatBackups';
+    const body = { savedAt: new Date().toISOString(), extension: chrome.runtime.getManifest().version, page: data.page, raw: data.raw };
+    const res = await writeFile(`${root}/_diagnostics/${tab.service}_${tab.chatId}.json`, `${JSON.stringify(body, null, 2)}\n`, 'application/json;charset=utf-8', { conflictAction: 'overwrite' });
+    await addLog('info', 'Сохранены данные чата для диагностики', { chat: chatKey(tab.service, tab.chatId), title: tab.title });
+    return { path: res.absolutePath };
   },
 
   async cancel() {

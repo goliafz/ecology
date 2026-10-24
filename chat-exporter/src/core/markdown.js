@@ -22,6 +22,11 @@ export function fence(code, language = '') {
   return `${ticks}${language.replace(/[^\w+#.-]/g, '')}\n${body}${ticks}`;
 }
 
+/** @param {string} kind */
+export function artifactLabel(kind) {
+  return { file: 'Файл', widget: 'Виджет', canvas: 'Холст', 'canvas-document': 'Холст' }[kind] || 'Артефакт';
+}
+
 /** @param {string} text */
 function quote(text) {
   return String(text).split('\n').map((l) => (l ? `> ${l}` : '>')).join('\n');
@@ -65,8 +70,9 @@ export function blockToMarkdown(block, options = {}) {
       return out;
     }
     case 'artifact': {
-      const label = block.kind === 'file' ? 'Файл' : block.kind === 'widget' ? 'Виджет' : 'Артефакт';
-      return `**${label}: ${escapeInline(block.title)}**\n\n${fence(block.content, block.language)}`;
+      // A canvas text document is Markdown itself: written out, not fenced.
+      if (block.kind === 'canvas-document') return `**${artifactLabel(block.kind)}: ${escapeInline(block.title)}**\n\n${block.content.trim()}`;
+      return `**${artifactLabel(block.kind)}: ${escapeInline(block.title)}**\n\n${fence(block.content, block.language)}`;
     }
     case 'thinking':
       return `<details>\n<summary>Размышления модели</summary>\n\n${block.text.trim()}\n\n</details>`;
