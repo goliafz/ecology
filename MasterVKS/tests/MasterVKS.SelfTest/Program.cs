@@ -47,6 +47,9 @@ namespace MasterVks.SelfTest
             Run("Фрагмент записи: сведение каналов и ограничитель", TestSegmentMix);
             Run("Умное сведение: без обработки звук проходит точно, с задержкой 1024 сэмпла", TestRoomMixerTransparent);
             Run("Умное сведение: эхо из телевизора в комнате с тремя микрофонами", TestRoomMixerEcho);
+            Run("Микрофоны в Телемост: смесь по Дугану", TestAutoMixer);
+            Run("Микрофоны в Телемост: буфер при расходе часов ±200 ppm", TestFeedBuffer);
+            Run("Микрофоны в Телемост: правила проверки и названия устройств", TestFeedRules);
             Run("Командная строка Windows: экранирование", TestQuoting);
             Run("Человеческие подписи", TestFmt);
             Run("Имена папок и файлов с названием ВКС", TestNames);
@@ -632,6 +635,132 @@ namespace MasterVks.SelfTest
             double erle2 = 10 * Math.Log10(Energy(p2, 8 * rate, 20 * rate - L) / Math.Max(Energy(o2, 8 * rate + L, 20 * rate), 1e-12));
             Check(slow.EchoDelayMs(0) >= 300 && slow.EchoDelayMs(0) <= 350 && erle2 > 12,
                 "медленный телевизор (320 мс): задержка " + slow.EchoDelayMs(0) + " мс, эхо тише на " + erle2.ToString("0.0") + " дБ");
+        }
+
+        // ===================== Микрофоны в Телемост =====================
+
+        private static void TestAutoMixer()
+        {
+            var mixer = new AutoMixer();
+            float[] voice = Speech(41, 48000 * 6, 0.3);
+            var rnd = new Random(2);
+            var outp = new float[480];
+            double e1 = 0, e2 = 0, e3 = 0;
+            for (int off = 0; off + 480 <= voice.Length; off += 480)
+            {
+                var m1 = new float[480];
+                var m2 = new float[480];
+                for (int i = 0; i < 480; i++)
+                {
+                    m1[i] = voice[off + i] + (float)(0.001 * (rnd.NextDouble() * 2 - 1));
+                    m2[i] = 0.2f * voice[off + i] + (float)(0.001 * (rnd.NextDouble() * 2 - 1));
+                }
+                // Микрофон 3 выключен кнопкой: цифровая тишина.
+                mixer.Mix(new[] { m1, m2, new float[480] }, 480, outp);
+                if (off > 48000 * 2)
+                {
+                    e1 += mixer.Gain(0);
+                    e2 += mixer.Gain(1);
+                    e3 += mixer.Gain(2);
+                }
+            }
+            Check(e1 > 3 * e2, "говорят у микрофона 1: он звучит громче второго (доли " + (e1 / (e1 + e2 + e3)).ToString("0.00") + " и " + (e2 / (e1 + e2 + e3)).ToString("0.00") + ")");
+            Check(e3 < 1e-6 * (e1 + 1), "выключенный кнопкой микрофон в смесь не попадает");
+
+            var quiet = new AutoMixer();
+            var a = new float[480];
+            var b = new float[480];
+            for (int k = 0; k < 50; k++) quiet.Mix(new[] { a, b, null }, 480, outp);
+            Check(Math.Abs(quiet.Gain(0) - 0.5f) < 1e-3 && Math.Abs(quiet.Gain(1) - 0.5f) < 1e-3 && quiet.Gain(2) == 0f, "все молчат: микрофоны поровну, неучаствующий не в смеси");
+            Check(outp.All(v => v == 0f), "тишина на входе: тишина на выходе");
+        }
+
+        private static void TestFeedBuffer()
+        {
+            foreach (int ppm in new[] { 200, -200 })
+            {
+                var buffer = new FeedBuffer();
+                var rnd = new Random(7);
+                // Ядро кладёт по 480 кадров каждые 10 мс (с рывками до 8 мс), кабель забирает по 15 мс по своим часам.
+                double writeAt = 0, readAt = 5;
+                double readPeriod = 15.0 * (1 + ppm / 1e6);
+                int readFrames = 720;
+                long written = 0, read = 0;
+                int minFill = int.MaxValue, maxFill = 0;
+                long underrunsAfterStart = -1;
+                var mono = new float[480];
+                for (int i = 0; i < 480; i++) mono[i] = 0.1f;
+                var outp = new float[readFrames];
+                double end = 20 * 60 * 1000.0;
+                while (writeAt < end || readAt < end)
+                {
+                    if (writeAt <= readAt)
+                    {
+                        buffer.Write(mono, 480);
+                        written += 480;
+                        // Ядро идёт по точным часам: рывки не накапливаются, следующий блок снова по расписанию.
+                        writeAt = written / 48.0 + (rnd.NextDouble() < 0.05 ? rnd.NextDouble() * 8 : 0);
+                    }
+                    else
+                    {
+                        buffer.Read(outp, readFrames);
+                        read += readFrames;
+                        readAt += readPeriod;
+                        if (readAt > 2000)
+                        {
+                            if (underrunsAfterStart < 0) underrunsAfterStart = buffer.Underruns;
+                            minFill = Math.Min(minFill, buffer.Fill);
+                            maxFill = Math.Max(maxFill, buffer.Fill);
+                        }
+                    }
+                }
+                long under = buffer.Underruns - underrunsAfterStart;
+                Check(under == 0, ppm.ToString("+0;-0") + " ppm: 20 минут без провалов звука (провалов: " + under + ")");
+                Check(maxFill < 48 * 70, ppm.ToString("+0;-0") + " ppm: задержка не накапливается: запас от " + minFill / 48 + " до " + maxFill / 48 + " мс");
+                Check(buffer.Corrections > 0 && buffer.Corrections < 20 * 60 * 48000 * 0.001, ppm.ToString("+0;-0") + " ppm: поправок хода " + buffer.Corrections + " (по одному сэмплу)");
+            }
+
+            var b = new FeedBuffer();
+            var o = new float[720];
+            b.Read(o, 720);
+            Check(o.All(v => v == 0f) && b.Underruns == 0, "пока запас не набран, кабель получает тишину");
+            var tone = Enumerable.Repeat(0.5f, 480).ToArray();
+            for (int i = 0; i < 5; i++) b.Write(tone, 480);
+            for (int i = 0; i < 4; i++) b.Read(o, 720);
+            Check(b.Underruns == 1 && Math.Abs(o[719]) < 0.05f, "звук кончился (микрофоны отвалились): тишина без щелчка");
+        }
+
+        private static void TestFeedRules()
+        {
+            Check(VirtualCable.IsInput("CABLE Input (VB-Audio Virtual Cable)") && VirtualCable.IsOutput("CABLE Output (VB-Audio Virtual Cable)"), "устройства VB-Cable узнаются по названию");
+            Check(!VirtualCable.IsCable("Микрофон (UGREEN CM564 USB Audio )") && !VirtualCable.IsCable("1 - Beyond TV (AMD High Definition Audio Device)") && !VirtualCable.IsCable(null),
+                "настоящие микрофоны и телевизор не путаются с кабелем");
+            Check(!VirtualCable.IsOutput("CABLE Input (VB-Audio Virtual Cable)"), "вход и выход кабеля не путаются");
+
+            Func<FeedProbe, HealthVerdict> v = FeedRules.Verdict;
+            Check(v(new FeedProbe { Enabled = false }).Status == CheckStatus.Skipped, "выключено в настройках: серая строка");
+            HealthVerdict nd = v(new FeedProbe { Enabled = true, State = FeedState.NoDriver });
+            Check(nd.Status == CheckStatus.Warning && nd.CanFix && nd.Details.Contains("VBCABLE_Setup_x64.exe"), "нет драйвера: жёлтая строка с инструкцией и ссылкой по нажатию");
+            Check(v(new FeedProbe { Enabled = true, State = FeedState.Active }).Summary == "Не выбран ни один микрофон", "микрофоны не выбраны");
+            Check(v(new FeedProbe { Enabled = true, State = FeedState.Active, Mics = { 1, 2 }, DefaultRenderIsCable = true, Heard = true }).Summary.StartsWith("Звук Windows уходит"),
+                "Windows после установки VB-Cable вывела звук в кабель: предупреждение");
+            Check(v(new FeedProbe { Enabled = true, State = FeedState.Active, Mics = { 1 }, Heard = false }).Summary.Contains("не доходит"), "тон не дошёл до «CABLE Output»");
+            HealthVerdict ok = v(new FeedProbe { Enabled = true, State = FeedState.Active, Mics = { 1, 2, 3 }, Heard = true });
+            Check(ok.Status == CheckStatus.Ok && ok.Summary == "Работает: в Телемост идут микрофоны 1, 2 и 3" && ok.Details.Contains("CABLE Output"), ok.Summary);
+            Check(FeedRules.MicsText(new[] { 2 }) == "микрофон 2" && FeedRules.MicsText(new[] { 1, 3 }) == "микрофоны 1 и 3", "подписи для одного и двух микрофонов");
+            Check(v(new FeedProbe { Enabled = true, State = FeedState.Error, Error = "устройство занято" }).Summary == "Не работает: устройство занято", "сбой: причина в строке");
+
+            var entries = new List<KeyValuePair<string, bool>>
+            {
+                new KeyValuePair<string, bool>("C:#Users#vks#AppData#Local#Yandex#Telemost#Telemost.exe", false),
+                new KeyValuePair<string, bool>("C:#МастерВКС#MasterVKS.exe", false),
+                new KeyValuePair<string, bool>("C:#Program Files#Zoom#bin#Zoom.exe", false)
+            };
+            List<string> apps = MicrophoneUsage.InUse(entries, exe => exe != "Zoom");
+            Check(apps.SequenceEqual(new[] { "Телемост" }), "микрофон держит Телемост; сама программа и упавший Zoom не считаются: " + string.Join(", ", apps));
+
+            foreach (string text in new[] { nd.Details, ok.Details, FeedRules.InstallSteps })
+                Check(text.IndexOf('—') < 0, "без длинных тире: " + text.Substring(0, 30) + "…");
         }
 
         /// <summary>Разбор командной строки по правилам Windows (CommandLineToArgvW).</summary>

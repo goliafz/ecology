@@ -65,6 +65,9 @@ namespace MasterVks.Core
         /// <summary>Умное сведение общей дорожки: убирать эхо из динамиков и приглушать дальние микрофоны.</summary>
         public bool SmartMix { get; set; }
 
+        /// <summary>Сводить микрофоны и передавать их в Телемост через виртуальный кабель VB-Cable.</summary>
+        public bool TelemostFeed { get; set; }
+
         /// <summary>Задержка звука относительно видео, мс (компенсация буферов звука).</summary>
         public int AudioOffsetMs { get; set; }
 
@@ -97,10 +100,11 @@ namespace MasterVks.Core
             MixMic3 = true;
             MixSystem = true;
             SmartMix = true;
+            TelemostFeed = true;
             AudioOffsetMs = 70;
         }
 
-        public const int CurrentSettingsVersion = 5;
+        public const int CurrentSettingsVersion = 6;
 
         public void Normalize()
         {
@@ -118,6 +122,11 @@ namespace MasterVks.Core
             {
                 // Версия 1.4: умное сведение (без эха из динамиков) включено по умолчанию.
                 SmartMix = true;
+            }
+            if (SettingsVersion < 6)
+            {
+                // Версия 1.5: микрофоны передаются в Телемост (нужен VB-Cable), включено по умолчанию.
+                TelemostFeed = true;
             }
             SettingsVersion = CurrentSettingsVersion;
             if (MeetingName == null) MeetingName = "";

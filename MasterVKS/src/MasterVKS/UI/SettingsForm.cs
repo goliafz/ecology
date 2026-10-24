@@ -13,7 +13,7 @@ namespace MasterVks.UI
         private readonly ComboBox _fps;
         private readonly ComboBox _quality;
         private readonly CheckBox _cursor;
-        private readonly CheckBox _mixMic1, _mixMic2, _mixMic3, _mixSystem, _smartMix;
+        private readonly CheckBox _mixMic1, _mixMic2, _mixMic3, _mixSystem, _smartMix, _telemostFeed;
         private readonly NumericUpDown _offset;
         private readonly RadioButton _startupSilent, _startupAudible;
         private readonly CheckBox _confirmStop, _hotkeys, _autostart, _autostartMinimized, _keepMkv;
@@ -72,6 +72,9 @@ namespace MasterVks.UI
             _smartMix = Check("Убирать эхо в общей дорожке (рекомендуется)", settings.SmartMix);
             audio.Controls.Add(_smartMix);
             audio.Controls.Add(Note("Микрофоны слышат собеседников из телевизора с опозданием, и в общей дорожке это звучит как эхо. Программа вычитает этот звук из микрофонов и делает громче тот микрофон, рядом с которым говорят. Отдельные дорожки не меняются."));
+            _telemostFeed = Check("Передавать микрофоны в Телемост", settings.TelemostFeed);
+            audio.Controls.Add(_telemostFeed);
+            audio.Controls.Add(Note("Телемост умеет брать только один микрофон. Программа сводит все выбранные микрофоны в один и подаёт в виртуальный микрофон «CABLE Output»: выберите его в Телемосте. Нужен бесплатный драйвер VB-Cable (vb-audio.com/Cable), как его поставить, подскажет проверка. Пока программа открыта, передача работает и без записи."));
             _offset = new NumericUpDown { Minimum = -500, Maximum = 1000, Increment = 10, Value = settings.AudioOffsetMs, Width = Theme.S(100) };
             AddField(audio, "Сдвиг звука относительно картинки, мс (если губы не совпадают со звуком; обычно 70)", _offset);
             stack.Controls.Add(audio);
@@ -166,6 +169,7 @@ namespace MasterVks.UI
             s.MixMic3 = _mixMic3.Checked;
             s.MixSystem = _mixSystem.Checked;
             s.SmartMix = _smartMix.Checked;
+            s.TelemostFeed = _telemostFeed.Checked;
             s.AudioOffsetMs = (int)_offset.Value;
             s.StartupCheckMode = _startupAudible.Checked ? CheckMode.Audible : CheckMode.Silent;
             s.ConfirmStop = _confirmStop.Checked;

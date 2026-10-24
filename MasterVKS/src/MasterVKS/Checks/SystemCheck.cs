@@ -72,6 +72,7 @@ namespace MasterVks.Checks
         public const string KeyMic3 = "mic3";
         public const string KeySystem = "sys";
         public const string KeyTogether = "together";
+        public const string KeyTelemost = "telemost";
         public const string KeyDisk = "disk";
         public const string KeyPower = "power";
         public const string KeyUpdates = "updates";
@@ -89,6 +90,7 @@ namespace MasterVks.Checks
         private readonly AudioEngine _engine;
         private readonly CheckMode _mode;
         private readonly Action<CheckItem> _onUpdate;
+        private readonly MicFeed _feed;
         private readonly Dictionary<string, CheckItem> _items = new Dictionary<string, CheckItem>();
         private readonly CheckReport _report = new CheckReport();
 
@@ -103,6 +105,7 @@ namespace MasterVks.Checks
                 new CheckItem { Key = KeyMic3, Title = "Микрофон 3" },
                 new CheckItem { Key = KeySystem, Title = "Звук собеседников" },
                 new CheckItem { Key = KeyTogether, Title = "Микрофоны вместе" },
+                new CheckItem { Key = KeyTelemost, Title = "Микрофоны в Телемост" },
                 new CheckItem { Key = KeyDisk, Title = "Папка и место на диске" },
                 new CheckItem { Key = KeyPower, Title = "Питание", Group = GroupHealth },
                 new CheckItem { Key = KeyUpdates, Title = "Обновления Windows", Group = GroupHealth },
@@ -112,8 +115,9 @@ namespace MasterVks.Checks
             };
         }
 
-        public SystemCheck(AppSettings settings, AudioEngine engine, CheckMode mode, Action<CheckItem> onUpdate)
+        public SystemCheck(AppSettings settings, AudioEngine engine, CheckMode mode, Action<CheckItem> onUpdate, MicFeed feed = null)
         {
+            _feed = feed;
             _settings = settings.Clone();
             _engine = engine;
             _mode = mode;
@@ -146,6 +150,8 @@ namespace MasterVks.Checks
                     if (_items[key].Status == CheckStatus.Running) Set(key, CheckStatus.Error, "Проверка не удалась: " + ex.Message, "");
             }
 
+            Safe(KeyTelemost, CheckFeed);
+
             Safe(KeyPower, CheckPower);
             Safe(KeyUpdates, CheckUpdates);
             Safe(KeyCpu, CheckCpu);
@@ -174,6 +180,23 @@ namespace MasterVks.Checks
         {
             _items[key].CanFix = v.CanFix;
             Set(key, v.Status, v.Summary, v.Details);
+        }
+
+        // ===================== Микрофоны в Телемост =====================
+
+        private void CheckFeed()
+        {
+            var probe = new FeedProbe { Enabled = _feed != null && _feed.Enabled };
+            if (probe.Enabled)
+            {
+                // Сразу после запуска передача может ещё подключаться.
+                for (int i = 0; i < 30 && (_feed.State == FeedState.Starting || _feed.State == FeedState.Off); i++) Thread.Sleep(100);
+                probe.State = _feed.State;
+                probe.Error = _feed.Error;
+                probe.Mics = _feed.MicsInFeed();
+                if (probe.State == FeedState.Active && probe.Mics.Count > 0) CableLoopTest.Run(_feed, probe);
+            }
+            Set(KeyTelemost, FeedRules.Verdict(probe));
         }
 
         // ===================== Состояние ПК =====================

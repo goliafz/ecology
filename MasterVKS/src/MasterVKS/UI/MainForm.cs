@@ -78,6 +78,7 @@ namespace MasterVks.UI
         private SegmentedToggle _checkTabs;
         private Panel _recordList, _healthList;
         private readonly HealthMonitor _health = new HealthMonitor();
+        private readonly MicFeed _feed;
         private ModernButton _checkButton;
         private Label _checkTime;
         private ModernButton _recordButton, _pauseButton, _openFolderButton, _settingsButton, _aboutButton, _eventsButton, _showFileButton;
@@ -92,6 +93,8 @@ namespace MasterVks.UI
             _settings = settings;
             _launchedByAutostart = launchedByAutostart;
             _showMessage = SafeRegisterMessage();
+            _feed = new MicFeed(_engine);
+            _feed.SetEnabled(_settings.TelemostFeed);
 
             BuildUi();
             UpdateWindowIcon();
@@ -139,6 +142,7 @@ namespace MasterVks.UI
             if (_launchedByAutostart && _settings.StartMinimizedOnAutostart) WindowState = FormWindowState.Minimized;
             _fastTimer.Start();
             _health.Start();
+            _feed.Start();
             _slowTimer.Start();
             StartPreviewThread();
         }
@@ -207,6 +211,9 @@ namespace MasterVks.UI
 
         private void ApplyDeviceLists(List<AudioDeviceInfo> mics, List<AudioDeviceInfo> outs, List<MonitorDesc> monitors, string defaultMic, bool firstTime)
         {
+            // Виртуальный кабель для Телемоста не микрофон и не динамик: если его выбрать, звук пойдёт по кругу.
+            mics = mics.Where(m => !VirtualCable.IsCable(m.Name)).ToList();
+            outs = outs.Where(m => !VirtualCable.IsCable(m.Name)).ToList();
             string signature = string.Join("|", mics.Select(m => m.Id + m.Name)) + "#" + string.Join("|", outs.Select(m => m.Id + m.Name)) + "#" +
                                string.Join("|", monitors.Select(m => m.DeviceName + m.Bounds));
             if (signature == _deviceSignature && !firstTime) return;
@@ -456,7 +463,7 @@ namespace MasterVks.UI
             {
                 CheckRowView row;
                 if (_rows.TryGetValue(item.Key, out row)) SetRowItem(row, item);
-            })).Run()).ContinueWith(t => PostToUi(() =>
+            }), _feed).Run()).ContinueWith(t => PostToUi(() =>
             {
                 _checking = false;
                 if (t.IsFaulted)
@@ -475,7 +482,7 @@ namespace MasterVks.UI
                         AddEvent(new Notice("Проверка пройдена: всё готово к записи.", NoticeLevel.Success));
                     else
                     {
-                        var bad = _lastReport.Items.Where(i => i.Status == CheckStatus.Error || i.Status == CheckStatus.Warning).Select(i => i.Title.ToLowerInvariant());
+                        var bad = _lastReport.Items.Where(i => i.Status == CheckStatus.Error || i.Status == CheckStatus.Warning).Select(i => char.ToLowerInvariant(i.Title[0]) + i.Title.Substring(1));
                         AddEvent(new Notice((overall == CheckStatus.Error ? "Проверка нашла проблемы: " : "Проверка прошла с замечаниями: ") + string.Join(", ", bad) +
                                             ". Записывать всё равно можно. Нажмите на строку, чтобы узнать подробности.",
                             overall == CheckStatus.Error ? NoticeLevel.Error : NoticeLevel.Warning));
@@ -487,6 +494,15 @@ namespace MasterVks.UI
 
         private void OnCheckRowClick(CheckItem item)
         {
+            if (item != null && item.Key == SystemCheck.KeyTelemost && item.CanFix)
+            {
+                DialogResult answer = MessageBox.Show(this,
+                    "Телемост умеет брать только один микрофон. Чтобы собеседники слышали все микрофоны, программа сводит их в один виртуальный. " +
+                    "Для этого один раз нужно поставить бесплатный драйвер VB-Cable:\n\n" + FeedRules.InstallSteps + "\n\nОткрыть страницу загрузки?",
+                    "Микрофоны в Телемост", MessageBoxButtons.YesNo, MessageBoxIcon.Information);
+                if (answer == DialogResult.Yes) Shell.OpenUrl(VirtualCable.DownloadPage);
+                return;
+            }
             if (item != null && item.Key == SystemCheck.KeyUpdates && item.CanFix && !_checking)
             {
                 DialogResult r = MessageBox.Show(this,
@@ -778,6 +794,8 @@ namespace MasterVks.UI
             }
             Notice healthNotice;
             while (_health.TryTakeNotice(out healthNotice)) AddEvent(healthNotice);
+            Notice feedNotice;
+            while (_feed.TryTakeNotice(out feedNotice)) AddEvent(feedNotice);
 
             WatchSources(session != null);
 
@@ -831,7 +849,8 @@ namespace MasterVks.UI
 
         private bool AnySourceProblem()
         {
-            return _health.HasProblem || _engine.Sources.Any(s => s.IsConfigured && s.State != SourceState.Active && s.State != SourceState.Connecting);
+            bool feedBroken = _feed.Enabled && (_feed.State == FeedState.NoDriver || _feed.State == FeedState.Error);
+            return _health.HasProblem || feedBroken || _engine.Sources.Any(s => s.IsConfigured && s.State != SourceState.Active && s.State != SourceState.Connecting);
         }
 
         private void UpdateControls()
@@ -1196,6 +1215,19 @@ namespace MasterVks.UI
                     StopRecording(false);
                     return;
                 }
+                else if (_feed.State == FeedState.Active && MicrophoneUsage.ActiveApps().Count > 0)
+                {
+                    // Без программы у Телемоста пропадёт микрофон: собеседники перестанут слышать комнату.
+                    DialogResult r = MessageBox.Show(this,
+                        "Микрофон сейчас использует " + string.Join(", ", MicrophoneUsage.ActiveApps()) + ".\n\n" +
+                        "Если идёт ВКС, после закрытия МастерВКС собеседники перестанут вас слышать: микрофоны передаются в Телемост через эту программу.\n\nВсё равно закрыть?",
+                        "Закрыть программу", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
+                    if (r != DialogResult.Yes)
+                    {
+                        e.Cancel = true;
+                        return;
+                    }
+                }
                 else if (_finalizing > 0)
                 {
                     DialogResult r = MessageBox.Show(this,
@@ -1220,6 +1252,7 @@ namespace MasterVks.UI
             PowerHelper.KeepAwake(false);
             _overlay.Dispose();
             _health.Dispose();
+            _feed.Dispose();
             try
             {
                 _engine.Dispose();
@@ -1244,6 +1277,7 @@ namespace MasterVks.UI
                 _settings.Save();
                 Autostart.Apply(_settings.Autostart);
                 ApplyAudioSettingsToEngine();
+                _feed.SetEnabled(_settings.TelemostFeed);
                 RegisterHotkeys();
                 AddEvent(new Notice("Настройки сохранены.", NoticeLevel.Info));
                 UpdateControls();

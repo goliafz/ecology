@@ -44,8 +44,7 @@ namespace MasterVks.Audio
         private readonly SampleQueue _sysDelayL = new SampleQueue(Latency);
         private readonly SampleQueue _sysDelayR = new SampleQueue(Latency);
 
-        private readonly float[] _levels = new float[3];
-        private readonly float[] _gains = { 1f, 1f, 1f };
+        private readonly AutoMixer _automix = new AutoMixer();
 
         public RoomMixer(bool smart, bool mic1, bool mic2, bool mic3, bool system)
         {
@@ -54,8 +53,6 @@ namespace MasterVks.Audio
             _useSystem = system;
             for (int k = 0; k < 3; k++)
                 if (_useMic[k]) _suppressors[k] = new EchoSuppressor(_fft, _window, _farEnd);
-            int used = (mic1 ? 1 : 0) + (mic2 ? 1 : 0) + (mic3 ? 1 : 0);
-            for (int k = 0; k < 3; k++) _gains[k] = used > 0 ? 1f / used : 0f;
         }
 
         public bool Smart
@@ -105,47 +102,20 @@ namespace MasterVks.Audio
                 }
             }
 
-            // Уровни микрофонов после подавления эха: по ним решаем, кто сейчас говорит.
+            // Микрофоны после подавления эха: по ним решаем, кто сейчас говорит.
             var processed = new float[3][];
-            float total = 1e-6f;
             for (int k = 0; k < 3; k++)
-            {
-                if (_suppressors[k] == null) continue;
-                processed[k] = _suppressors[k].Take(n);
-                double sum = 0;
-                for (int i = 0; i < n; i++) sum += processed[k][i] * processed[k][i];
-                float rms = (float)Math.Sqrt(sum / n);
-                // Быстро замечаем, что человек заговорил, и медленно (за 0,3 с) отпускаем.
-                _levels[k] = rms > _levels[k] ? 0.5f * rms + 0.5f * _levels[k] : 0.967f * _levels[k] + 0.033f * rms;
-                total += _levels[k];
-            }
-
-            // Смесь по Дугану: усиления в сумме дают единицу, поэтому шум комнаты не растёт с числом микрофонов.
-            var target = new float[3];
-            int active = 0;
-            for (int k = 0; k < 3; k++) if (_suppressors[k] != null) active++;
-            for (int k = 0; k < 3; k++)
-            {
-                if (_suppressors[k] == null) continue;
-                target[k] = total > 1e-5f ? _levels[k] / total : 1f / active;
-            }
+                if (_suppressors[k] != null) processed[k] = _suppressors[k].Take(n);
+            var mic = new float[n];
+            _automix.Mix(processed, n, mic);
 
             for (int i = 0; i < n; i++)
             {
-                float t = (i + 1) / (float)n;
-                float mic = 0;
-                for (int k = 0; k < 3; k++)
-                {
-                    if (processed[k] == null) continue;
-                    float g = _gains[k] + (target[k] - _gains[k]) * t;
-                    mic += processed[k][i] * g;
-                }
                 float sl = _sysDelayL.Shift(block.Sys[i * 2]);
                 float sr = _sysDelayR.Shift(block.Sys[i * 2 + 1]);
-                outL[i] = SoftLimit(mic + (_useSystem ? sl : 0f));
-                outR[i] = SoftLimit(mic + (_useSystem ? sr : 0f));
+                outL[i] = SoftLimit(mic[i] + (_useSystem ? sl : 0f));
+                outR[i] = SoftLimit(mic[i] + (_useSystem ? sr : 0f));
             }
-            for (int k = 0; k < 3; k++) _gains[k] = target[k];
         }
 
         /// <summary>Простое сведение: сумма микрофонов (приглушённая) и звук компьютера, без задержки.</summary>
@@ -169,6 +139,70 @@ namespace MasterVks.Audio
             if (a <= knee) return x;
             float limited = knee + (1f - knee) * (float)Math.Tanh((a - knee) / (1f - knee));
             return x < 0 ? -limited : limited;
+        }
+    }
+
+    /// <summary>
+    /// Смесь микрофонов по Дугану: громче тот, к которому ближе говорящий,
+    /// остальные приглушаются. Усиления в сумме дают единицу, поэтому шум
+    /// комнаты не растёт с числом микрофонов, а голос не звучит гулко.
+    /// </summary>
+    internal sealed class AutoMixer
+    {
+        private readonly float[] _levels = new float[3];
+        private readonly float[] _gains = new float[3];
+        private bool _started;
+
+        /// <summary>Текущая доля микрофона в смеси (0..1), для проверки и журнала.</summary>
+        public float Gain(int mic)
+        {
+            return _gains[mic];
+        }
+
+        /// <param name="mics">Сигналы трёх микрофонов; null, если микрофон не участвует.</param>
+        public void Mix(float[][] mics, int n, float[] output)
+        {
+            int active = 0;
+            float total = 1e-6f;
+            for (int k = 0; k < 3; k++)
+            {
+                if (mics[k] == null)
+                {
+                    _levels[k] = 0;
+                    continue;
+                }
+                active++;
+                double sum = 0;
+                for (int i = 0; i < n; i++) sum += mics[k][i] * mics[k][i];
+                float rms = (float)Math.Sqrt(sum / n);
+                // Быстро замечаем, что человек заговорил, и медленно (за 0,3 с) отпускаем.
+                _levels[k] = rms > _levels[k] ? 0.5f * rms + 0.5f * _levels[k] : 0.967f * _levels[k] + 0.033f * rms;
+                total += _levels[k];
+            }
+
+            var target = new float[3];
+            for (int k = 0; k < 3; k++)
+                if (mics[k] != null) target[k] = total > 1e-5f ? _levels[k] / total : 1f / active;
+            if (!_started)
+            {
+                Array.Copy(target, _gains, 3);
+                _started = true;
+            }
+
+            Array.Clear(output, 0, n);
+            for (int k = 0; k < 3; k++)
+            {
+                float[] m = mics[k];
+                float from = _gains[k], to = target[k];
+                if (m == null && from == 0f) continue;
+                for (int i = 0; i < n; i++)
+                {
+                    // Усиление меняется плавно внутри блока, без щелчков.
+                    float g = from + (to - from) * ((i + 1) / (float)n);
+                    if (m != null) output[i] += m[i] * g;
+                }
+                _gains[k] = to;
+            }
         }
     }
 
