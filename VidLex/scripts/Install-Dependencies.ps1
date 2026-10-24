@@ -115,24 +115,30 @@ if (-not $SkipWhisper) {
     if ((Test-Path (Join-Path $wDir "whisper-cli.exe")) -and -not $Force) {
         Write-Host "    Уже установлен: $wDir (для переустановки используйте -Force)"
     } else {
-        $release = Invoke-RestMethod -Uri "https://api.github.com/repos/ggml-org/whisper.cpp/releases/latest" -Headers @{ "User-Agent" = "VidLex-Installer" } -UseBasicParsing
-        Write-Host "    Версия whisper.cpp: $($release.tag_name)"
-        # Имена архивов меняются от релиза к релизу, поэтому сначала ищем точное известное имя, затем — по признакам.
-        $zips = @($release.assets | Where-Object { $_.name -match '\.zip$' })
-        Write-Host "    Архивы релиза: $(($zips | ForEach-Object { $_.name }) -join ', ')"
+        # В некоторых релизах whisper.cpp нет готовых сборок, а имена архивов меняются. Поэтому перебираем последние
+        # релизы и берём самый новый, где есть архив для Windows x64: точное известное имя или подходящее по признакам.
+        $releases = Invoke-RestMethod -Uri "https://api.github.com/repos/ggml-org/whisper.cpp/releases?per_page=15" -Headers @{ "User-Agent" = "VidLex-Installer" } -UseBasicParsing
         $gpuRx = 'cublas|cuda'
         $otherRx = 'vulkan|openvino|sycl|hip|rocm|xcframework|arm|aarch64|win32|x86(?!_64)|macos|linux|android|ios|jar'
-        if ($Gpu) {
-            $asset = $zips | Where-Object { $_.name -match $gpuRx -and $_.name -match 'x64' } | Sort-Object name -Descending | Select-Object -First 1
-        } else {
-            $asset = $zips | Where-Object { $_.name -eq 'whisper-bin-x64.zip' } | Select-Object -First 1
-            if (-not $asset) {
-                $asset = $zips | Where-Object {
-                    $_.name -match 'x64' -and $_.name -match '^whisper' -and $_.name -notmatch $gpuRx -and $_.name -notmatch 'blas' -and $_.name -notmatch $otherRx
-                } | Sort-Object { $_.name.Length } | Select-Object -First 1
+        $release = $null; $asset = $null
+        foreach ($r in $releases) {
+            if ($r.draft -or $r.prerelease) { continue }
+            $zips = @($r.assets | Where-Object { $_.name -match '\.zip$' })
+            if ($Gpu) {
+                $a = $zips | Where-Object { $_.name -match $gpuRx -and $_.name -match 'x64' } | Sort-Object name -Descending | Select-Object -First 1
+            } else {
+                $a = $zips | Where-Object { $_.name -eq 'whisper-bin-x64.zip' } | Select-Object -First 1
+                if (-not $a) {
+                    $a = $zips | Where-Object {
+                        $_.name -match 'x64' -and $_.name -match '^whisper' -and $_.name -notmatch $gpuRx -and $_.name -notmatch 'blas' -and $_.name -notmatch $otherRx
+                    } | Sort-Object { $_.name.Length } | Select-Object -First 1
+                }
             }
+            if ($a) { $release = $r; $asset = $a; break }
+            Write-Host "    В релизе $($r.tag_name) нет подходящей сборки для Windows (файлов: $(@($r.assets).Count)) — проверяю предыдущий"
         }
-        if (-not $asset) { throw "В релизе $($release.tag_name) не найден подходящий архив для Windows x64 ($(if ($Gpu) { 'CUDA' } else { 'CPU' }))" }
+        if (-not $asset) { throw "Ни в одном из последних релизов whisper.cpp не найдена сборка для Windows x64 ($(if ($Gpu) { 'CUDA' } else { 'CPU' })). Скачайте её вручную и укажите путь к whisper-cli.exe в настройках VidLex." }
+        Write-Host "    Версия whisper.cpp: $($release.tag_name)"
         Write-Host "    Выбран архив: $($asset.name)"
         $zip = Join-Path $Downloads $asset.name
         Get-File $asset.browser_download_url $zip
