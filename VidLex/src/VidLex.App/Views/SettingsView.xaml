@@ -1,0 +1,222 @@
+<UserControl x:Class="VidLex.App.Views.SettingsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <UserControl.Resources>
+        <Style x:Key="Row" TargetType="Grid">
+            <Setter Property="Margin" Value="0,0,0,12" />
+        </Style>
+        <Style x:Key="Caption" TargetType="TextBlock" BasedOn="{StaticResource Label}">
+            <Setter Property="Width" Value="230" />
+            <Setter Property="Margin" Value="0,0,16,0" />
+            <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
+        </Style>
+    </UserControl.Resources>
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="{StaticResource PagePadding}">
+            <StackPanel MaxWidth="980" HorizontalAlignment="Left">
+                <TextBlock Text="Настройки" Style="{StaticResource PageTitle}" />
+
+                <!-- Распознавание -->
+                <Border Style="{StaticResource Card}">
+                    <StackPanel>
+                        <TextBlock Text="Распознавание речи" Style="{StaticResource CardTitle}" />
+                        <TextBlock Style="{StaticResource Hint}" Margin="0,-6,0,14"
+                                   Text="Локальный движок whisper.cpp: видео не отправляются в интернет. Язык распознавания задан явно — русский. Пустой путь — поиск в папке tools рядом с программой, в %LocalAppData%\VidLex и в PATH." />
+                        <Grid Style="{StaticResource Row}">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <TextBlock Text="whisper-cli.exe" Style="{StaticResource Caption}" />
+                            <TextBox Grid.Column="1" Text="{Binding Edit.WhisperCliPath, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="Путь к whisper-cli" />
+                            <Button Grid.Column="2" Content="Обзор…" Margin="8,0,0,0" Command="{Binding BrowseWhisperCommand}" />
+                        </Grid>
+                        <Grid Style="{StaticResource Row}">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <TextBlock Text="Модель (ggml-*.bin)" Style="{StaticResource Caption}" />
+                            <TextBox Grid.Column="1" Text="{Binding Edit.ModelPath, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="Путь к модели" />
+                            <Button Grid.Column="2" Content="Обзор…" Margin="8,0,0,0" Command="{Binding BrowseModelCommand}" />
+                            <Button Grid.Column="3" Content="Папка моделей" Margin="8,0,0,0" Command="{Binding OpenModelsFolderCommand}" />
+                        </Grid>
+                        <Grid Style="{StaticResource Row}">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <TextBlock Text="ffmpeg.exe" Style="{StaticResource Caption}" />
+                            <TextBox Grid.Column="1" Text="{Binding Edit.FfmpegPath, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="Путь к ffmpeg" />
+                            <Button Grid.Column="2" Content="Обзор…" Margin="8,0,0,0" Command="{Binding BrowseFfmpegCommand}" />
+                        </Grid>
+                        <Grid Style="{StaticResource Row}">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <TextBlock Text="ffprobe.exe" Style="{StaticResource Caption}" />
+                            <TextBox Grid.Column="1" Text="{Binding Edit.FfprobePath, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="Путь к ffprobe" />
+                            <Button Grid.Column="2" Content="Обзор…" Margin="8,0,0,0" Command="{Binding BrowseFfprobeCommand}" />
+                        </Grid>
+                        <Border Background="{StaticResource BgBrush}" CornerRadius="6" Padding="12,10" Margin="0,0,0,12">
+                            <Grid>
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                <TextBlock Text="{Binding ToolStatus}" FontFamily="Consolas" FontSize="12" TextWrapping="Wrap" Foreground="{StaticResource TextSecondaryBrush}" />
+                                <Button Grid.Column="1" Content="Проверить" VerticalAlignment="Top" Margin="8,0,0,0" Command="{Binding CheckToolsCommand}" />
+                            </Grid>
+                        </Border>
+                        <Grid Style="{StaticResource Row}">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                            <TextBlock Text="Аудиодорожка" Style="{StaticResource Caption}" />
+                            <ComboBox Grid.Column="1" HorizontalAlignment="Left" MinWidth="380" ItemsSource="{Binding TrackOptions}" DisplayMemberPath="Title"
+                                      SelectedValuePath="Value" SelectedValue="{Binding Edit.AudioTrackIndex}" />
+                        </Grid>
+                        <Grid Style="{StaticResource Row}">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                            <TextBlock Text="Длина фрагмента, сек" Style="{StaticResource Caption}" />
+                            <TextBox Grid.Column="1" Width="90" Text="{Binding Edit.ChunkLengthSeconds}" AutomationProperties.Name="Длина фрагмента в секундах" />
+                            <TextBlock Grid.Column="2" Style="{StaticResource Hint}" Margin="12,0,0,0" VerticalAlignment="Center"
+                                       Text="Длинные записи делятся на фрагменты около этой длины; граница ставится в паузе речи. 60–3600, по умолчанию 600." />
+                        </Grid>
+                        <Grid Style="{StaticResource Row}">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                            <TextBlock Text="Потоков процессора / beam size" Style="{StaticResource Caption}" />
+                            <TextBox Grid.Column="1" Width="70" Text="{Binding Edit.Threads}" AutomationProperties.Name="Число потоков" ToolTip="0 — автоматически" />
+                            <TextBlock Grid.Column="2" Text="/" Margin="8,0" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" />
+                            <TextBox Grid.Column="3" Width="70" Text="{Binding Edit.BeamSize}" AutomationProperties.Name="Beam size" ToolTip="1–10; больше — точнее и медленнее" />
+                            <TextBlock Grid.Column="4" Style="{StaticResource Hint}" Margin="12,0,0,0" VerticalAlignment="Center" Text="0 потоков — автоматически; beam size 5 — значение whisper.cpp по умолчанию." />
+                        </Grid>
+                        <CheckBox Style="{StaticResource ToggleSwitch}" IsChecked="{Binding Edit.UseGpu}" Content="Использовать видеокарту, если сборка whisper.cpp её поддерживает (CUDA/Vulkan)" />
+                        <CheckBox Style="{StaticResource ToggleSwitch}" IsChecked="{Binding Edit.UseCustomWordsAsPrompt}" Content="Подсказывать движку термины из пользовательского словаря" />
+                        <CheckBox Style="{StaticResource ToggleSwitch}" IsChecked="{Binding Edit.UsePreviousTextAsPrompt}" Content="Передавать конец предыдущего фрагмента как подсказку (может вызывать повторы)" />
+                        <CheckBox Style="{StaticResource ToggleSwitch}" IsChecked="{Binding Edit.CarryContextBetweenWindows}" Content="Переносить контекст между 30-секундными окнами (может вызывать повторы)" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Оформление -->
+                <Border Style="{StaticResource Card}">
+                    <StackPanel>
+                        <TextBlock Text="Оформление расшифровки" Style="{StaticResource CardTitle}" />
+                        <CheckBox Style="{StaticResource ToggleSwitch}" IsChecked="{Binding Edit.AddTimestamps}" Content="_Добавлять временные метки" />
+                        <TextBlock Style="{StaticResource Hint}" Margin="50,0,0,10" Text="Выключено — сохраняется только текст. Включено — перед фразой ставится время её начала в видео: [00:00:12] Текст фразы." />
+                        <Grid Style="{StaticResource Row}" IsEnabled="{Binding Edit.AddTimestamps}">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                            <TextBlock Text="Период меток, сек" Style="{StaticResource Caption}" />
+                            <TextBox Grid.Column="1" Width="90" Text="{Binding Edit.TimestampIntervalSeconds}" AutomationProperties.Name="Период временных меток" />
+                            <TextBlock Grid.Column="2" Style="{StaticResource Hint}" Margin="12,0,0,0" VerticalAlignment="Center"
+                                       Text="0 — метка перед каждой фразой. N — фразы собираются в абзацы, метка ставится не чаще, чем раз в N секунд. Это период показа меток, а не длина фрагмента распознавания." />
+                        </Grid>
+                        <CheckBox Style="{StaticResource ToggleSwitch}" IsChecked="{Binding Edit.SplitIntoParagraphs}" Content="Разбивать текст без меток на абзацы по длинным паузам" />
+                        <Grid Style="{StaticResource Row}" Margin="0,6,0,0" IsEnabled="{Binding Edit.SplitIntoParagraphs}">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                            <TextBlock Text="Пауза для нового абзаца, сек" Style="{StaticResource Caption}" />
+                            <TextBox Grid.Column="1" Width="90" Text="{Binding Edit.ParagraphPauseSeconds}" />
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <!-- Сохранение -->
+                <Border Style="{StaticResource Card}">
+                    <StackPanel>
+                        <TextBlock Text="Сохранение результатов" Style="{StaticResource CardTitle}" />
+                        <RadioButton GroupName="Out" IsChecked="{Binding Edit.OutputMode, Converter={StaticResource EnumEq}, ConverterParameter=NextToVideo}">
+                            <StackPanel>
+                                <TextBlock Text="Рядом с исходным видео (по умолчанию)" />
+                                <TextBlock Style="{StaticResource Hint}" Text="D:\Видео\Курс\Урок 01.mp4 → D:\Видео\Курс\Урок 01.txt; структура подпапок сохраняется." />
+                            </StackPanel>
+                        </RadioButton>
+                        <RadioButton GroupName="Out" Margin="0,8,0,4" IsChecked="{Binding Edit.OutputMode, Converter={StaticResource EnumEq}, ConverterParameter=SingleFolder}">
+                            <StackPanel>
+                                <TextBlock Text="Все результаты в отдельной папке" />
+                                <TextBlock Style="{StaticResource Hint}" Text="Все TXT в одной папке без подпапок; исходные папки не изменяются. Одинаковые имена получают путь в скобках: «Урок 01 (Модуль 2).txt»." />
+                            </StackPanel>
+                        </RadioButton>
+                        <Grid Style="{StaticResource Row}" Margin="28,6,0,12">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <TextBox Text="{Binding Edit.OutputFolder, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="Папка результатов" />
+                            <Button Grid.Column="1" Content="Выбрать папку…" Margin="8,0,0,0" Command="{Binding BrowseOutputCommand}" />
+                        </Grid>
+                        <Grid Style="{StaticResource Row}">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                            <TextBlock Text="Если TXT уже существует" Style="{StaticResource Caption}" />
+                            <ComboBox Grid.Column="1" HorizontalAlignment="Left" MinWidth="420" ItemsSource="{Binding ExistingOptions}" DisplayMemberPath="Title"
+                                      SelectedValuePath="Value" SelectedValue="{Binding Edit.ExistingResultPolicy}" />
+                        </Grid>
+                        <Grid Style="{StaticResource Row}">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                            <TextBlock Text="Если речь не обнаружена" Style="{StaticResource Caption}" />
+                            <ComboBox Grid.Column="1" HorizontalAlignment="Left" MinWidth="420" ItemsSource="{Binding EmptyOptions}" DisplayMemberPath="Title"
+                                      SelectedValuePath="Value" SelectedValue="{Binding Edit.EmptyResultBehavior}" />
+                        </Grid>
+                        <CheckBox Style="{StaticResource ToggleSwitch}" IsChecked="{Binding Edit.WriteUtf8Bom}" Content="UTF-8 с отметкой BOM (для корректного открытия в старых версиях «Блокнота»)" />
+                        <TextBlock Style="{StaticResource Hint}" Text="Файлы пишутся через временный файл с последующей заменой — при сбое не остаётся наполовину записанных TXT. Файлы, созданные не VidLex, никогда не перезаписываются." />
+                    </StackPanel>
+                </Border>
+
+                <!-- Обработка текста -->
+                <Border Style="{StaticResource Card}">
+                    <StackPanel>
+                        <TextBlock Text="Обработка текста" Style="{StaticResource CardTitle}" />
+                        <Grid Style="{StaticResource Row}">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                            <TextBlock Text="Проверка орфографии (словарь ru_RU)" Style="{StaticResource Caption}" />
+                            <ComboBox Grid.Column="1" HorizontalAlignment="Left" MinWidth="380" ItemsSource="{Binding SpellOptions}" DisplayMemberPath="Title"
+                                      SelectedValuePath="Value" SelectedValue="{Binding Edit.SpellCheckMode}" />
+                        </Grid>
+                        <CheckBox Style="{StaticResource ToggleSwitch}" IsChecked="{Binding Edit.EnableSentenceSplitting}" Content="Разделять слитные фразы на предложения (паузы, слова-связки «далее», «затем»…)" />
+                        <Grid Style="{StaticResource Row}" Margin="0,6,0,12">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                            <TextBlock Text="Пауза — граница фразы, мс" Style="{StaticResource Caption}" />
+                            <TextBox Grid.Column="1" Width="90" Text="{Binding Edit.SentencePauseMs}" />
+                        </Grid>
+                        <CheckBox Style="{StaticResource ToggleSwitch}" IsChecked="{Binding Edit.RemoveNonSpeechAnnotations}" Content="Удалять пометки неречевых звуков: [музыка], (смех)…" />
+                        <CheckBox Style="{StaticResource ToggleSwitch}" IsChecked="{Binding Edit.FilterHallucinations}" Content="Отбрасывать «галлюцинации» модели (титры субтитров, фразы в тишине, зацикленные повторы)" />
+                        <TextBlock Text="Пользовательский словарь — имена, названия, термины (по одному на строку)" Style="{StaticResource Label}" Margin="0,14,0,6" />
+                        <TextBox Text="{Binding CustomWordsText, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" Height="110"
+                                 VerticalContentAlignment="Top" VerticalScrollBarVisibility="Auto" AutomationProperties.Name="Пользовательский словарь" />
+                        <TextBlock Style="{StaticResource Hint}" Text="Эти слова не исправляются проверкой орфографии и (если включено) подсказываются движку распознавания. Неизвестные словарю слова и так не заменяются автоматически." />
+                    </StackPanel>
+                </Border>
+
+                <!-- Производительность и журнал -->
+                <Border Style="{StaticResource Card}">
+                    <StackPanel>
+                        <TextBlock Text="Производительность и журнал" Style="{StaticResource CardTitle}" />
+                        <Grid Style="{StaticResource Row}">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                            <TextBlock Text="Одновременно обрабатывать" Style="{StaticResource Caption}" />
+                            <ComboBox Grid.Column="1" HorizontalAlignment="Left" MinWidth="300" ItemsSource="{Binding ParallelOptions}" DisplayMemberPath="Title"
+                                      SelectedValuePath="Value" SelectedValue="{Binding Edit.MaxParallelJobs}" />
+                        </Grid>
+                        <Grid Style="{StaticResource Row}">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                            <TextBlock Text="Приоритет обработки" Style="{StaticResource Caption}" />
+                            <ComboBox Grid.Column="1" HorizontalAlignment="Left" MinWidth="380" ItemsSource="{Binding PriorityOptions}" DisplayMemberPath="Title"
+                                      SelectedValuePath="Value" SelectedValue="{Binding Edit.WorkerPriority}" />
+                        </Grid>
+                        <CheckBox Style="{StaticResource ToggleSwitch}" IsChecked="{Binding Edit.KeepCheckpoints}" Content="Сохранять прогресс длинных видео, чтобы продолжить после сбоя или закрытия" />
+                        <Grid Style="{StaticResource Row}" Margin="0,12,0,12">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                            <TextBlock Text="Подробность журнала" Style="{StaticResource Caption}" />
+                            <ComboBox Grid.Column="1" HorizontalAlignment="Left" MinWidth="320" ItemsSource="{Binding VerbosityOptions}" DisplayMemberPath="Title"
+                                      SelectedValuePath="Value" SelectedValue="{Binding Edit.LogVerbosity}" />
+                        </Grid>
+                        <Grid Style="{StaticResource Row}">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <TextBlock Text="Размер файла журнала, МБ / хранить, дней" Style="{StaticResource Caption}" />
+                            <TextBox Grid.Column="1" Width="70" Text="{Binding Edit.MaxLogFileSizeMb}" />
+                            <TextBlock Grid.Column="2" Text="/" Margin="8,0" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" />
+                            <TextBox Grid.Column="3" Width="70" Text="{Binding Edit.LogRetentionDays}" />
+                        </Grid>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- Панель действий -->
+        <Border Grid.Row="1" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0" Padding="24,12">
+            <Grid>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                <TextBlock Text="{Binding SaveMessage}" Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center" TextWrapping="Wrap" />
+                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                    <Button Content="Сбросить по умолчанию" Command="{Binding ResetCommand}" />
+                    <Button Content="Отменить изменения" Command="{Binding CancelCommand}" />
+                    <Button Content="_Сохранить" Style="{StaticResource PrimaryButton}" Command="{Binding SaveCommand}" Margin="0" />
+                </StackPanel>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

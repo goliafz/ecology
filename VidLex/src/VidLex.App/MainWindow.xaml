@@ -1,0 +1,76 @@
+<Window x:Class="VidLex.App.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:VidLex.App.ViewModels"
+        xmlns:views="clr-namespace:VidLex.App.Views"
+        Title="VidLex — разработчик Ходаковский Александр"
+        Icon="Resources/VidLex.ico"
+        Width="1280" Height="820" MinWidth="980" MinHeight="640"
+        WindowStartupLocation="CenterScreen"
+        Background="{StaticResource BgBrush}" Foreground="{StaticResource TextBrush}"
+        FontFamily="{StaticResource UiFont}" FontSize="13"
+        TextOptions.TextFormattingMode="Display" UseLayoutRounding="True"
+        AllowDrop="True" Drop="Window_Drop" DragOver="Window_DragOver">
+    <Window.TaskbarItemInfo>
+        <TaskbarItemInfo x:Name="Taskbar" />
+    </Window.TaskbarItemInfo>
+    <Window.Resources>
+        <DataTemplate DataType="{x:Type vm:HomeViewModel}">
+            <views:HomeView />
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:SettingsViewModel}">
+            <views:SettingsView />
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:LogViewModel}">
+            <views:LogView />
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:AboutViewModel}">
+            <views:AboutView />
+        </DataTemplate>
+    </Window.Resources>
+    <Window.InputBindings>
+        <KeyBinding Key="F1" Command="{Binding NavigateCommand}" CommandParameter="About" />
+        <KeyBinding Modifiers="Ctrl" Key="D1" Command="{Binding NavigateCommand}" CommandParameter="Home" />
+        <KeyBinding Modifiers="Ctrl" Key="D2" Command="{Binding NavigateCommand}" CommandParameter="Settings" />
+        <KeyBinding Modifiers="Ctrl" Key="D3" Command="{Binding NavigateCommand}" CommandParameter="Log" />
+    </Window.InputBindings>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Верхняя панель -->
+        <Border Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="20,10">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <Image Source="Resources/VidLex.png" Width="34" Height="34" RenderOptions.BitmapScalingMode="HighQuality" />
+                    <StackPanel Margin="12,0,0,0" VerticalAlignment="Center">
+                        <TextBlock FontSize="20" FontWeight="Bold" Foreground="{StaticResource TextBrush}">
+                            <Run Text="Vid" /><Run Text="Lex" Foreground="{StaticResource AccentBrush}" />
+                        </TextBlock>
+                        <TextBlock Text="Разработчик: Ходаковский Александр" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
+                    </StackPanel>
+                    <Border Margin="18,0,0,0" Padding="10,3" CornerRadius="10" VerticalAlignment="Center"
+                            Background="{StaticResource Surface2Brush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
+                        <TextBlock Text="{Binding Home.QueueStateText}" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
+                    </Border>
+                </StackPanel>
+                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button x:Name="NavHome" Content="_Главная" Style="{StaticResource NavButton}" Command="{Binding NavigateCommand}" CommandParameter="Home" ToolTip="Главная страница (Ctrl+1)" />
+                    <Button x:Name="NavSettings" Content="_Настройки" Style="{StaticResource NavButton}" Command="{Binding NavigateCommand}" CommandParameter="Settings" ToolTip="Настройки (Ctrl+2)" />
+                    <Button x:Name="NavLog" Content="_Журнал" Style="{StaticResource NavButton}" Command="{Binding NavigateCommand}" CommandParameter="Log" ToolTip="Журнал работы и ошибок (Ctrl+3)" />
+                    <Button x:Name="NavAbout" Content="_О программе" Style="{StaticResource NavButton}" Command="{Binding NavigateCommand}" CommandParameter="About" ToolTip="О программе (F1)" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <ContentControl Grid.Row="1" Content="{Binding CurrentViewModel}" Focusable="False" />
+    </Grid>
+</Window>

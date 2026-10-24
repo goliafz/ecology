@@ -1,0 +1,278 @@
+<UserControl x:Class="VidLex.App.Views.HomeView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="760">
+    <Grid Margin="{StaticResource PagePadding}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Не найдены компоненты -->
+        <Border Grid.Row="0" Background="{StaticResource WarningSoftBrush}" BorderBrush="{StaticResource WarningBrush}" BorderThickness="1"
+                CornerRadius="8" Padding="16,12" Margin="0,0,0,16"
+                Visibility="{Binding ToolProblems, Converter={StaticResource StrToVis}}">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel>
+                    <TextBlock Text="Не все компоненты распознавания найдены" FontWeight="SemiBold" Foreground="{StaticResource WarningBrush}" />
+                    <TextBlock Text="{Binding ToolProblems}" Style="{StaticResource Hint}" Foreground="{StaticResource TextBrush}" />
+                </StackPanel>
+                <Button Grid.Column="1" Content="Открыть настройки" VerticalAlignment="Center" Margin="12,0,0,0" Command="{Binding OpenSettingsCommand}" />
+            </Grid>
+        </Border>
+
+        <!-- Итог последнего запуска -->
+        <Border Grid.Row="1" Background="{StaticResource AccentSoftBrush}" CornerRadius="8" Padding="16,10" Margin="0,0,0,16"
+                Visibility="{Binding LastRunSummary, Converter={StaticResource StrToVis}}">
+            <TextBlock Text="{Binding LastRunSummary}" TextWrapping="Wrap" Foreground="{StaticResource TextBrush}" />
+        </Border>
+
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="5*" />
+                <ColumnDefinition Width="16" />
+                <ColumnDefinition Width="6*" />
+            </Grid.ColumnDefinitions>
+
+            <!-- Исходная папка -->
+            <Border Style="{StaticResource Card}">
+                <StackPanel>
+                    <TextBlock Text="Исходная папка" Style="{StaticResource CardTitle}" />
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBox Text="{Binding SourceFolder, Mode=OneWay}" IsReadOnly="True" ToolTip="{Binding SourceFolder}"
+                                 AutomationProperties.Name="Путь к исходной папке" />
+                        <Button Grid.Column="1" Content="_Выбрать папку…" Style="{StaticResource PrimaryButton}" Margin="8,0,0,0"
+                                Command="{Binding ChooseFolderCommand}" ToolTip="Выбрать папку с видео; вложенные папки обрабатываются автоматически" />
+                    </Grid>
+                    <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                        <Button Content="_Пересканировать" Command="{Binding RescanCommand}" ToolTip="Заново найти видео в выбранной папке" />
+                        <Button Content="Очистить список" Command="{Binding ClearCommand}" />
+                        <TextBlock Text="{Binding ScanStatus}" Style="{StaticResource Hint}" VerticalAlignment="Center" Margin="4,0,0,0" />
+                    </StackPanel>
+                    <UniformGrid Columns="4" Margin="0,16,0,0">
+                        <StackPanel>
+                            <TextBlock Text="{Binding FoundCount}" Style="{StaticResource StatValue}" />
+                            <TextBlock Text="найдено" Style="{StaticResource StatCaption}" />
+                        </StackPanel>
+                        <StackPanel>
+                            <TextBlock Text="{Binding ProcessedCount}" Style="{StaticResource StatValue}" Foreground="{StaticResource AccentBrush}" />
+                            <TextBlock Text="обработано" Style="{StaticResource StatCaption}" />
+                        </StackPanel>
+                        <StackPanel>
+                            <TextBlock Text="{Binding QueuedCount}" Style="{StaticResource StatValue}" />
+                            <TextBlock Text="в очереди" Style="{StaticResource StatCaption}" />
+                        </StackPanel>
+                        <StackPanel>
+                            <TextBlock Text="{Binding ErrorCount}" Style="{StaticResource StatValue}" Foreground="{StaticResource ErrorBrush}" />
+                            <TextBlock Text="ошибок" Style="{StaticResource StatCaption}" />
+                        </StackPanel>
+                    </UniformGrid>
+                </StackPanel>
+            </Border>
+
+            <!-- Управление и прогресс -->
+            <Border Grid.Column="2" Style="{StaticResource Card}">
+                <StackPanel>
+                    <TextBlock Text="Обработка" Style="{StaticResource CardTitle}" />
+                    <WrapPanel>
+                        <Button Content="▶  _Начать обработку" Style="{StaticResource PrimaryButton}" Command="{Binding StartCommand}" Margin="0,0,8,6" />
+                        <Button Content="Приостановить" Command="{Binding PauseCommand}" Margin="0,0,8,6"
+                                ToolTip="Заморозить FFmpeg и whisper.cpp; новые видео не начнутся до «Продолжить»" />
+                        <Button Content="Продолжить" Command="{Binding ResumeCommand}" Margin="0,0,8,6" />
+                        <Button Content="Остановить" Style="{StaticResource DangerButton}" Command="{Binding StopCommand}" Margin="0,0,8,6" />
+                        <Button Content="Открыть папку результатов" Command="{Binding OpenResultsCommand}" Margin="0,0,0,6" />
+                    </WrapPanel>
+
+                    <Grid Margin="0,12,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Вся очередь" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" />
+                        <TextBlock Grid.Column="1" Text="{Binding OverallText}" FontSize="12" />
+                    </Grid>
+                    <ProgressBar Value="{Binding OverallPercent, Mode=OneWay}" Maximum="100" Height="10" Margin="0,6,0,0"
+                                 AutomationProperties.Name="Общий прогресс очереди" />
+
+                    <Grid Margin="0,12,0,0" Visibility="{Binding HasCurrentJob, Converter={StaticResource BoolToVis}}">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock TextTrimming="CharacterEllipsis" FontSize="12">
+                            <Run Text="Текущее видео:" Foreground="{StaticResource TextSecondaryBrush}" />
+                            <Run Text="{Binding CurrentJob.FileName, Mode=OneWay}" />
+                            <Run Text="·" Foreground="{StaticResource TextSecondaryBrush}" />
+                            <Run Text="{Binding CurrentJob.StatusText, Mode=OneWay}" Foreground="{StaticResource AccentBrush}" />
+                            <Run Text="{Binding CurrentJob.Detail, Mode=OneWay}" Foreground="{StaticResource TextSecondaryBrush}" />
+                        </TextBlock>
+                        <TextBlock Grid.Column="1" Text="{Binding CurrentJob.Progress, Converter={StaticResource Percent}}" FontSize="12" Margin="8,0,0,0" />
+                        <ProgressBar Grid.Row="1" Grid.ColumnSpan="2" Value="{Binding CurrentJob.Progress, Mode=OneWay}" Maximum="100" Height="6" Margin="0,6,0,0"
+                                     Foreground="{StaticResource AccentHoverBrush}" AutomationProperties.Name="Прогресс текущего видео" />
+                    </Grid>
+
+                    <UniformGrid Columns="2" Margin="0,14,0,0">
+                        <StackPanel>
+                            <TextBlock Text="{Binding ElapsedText}" Style="{StaticResource StatValue}" FontSize="16" />
+                            <TextBlock Text="прошло с начала" Style="{StaticResource StatCaption}" />
+                        </StackPanel>
+                        <StackPanel ToolTip="{Binding RemainingHint}">
+                            <TextBlock Text="{Binding RemainingText}" Style="{StaticResource StatValue}" FontSize="16" />
+                            <TextBlock Text="осталось (приблизительно)" Style="{StaticResource StatCaption}" />
+                        </StackPanel>
+                    </UniformGrid>
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- Список видео -->
+        <Border Grid.Row="3" Style="{StaticResource Card}" Margin="0" Padding="0">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <Grid Margin="20,14,20,12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="Список видео" Style="{StaticResource CardTitle}" Margin="0" VerticalAlignment="Center" />
+                    <Grid Grid.Column="2" Width="260" Margin="0,0,8,0">
+                        <TextBox x:Name="SearchBox" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged, Delay=200}"
+                                 AutomationProperties.Name="Поиск по имени файла" ToolTip="Поиск по имени файла и пути" />
+                        <TextBlock Text="Поиск по имени файла…" Margin="10,0,0,0" VerticalAlignment="Center" IsHitTestVisible="False"
+                                   Foreground="{StaticResource DisabledTextBrush}">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Text, ElementName=SearchBox}" Value="">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Grid>
+                    <ComboBox Grid.Column="3" Width="190" ItemsSource="{Binding StatusFilters}" SelectedItem="{Binding StatusFilter}"
+                              DisplayMemberPath="Title" AutomationProperties.Name="Фильтр по статусу" Margin="0,0,8,0" />
+                    <Button Grid.Column="4" Content="Повторить ошибочные" Command="{Binding RetryErrorsCommand}" Margin="0"
+                            ToolTip="Вернуть в очередь видео со статусами «Ошибка» и «Пропущено»" />
+                </Grid>
+
+                <DataGrid x:Name="JobsGrid" Grid.Row="1" ItemsSource="{Binding JobsView}" SelectedItem="{Binding SelectedJob}"
+                          MouseDoubleClick="Grid_MouseDoubleClick" AutomationProperties.Name="Список видео">
+                    <DataGrid.ContextMenu>
+                        <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
+                            <MenuItem Header="Открыть результат (TXT)" Command="{Binding OpenJobResultCommand}" CommandParameter="{Binding SelectedJob}" />
+                            <MenuItem Header="Показать в папке" Command="{Binding ShowInFolderCommand}" CommandParameter="{Binding SelectedJob}" />
+                            <MenuItem Header="Обработать заново" Command="{Binding RetryJobCommand}" CommandParameter="{Binding SelectedJob}" />
+                            <MenuItem Header="Копировать текст ошибки" Command="{Binding CopyErrorCommand}" CommandParameter="{Binding SelectedJob}" />
+                        </ContextMenu>
+                    </DataGrid.ContextMenu>
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Файл" Binding="{Binding FileName, Mode=OneWay}" Width="2*" MinWidth="160">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+                                    <Setter Property="ToolTip" Value="{Binding FullPath}" />
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Header="Относительный путь" Binding="{Binding RelativePath, Mode=OneWay}" Width="2*" MinWidth="140">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+                                    <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
+                                    <Setter Property="ToolTip" Value="{Binding RelativePath}" />
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Header="Длительность" Binding="{Binding DurationText, Mode=OneWay}" Width="100" SortMemberPath="Duration" />
+                        <DataGridTemplateColumn Header="Статус" Width="150" SortMemberPath="Status">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <Border Style="{StaticResource StatusBadge}" Background="{Binding Status, Converter={StaticResource StatusBrush}, ConverterParameter=bg}">
+                                        <TextBlock Text="{Binding StatusText}" FontSize="12" Foreground="{Binding Status, Converter={StaticResource StatusBrush}}" />
+                                    </Border>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTemplateColumn Header="Выполнено" Width="120" SortMemberPath="Progress">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="40" />
+                                        </Grid.ColumnDefinitions>
+                                        <ProgressBar Value="{Binding Progress, Mode=OneWay}" Maximum="100" Height="5" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="1" Text="{Binding Progress, Converter={StaticResource Percent}}" FontSize="12" HorizontalAlignment="Right" />
+                                    </Grid>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTextColumn Header="Время" Binding="{Binding ProcessingTimeText, Mode=OneWay}" Width="90" SortMemberPath="ProcessingTime" />
+                        <DataGridTemplateColumn Header="Ошибка / примечание" Width="3*" MinWidth="180">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <Grid>
+                                        <TextBlock Text="{Binding Error}" Foreground="{StaticResource ErrorBrush}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Error}"
+                                                   Visibility="{Binding Error, Converter={StaticResource StrToVis}}" />
+                                        <TextBlock Text="{Binding Detail}" Foreground="{StaticResource TextSecondaryBrush}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Detail}">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding Status}" Value="Error">
+                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                    </Grid>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                    </DataGrid.Columns>
+                </DataGrid>
+
+                <!-- Пустое состояние -->
+                <StackPanel Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False">
+                    <StackPanel.Style>
+                        <Style TargetType="StackPanel">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding FoundCount}" Value="0">
+                                    <Setter Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </StackPanel.Style>
+                    <TextBlock Text="Видео пока нет" FontSize="16" HorizontalAlignment="Center" />
+                    <TextBlock Text="Нажмите «Выбрать папку…» — VidLex найдёт видео во всех вложенных папках" Style="{StaticResource Hint}" HorizontalAlignment="Center" />
+                </StackPanel>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

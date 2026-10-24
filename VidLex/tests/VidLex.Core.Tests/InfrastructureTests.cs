@@ -140,7 +140,7 @@ namespace VidLex.Core.Tests
     public class DiscoveryTests
     {
         [Fact]
-        public void FindsVideosRecursivelyInNaturalOrder()
+        public async Task FindsVideosRecursivelyInNaturalOrder()
         {
             using (var d = new TempDir())
             {
@@ -150,7 +150,7 @@ namespace VidLex.Core.Tests
                 d.CreateFile("a/заметки.txt");
                 d.CreateFile("a/~$временный.mp4");
                 d.CreateFile("Видео (часть 1) — №1 & 'тест'.avi");
-                var r = new VideoDiscoveryService(new MemoryLog()).ScanAsync(d.Path, AppSettings.DefaultVideoExtensions, null, CancellationToken.None).Result;
+                var r = await new VideoDiscoveryService(new MemoryLog()).ScanAsync(d.Path, AppSettings.DefaultVideoExtensions, null, CancellationToken.None);
                 var rel = r.Files.Select(f => PathUtil.GetRelativePath(d.Path, f).Replace('\\', '/')).ToList();
                 Assert.Equal(new[] { "a/b/c/d/e/глубоко.webm", "Видео (часть 1) — №1 & 'тест'.avi", "Урок 2.MKV", "Урок 10.mp4" }, rel);
                 Assert.Equal(1, r.SkippedUnsupported);
@@ -158,11 +158,10 @@ namespace VidLex.Core.Tests
         }
 
         [Fact]
-        public void MissingFolderThrows()
+        public async Task MissingFolderThrows()
         {
-            var ex = Assert.ThrowsAsync<DirectoryNotFoundException>(() =>
+            await Assert.ThrowsAsync<DirectoryNotFoundException>(() =>
                 new VideoDiscoveryService(new MemoryLog()).ScanAsync("/нет/такой/папки", AppSettings.DefaultVideoExtensions, null, CancellationToken.None));
-            Assert.NotNull(ex.Result);
         }
 
         [Fact]
@@ -195,15 +194,15 @@ namespace VidLex.Core.Tests
         }
 
         [Fact]
-        public void PauseGateBlocksUntilResumed()
+        public async Task PauseGateBlocksUntilResumed()
         {
             var gate = new PauseGate();
             gate.Pause();
             var wait = gate.WaitIfPausedAsync(CancellationToken.None);
-            Assert.False(wait.Wait(200));
+            Assert.NotSame(wait, await Task.WhenAny(wait, Task.Delay(200)));
             gate.Resume();
-            Assert.True(wait.Wait(2000));
-            Assert.True(wait.Result);
+            Assert.Same(wait, await Task.WhenAny(wait, Task.Delay(2000)));
+            Assert.True(await wait);
         }
 
         [Fact]

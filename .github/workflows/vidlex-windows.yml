@@ -1,0 +1,106 @@
+name: VidLex — сборка и тесты (Windows)
+
+on:
+  push:
+    paths:
+      - "VidLex/**"
+      - ".github/workflows/vidlex-windows.yml"
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 75
+    env:
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: "utf-8"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+      DEPS: ${{ github.workspace }}\vidlex-deps
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Сборка (Release, .NET Framework 4.8 + net8.0)
+        run: dotnet build VidLex/VidLex.sln -c Release
+
+      - name: Модульные тесты (net48 и net8.0)
+        run: dotnet test VidLex/tests/VidLex.Core.Tests/VidLex.Core.Tests.csproj -c Release --no-build --logger "trx;LogFileName=unit.trx" --logger "console;verbosity=minimal" --results-directory artifacts/tests
+
+      - name: Кэш компонентов (FFmpeg, whisper.cpp, модель)
+        uses: actions/cache@v4
+        with:
+          path: vidlex-deps
+          key: vidlex-deps-small-v1
+
+      - name: Установка компонентов скриптом Install-Dependencies.ps1 (Windows PowerShell 5.1)
+        shell: powershell
+        run: |
+          VidLex\scripts\Install-Dependencies.ps1 -Model small -DataDir "$env:DEPS"
+          & "$env:DEPS\tools\whisper\whisper-cli.exe" --help | Select-Object -First 3
+          Get-Content "$env:DEPS\tools\whisper\VERSION.txt" -ErrorAction SilentlyContinue
+
+      - name: Сквозные тесты VidLex.Cli (net48, настоящий whisper.cpp)
+        shell: pwsh
+        run: |
+          python VidLex/tests/e2e/e2e_check.py `
+            --cli "VidLex\tools\VidLex.Cli\bin\Release\net48\VidLex.Cli.exe" `
+            --media VidLex/tests/e2e/media --work "$env:RUNNER_TEMP\e2e" `
+            --model "$env:DEPS\Models\ggml-small.bin" `
+            --whisper "$env:DEPS\tools\whisper\whisper-cli.exe" `
+            --ffmpeg "$env:DEPS\tools\ffmpeg\ffmpeg.exe" --ffprobe "$env:DEPS\tools\ffmpeg\ffprobe.exe"
+
+      - name: Проверка интерфейса (запуск без компонентов)
+        shell: powershell
+        run: |
+          $media = "$env:RUNNER_TEMP\gui-empty"
+          New-Item -ItemType Directory -Force $media | Out-Null
+          Copy-Item "VidLex\tests\e2e\media\Урок 01.mp4" $media
+          VidLex\scripts\ci\Gui-Smoke.ps1 -AppExe "VidLex\src\VidLex.App\bin\Release\net48\VidLex.exe" -Source $media `
+            -DataDir "$env:RUNNER_TEMP\gui-nodeps" -ShotsDir "artifacts\screenshots" -Prefix "nodeps-" -NoStart
+
+      - name: Проверка интерфейса (обработка папки из GUI)
+        shell: powershell
+        run: |
+          $media = "$env:RUNNER_TEMP\gui-media"
+          Copy-Item -Recurse "VidLex\tests\e2e\media" $media
+          Remove-Item "$media\Лекция с шумом.mpeg", "$media\Длинная лекция.mp4"
+          VidLex\scripts\ci\Gui-Smoke.ps1 -AppExe "VidLex\src\VidLex.App\bin\Release\net48\VidLex.exe" -Source $media `
+            -DataDir "$env:DEPS" -ShotsDir "artifacts\screenshots" -TimeoutSec 900
+          Copy-Item -Recurse "$env:DEPS\Logs" "artifacts\gui-logs"
+
+      - name: Release-сборка с компонентами
+        if: always()
+        shell: powershell
+        run: VidLex\scripts\Build-Release.ps1 -IncludeTools -DataDir "$env:DEPS"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vidlex-windows
+          path: |
+            artifacts/screenshots
+            artifacts/tests
+            artifacts/gui-logs
+            VidLex/artifacts/*.zip
+          if-no-files-found: warn
+
+      - name: Скриншоты в журнал (base64 JPEG)
+        if: always()
+        shell: powershell
+        run: |
+          Add-Type -AssemblyName System.Drawing
+          $codec = [System.Drawing.Imaging.ImageCodecInfo]::GetImageEncoders() | Where-Object { $_.MimeType -eq "image/jpeg" }
+          $ep = New-Object System.Drawing.Imaging.EncoderParameters 1
+          $ep.Param[0] = New-Object System.Drawing.Imaging.EncoderParameter ([System.Drawing.Imaging.Encoder]::Quality), 72L
+          Get-ChildItem artifacts\screenshots -Filter *.png -ErrorAction SilentlyContinue | ForEach-Object {
+            $img = [System.Drawing.Image]::FromFile($_.FullName)
+            $ms = New-Object IO.MemoryStream
+            $img.Save($ms, $codec, $ep); $img.Dispose()
+            $b64 = [Convert]::ToBase64String($ms.ToArray())
+            Write-Host "===SHOT-BEGIN $($_.BaseName)==="
+            for ($i = 0; $i -lt $b64.Length; $i += 3000) { Write-Host $b64.Substring($i, [Math]::Min(3000, $b64.Length - $i)) }
+            Write-Host "===SHOT-END $($_.BaseName)==="
+          }

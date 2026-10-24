@@ -110,6 +110,15 @@ namespace VidLex.Cli
                     };
                     int stopAfter = opts.ContainsKey("stop-after-seconds") ? int.Parse(opts["stop-after-seconds"]) : 0;
                     int pauseAt = opts.ContainsKey("pause-test") ? int.Parse(opts["pause-test"]) : 0;
+                    void Report()
+                    {
+                        var snap = host.Estimator.Compute(jobs, host.Queue.GetLiveProgress(), host.Queue.Parallelism);
+                        var current = jobs.FirstOrDefault(j => !j.IsFinished && j.Status != JobStatus.Waiting && j.Status != JobStatus.Stopped);
+                        Console.WriteLine($"  … очередь {snap.OverallPercent:0.0}% ({snap.Done}/{snap.Total}), осталось {snap.RemainingText}" +
+                                          (current != null ? $"; текущее: {current.FileName} — {current.StatusText} {current.Progress:0.0}% {current.Detail}" : "") +
+                                          $"; состояние: {host.Queue.State}");
+                    }
+
                     var reporter = Task.Run(async () =>
                     {
                         var started = DateTime.Now;
@@ -118,20 +127,21 @@ namespace VidLex.Cli
                         {
                             await Task.Delay(2000).ConfigureAwait(false);
                             if (!host.Queue.IsBusy) continue;
-                            var snap = host.Estimator.Compute(jobs, host.Queue.GetLiveProgress(), host.Queue.Parallelism);
-                            var current = jobs.FirstOrDefault(j => !j.IsFinished && j.Status != JobStatus.Waiting && j.Status != JobStatus.Stopped);
-                            Console.WriteLine($"  … очередь {snap.OverallPercent:0.0}% ({snap.Done}/{snap.Total}), осталось {snap.RemainingText}" +
-                                              (current != null ? $"; текущее: {current.FileName} — {current.StatusText} {current.Progress:0}% {current.Detail}" : "") +
-                                              $"; состояние: {host.Queue.State}");
+                            Report();
                             var elapsed = (DateTime.Now - started).TotalSeconds;
                             if (pauseAt > 0 && !pausedOnce && elapsed >= pauseAt)
                             {
+                                // Тест паузы: процессы замораживаются, прогресс не должен расти.
                                 pausedOnce = true;
                                 host.Queue.Pause();
-                                Console.WriteLine($"  [тест паузы] пауза, процессов активно: {host.Registry.ActiveCount}");
-                                await Task.Delay(6000).ConfigureAwait(false);
-                                Console.WriteLine($"  [тест паузы] прогресс текущего во время паузы: {current?.Progress:0.0}%; состояние {host.Queue.State}");
+                                Console.WriteLine($"  [тест паузы] пауза; внешних процессов: {host.Registry.ActiveCount}");
+                                for (int k = 0; k < 4; k++)
+                                {
+                                    await Task.Delay(2000).ConfigureAwait(false);
+                                    Report();
+                                }
                                 host.Queue.Resume();
+                                Console.WriteLine("  [тест паузы] продолжение");
                             }
                             if (stopAfter > 0 && elapsed >= stopAfter)
                             {
