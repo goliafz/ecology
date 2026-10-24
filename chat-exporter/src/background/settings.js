@@ -39,6 +39,7 @@ import { getKey, setKey } from './storage.js';
  * @property {{ chatgpt: boolean, claude: boolean }} services
  * @property {boolean} includeChatGptProjects
  * @property {boolean} trackActivity
+ * @property {boolean} autoTrackUppercase mark chats titled in capital letters automatically
  * @property {boolean} eraseFromDownloadList
  * @property {AutoSettings} auto
  * @property {{ enabled: boolean, maxEntries: number }} journal
@@ -73,6 +74,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
   includeChatGptProjects: true,
   /** Mark chats as changed while you work (Scenario C). */
   trackActivity: true,
+  /** Chats titled in capital letters only ("ЧАТ", "ДЕДУШКА") are marked "Сохранять" automatically. */
+  autoTrackUppercase: true,
   /** Remove finished backup downloads from Chrome's download list (files stay on disk). */
   eraseFromDownloadList: false,
   auto: {
@@ -150,6 +153,7 @@ export function normalizeSettings(stored) {
     },
     includeChatGptProjects: bool(s.includeChatGptProjects, d.includeChatGptProjects),
     trackActivity: bool(s.trackActivity, d.trackActivity),
+    autoTrackUppercase: bool(s.autoTrackUppercase, d.autoTrackUppercase),
     eraseFromDownloadList: bool(s.eraseFromDownloadList, d.eraseFromDownloadList),
     auto: {
       enabled: bool(a.enabled, d.auto.enabled),

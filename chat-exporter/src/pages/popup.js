@@ -31,6 +31,7 @@ function render() {
   /** @type {HTMLButtonElement} */ ($('export-current')).disabled = !(tab?.service && tab.chatId);
   $('track-row').hidden = !(tab?.service && tab.chatId);
   /** @type {HTMLInputElement} */ ($('track-toggle')).checked = Boolean(tab?.tracked);
+  $('track-auto').hidden = !(tab?.tracked && tab.trackedAuto);
 
   // Formats are chosen in the settings only.
   const names = settings.formats.map((/** @type {keyof typeof FORMAT_LABELS} */ f) => FORMAT_LABELS[f]).join(', ');

@@ -11,7 +11,7 @@ import { BACKUP_ALARM, CATCHUP_ALARM, checkMissedRun, getSchedule, onScheduleAla
 import { loadSettings, saveSettings, DEFAULT_SETTINGS } from './settings.js';
 import { getIndex, getKey, setKey, updateIndexEntry, updateKey } from './storage.js';
 import { ensureContentScript, sendToTab } from './tabs.js';
-import { getTracked, refreshAllIcons, setTracked, updateTabIcon } from './tracked.js';
+import { autoTrackUppercase, getTracked, refreshAllIcons, setTracked, updateTabIcon } from './tracked.js';
 import { writeFile } from './downloads.js';
 import { expandTemplate } from '../core/filenames.js';
 
@@ -31,8 +31,33 @@ chrome.runtime.onStartup.addListener(() => {
 
 // Toolbar icon colour per tab: green = chat marked "Сохранять", red = not marked.
 chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
-  if (info.url || info.status === 'complete') updateTabIcon(tabId, tab.url).catch(() => {});
+  if (!info.url && !info.title && info.status !== 'complete') return;
+  autoTrackTab(tab)
+    .catch(() => {})
+    .then(() => updateTabIcon(tabId, tab.url))
+    .catch(() => {});
 });
+
+/**
+ * Marks the chat open in a tab when its title is written in capital letters.
+ * @param {chrome.tabs.Tab} tab
+ */
+async function autoTrackTab(tab) {
+  const service = serviceFromUrl(tab.url);
+  if (!service || !tab.title) return;
+  const id = SERVICES[service].idFromUrl(tab.url || '');
+  if (!id) return;
+  const settings = await loadSettings();
+  if (!settings.autoTrackUppercase) return;
+  const title = cleanTabTitle(tab.title);
+  const added = await autoTrackUppercase([{ service, id, title }]);
+  if (added.length) await addLog('info', 'Чат помечен «Сохранять» автоматически: название заглавными буквами', { chat: added[0], title });
+}
+
+/** @param {string} title */
+function cleanTabTitle(title) {
+  return String(title || '').replace(/\s*[-|–]\s*(ChatGPT|Claude)\s*$/i, '').trim();
+}
 chrome.tabs.onActivated.addListener(({ tabId }) => {
   chrome.tabs.get(tabId).then((tab) => updateTabIcon(tabId, tab.url), () => {});
 });
@@ -68,10 +93,11 @@ const handlers = {
     const [settings, queue, schedule, lastResult, tab, tracked] = await Promise.all([
       loadSettings(), getQueue(), getSchedule(), getKey('lastResult'), activeTabInfo(), getTracked(),
     ]);
-    const tabTracked = Boolean(tab.service && tab.chatId && tracked[chatKey(tab.service, tab.chatId)]);
+    const tabEntry = tab.service && tab.chatId ? tracked[chatKey(tab.service, tab.chatId)] : undefined;
+    const tabTracked = Boolean(tabEntry);
     return {
       settings, queue: summarize(queue), jobs: queue.jobs.slice(-50), schedule, lastResult,
-      tab: { ...tab, tracked: tabTracked }, trackedCount: Object.keys(tracked).length, debuggerAvailable: isDebuggerAvailable(),
+      tab: { ...tab, tracked: tabTracked, trackedAuto: Boolean(tabEntry?.auto) }, trackedCount: Object.keys(tracked).length, debuggerAvailable: isDebuggerAvailable(),
     };
   },
 
@@ -282,6 +308,6 @@ async function activeTabInfo() {
   const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
   const service = serviceFromUrl(tab?.url);
   if (!tab || !service) return { service: null, chatId: null };
-  const title = (tab.title || '').replace(/\s*[-|–]\s*(ChatGPT|Claude)\s*$/i, '').trim();
+  const title = cleanTabTitle(tab.title || '');
   return { tabId: tab.id, service, chatId: SERVICES[service].idFromUrl(tab.url || ''), title, url: tab.url };
 }

@@ -4,7 +4,7 @@ import { detectChanges } from '../core/change-detection.js';
 import { addLog } from './log.js';
 import { getIndex, mutateIndex, setKey, getKey } from './storage.js';
 import { getServiceTab, sendToTab, withTabLease } from './tabs.js';
-import { getTracked, updateTrackedTitles } from './tracked.js';
+import { autoTrackUppercase, getTracked, refreshAllIcons, updateTrackedTitles } from './tracked.js';
 
 /**
  * Lists chats of a service.
@@ -31,6 +31,13 @@ export async function listChats(service, settings, options) {
   const unique = new Map();
   for (const it of /** @type {import('../core/model.js').ChatListItem[]} */ (items)) unique.set(it.id, it);
   const list = [...unique.values()];
+  if (settings.autoTrackUppercase) {
+    const added = await autoTrackUppercase(list);
+    if (added.length) {
+      await addLog('info', `${SERVICES[service].label}: помечено «Сохранять» по названию заглавными буквами: ${list.filter((c) => added.includes(`${c.service}:${c.id}`)).map((c) => c.title).join(', ')}`);
+      await refreshAllIcons();
+    }
+  }
   await setKey(`listCache:${service}`, { items: list, fetchedAt: Date.now(), complete: Boolean(res.complete) });
   return { items: list, complete: Boolean(res.complete), warnings: Array.isArray(res.warnings) ? res.warnings : [] };
 }
@@ -55,11 +62,14 @@ export async function findCandidates(service, settings, schedule) {
   const stopBefore = service === 'chatgpt' && cutoffMs && !settings.auto.backfill
     ? new Date(Math.min(cutoffMs, baselineAt)).toISOString()
     : null;
-  const tracked = settings.auto.scope === 'tracked' ? await getTracked() : null;
-  if (tracked && !Object.keys(tracked).some((k) => k.startsWith(`${service}:`))) {
+  const marked = settings.auto.scope === 'tracked' ? await getTracked() : null;
+  // Without marked chats there is nothing to list — unless capital-letter titles may add some.
+  if (marked && !settings.autoTrackUppercase && !Object.keys(marked).some((k) => k.startsWith(`${service}:`))) {
     return { candidates: [], stats: { listed: 0, missing: 0, excluded: 0 }, skipped: true };
   }
   const listing = await listChats(service, settings, { allowOpen: settings.auto.openTabs, stopBefore });
+  // Re-read: the listing may have marked chats by their capital-letter titles.
+  const tracked = marked ? await getTracked() : null;
   for (const w of listing.warnings) await addLog('warn', `${SERVICES[service].label}: ${w}`);
   await updateTrackedTitles(listing.items);
 

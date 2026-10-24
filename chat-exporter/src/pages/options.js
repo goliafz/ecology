@@ -40,6 +40,7 @@ function fill() {
   field('svc-claude').checked = s.services.claude;
   field('includeChatGptProjects').checked = s.includeChatGptProjects;
   field('trackActivity').checked = s.trackActivity;
+  field('autoTrackUppercase').checked = s.autoTrackUppercase;
   field('auto-enabled').checked = s.auto.enabled;
   setRadio('auto-scope', s.auto.scope);
   field('auto-time').value = s.auto.time.padStart(5, '0');
@@ -79,7 +80,7 @@ async function renderTracked() {
     h('thead', {}, h('tr', {}, h('th', {}, 'Сервис'), h('th', {}, 'Чат'), h('th', {}, 'Последнее сохранение'), h('th', {}, ''))),
     h('tbody', {}, ...list.map((/** @type {any} */ t) => h('tr', {},
       h('td', {}, t.service === 'claude' ? 'Claude' : 'ChatGPT'),
-      h('td', {}, h('a', { href: t.service === 'claude' ? `https://claude.ai/chat/${t.id}` : `https://chatgpt.com/c/${t.id}`, target: '_blank', rel: 'noopener' }, t.title || t.id), h('div', { class: 'small muted' }, t.id)),
+      h('td', {}, h('a', { href: t.service === 'claude' ? `https://claude.ai/chat/${t.id}` : `https://chatgpt.com/c/${t.id}`, target: '_blank', rel: 'noopener' }, t.title || t.id), t.auto ? h('span', { class: 'badge', title: 'Помечен автоматически: название заглавными буквами' }, ' авто') : null, h('div', { class: 'small muted' }, t.id)),
       h('td', { class: 'small' }, t.lastError && (!t.lastExport || t.lastError.at > t.lastExport.at) ? `ошибка: ${t.lastError.message}` : t.lastExport ? fmtDate(t.lastExport.at) : 'ещё не сохранялся'),
       h('td', {}, h('button', { type: 'button', class: 'small', onclick: async () => {
         await call('setTracked', { service: t.service, id: t.id, title: t.title, tracked: false });
@@ -123,6 +124,7 @@ function collect() {
     services: { chatgpt: field('svc-chatgpt').checked, claude: field('svc-claude').checked },
     includeChatGptProjects: field('includeChatGptProjects').checked,
     trackActivity: field('trackActivity').checked,
+    autoTrackUppercase: field('autoTrackUppercase').checked,
     auto: {
       ...settings.auto,
       enabled: field('auto-enabled').checked,

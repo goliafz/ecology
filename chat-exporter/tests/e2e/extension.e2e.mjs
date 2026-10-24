@@ -66,7 +66,9 @@ scroller.addEventListener('scroll', render);
 render();
 </script>`;
 
-const state = { chatgptUpdate: 1761300600, chatgptAnswer: 'Ок' };
+const state = { chatgptUpdate: 1761300600, chatgptAnswer: 'Ок', showUpper: false };
+const UPPER_ID = '22222222-3333-4444-5555-666666666666';
+const TAB_UPPER_ID = '33333333-4444-5555-6666-777777777777';
 
 function chatGptConversation() {
   const raw = chatGptFixture();
@@ -83,16 +85,22 @@ async function routeSites(context) {
     const json = (obj) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(obj) });
     if (url.pathname === '/api/auth/session') return json({ accessToken: 'test-token' });
     if (url.pathname === '/backend-api/conversations') {
-      return json({ items: [{ id: CHATGPT_ID, title: 'Тестовый чат: код и таблицы', create_time: '2025-10-24T10:00:00Z', update_time: new Date(state.chatgptUpdate * 1000).toISOString() }], total: 1, limit: 100, offset: 0 });
+      const items = [{ id: CHATGPT_ID, title: 'Тестовый чат: код и таблицы', create_time: '2025-10-24T10:00:00Z', update_time: new Date(state.chatgptUpdate * 1000).toISOString() }];
+      if (state.showUpper) items.push({ id: UPPER_ID, title: 'ДЕДУШКА', create_time: '2025-01-01T10:00:00Z', update_time: '2025-01-01T11:00:00Z' });
+      return json({ items, total: items.length, limit: 100, offset: 0 });
     }
     if (url.pathname.startsWith('/backend-api/gizmos/snorlax/sidebar')) return json({ items: [], cursor: null });
     if (url.pathname === `/backend-api/conversation/${CHATGPT_ID}`) {
       if (route.request().headers().authorization !== 'Bearer test-token') return route.fulfill({ status: 401, body: '{}' });
       return json(chatGptConversation());
     }
+    if (url.pathname === `/backend-api/conversation/${UPPER_ID}`) return json({ ...chatGptConversation(), title: 'ДЕДУШКА', conversation_id: UPPER_ID, update_time: 1735729200 });
     if (url.pathname === `/backend-api/conversation/${CANVAS_ID}`) return json(canvasConversation());
     if (url.pathname.startsWith('/backend-api/files/download/')) return json({ status: 'success', download_url: 'https://chatgpt.com/files/img.png' });
     if (url.pathname === '/files/img.png') return route.fulfill({ status: 200, contentType: 'image/png', body: PNG });
+    if (url.pathname === `/c/${TAB_UPPER_ID}`) {
+      return route.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: chatPage('КОТ', '<p>chat</p>') });
+    }
     if (url.pathname === `/c/${CHATGPT_ID}`) {
       return route.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: chatPage('Тестовый чат: код и таблицы - ChatGPT',
         '<div data-message-author-role="user" data-message-id="u1"><div class="whitespace-pre-wrap">Привет! Покажи пример кода на Python.</div></div>'
@@ -266,7 +274,8 @@ async function main() {
 
     // 4. Marked chats only (default scope): without marks nothing is backed up.
     r = await call('runBackupNow');
-    assert.match(r.data.note || '', /Нет помеченных чатов/);
+    assert.equal(r.data.queued, 0, 'nothing marked, no capital-letter titles -> nothing saved');
+    await waitIdle('no-marks');
     const iconTitle = () => sw.evaluate(async () => {
       const [tab] = await chrome.tabs.query({ url: 'https://chatgpt.com/c/*' });
       return chrome.action.getTitle({ tabId: tab.id });
@@ -302,6 +311,36 @@ async function main() {
     console.log('auto jobs:', autoJobs);
     assert.ok(s.jobs.some((j) => j.key === `chatgpt:${CHATGPT_ID}` && j.outcome === 'saved'), 'changed ChatGPT chat saved');
     assert.ok(!s.jobs.some((j) => j.key === `claude:${CLAUDE_ID}`), 'unchanged Claude chat not queued');
+
+    // 4a2. A chat titled in capital letters appears in the list: it is marked and saved by itself.
+    state.showUpper = true;
+    r = await call('runBackupNow');
+    s = await waitIdle('uppercase');
+    const marked = (await call('getTracked')).data;
+    console.log('marked after uppercase run:', marked.map((t) => `${t.title}${t.auto ? ' (авто)' : ''}`));
+    assert.ok(marked.some((t) => t.key === `chatgpt:${UPPER_ID}` && t.auto), 'ДЕДУШКА marked automatically');
+    assert.ok(s.jobs.some((j) => j.key === `chatgpt:${UPPER_ID}` && j.outcome === 'saved'), 'ДЕДУШКА saved');
+    // Unmarking it manually is remembered: the next run does not mark it again.
+    await call('setTracked', { service: 'chatgpt', id: UPPER_ID, title: 'ДЕДУШКА', tracked: false });
+    r = await call('runBackupNow');
+    await waitIdle('uppercase-optout');
+    assert.ok(!(await call('getTracked')).data.some((t) => t.key === `chatgpt:${UPPER_ID}`), 'manual unmark respected');
+
+    // 4a3. A chat opened in a tab whose title is in capital letters is marked right away.
+    const catTab = await context.newPage();
+    await catTab.goto(`https://chatgpt.com/c/${TAB_UPPER_ID}`);
+    let catMarked = false;
+    for (let i = 0; i < 20 && !catMarked; i++) {
+      await ui.waitForTimeout(300);
+      catMarked = (await call('getTracked')).data.some((t) => t.key === `chatgpt:${TAB_UPPER_ID}` && t.auto);
+    }
+    assert.ok(catMarked, 'tab titled КОТ marked automatically');
+    const catIcon = await sw.evaluate(async (id) => {
+      const [tab] = await chrome.tabs.query({ url: `https://chatgpt.com/c/${id}` });
+      return chrome.action.getTitle({ tabId: tab.id });
+    }, TAB_UPPER_ID);
+    assert.match(catIcon, /помечен «Сохранять»/, 'green icon on the auto-marked tab');
+    await catTab.close();
 
     // 4b. DOM fallback: the data endpoint fails (503) for a chat open in a tab with a virtualized list.
     const domTab = await context.newPage();

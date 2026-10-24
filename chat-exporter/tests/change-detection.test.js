@@ -130,3 +130,11 @@ test('settings: auto scope defaults to marked chats', () => {
   assert.equal(normalizeSettings({ schema: 2, auto: { scope: 'all' } }).auto.scope, 'all');
   assert.equal(normalizeSettings({ schema: 2, auto: { scope: 'x' } }).auto.scope, 'tracked');
 });
+
+test('capital-letter titles mark chats automatically', async () => {
+  const { isUppercaseTitle } = await import('../src/core/auto-track.js');
+  for (const t of ['ЧАТ', 'ДЕДУШКА', 'ПЛАН НА 2026', 'PLAN', 'ЧАТ-2: ИТОГИ!', '  ДОМ  ']) assert.equal(isUppercaseTitle(t), true, t);
+  for (const t of ['Чат', 'дедушка', 'ЧАТ про Python', 'Я', '2026', '', null, '中文标题', 'ChatGPT']) assert.equal(isUppercaseTitle(t), false, String(t));
+  assert.equal(normalizeSettings(null).autoTrackUppercase, true);
+  assert.equal(normalizeSettings({ autoTrackUppercase: false }).autoTrackUppercase, false);
+});

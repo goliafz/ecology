@@ -128,7 +128,7 @@ export async function runBackup(trigger) {
     await addLog('info', 'Резервное копирование уже выполняется — новый запуск не нужен');
     return { queued: 0, errors: [] };
   }
-  if (settings.auto.scope === 'tracked' && Object.keys(await getTracked()).length === 0) {
+  if (settings.auto.scope === 'tracked' && !settings.autoTrackUppercase && Object.keys(await getTracked()).length === 0) {
     const note = 'Нет помеченных чатов: отметьте «Сохранять» в окне расширения на нужных чатах';
     await updateKey('schedule', (s) => ({ ...(s || {}), lastRunStartedAt: Date.now(), lastRunFinishedAt: Date.now(), lastRunSummary: note, missedPending: null, nextRunAt: null }));
     if (settings.auto.enabled) await syncSchedule();

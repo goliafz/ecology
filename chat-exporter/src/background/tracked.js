@@ -5,6 +5,7 @@
 // Claude /chat/<uuid>) and matches the id in the service's data, so renaming does not matter.
 import { chatKey, serviceFromUrl, SERVICES } from '../adapters/registry.js';
 import { getKey, updateKey } from './storage.js';
+import { isUppercaseTitle } from '../core/auto-track.js';
 
 /**
  * @typedef {Object} TrackedChat
@@ -12,6 +13,7 @@ import { getKey, updateKey } from './storage.js';
  * @property {string} id
  * @property {string} title
  * @property {number} addedAt
+ * @property {boolean} [auto] marked automatically (title in capital letters)
  */
 
 /** @returns {Promise<Record<string, TrackedChat>>} */
@@ -35,7 +37,36 @@ export async function setTracked(chat, tracked) {
     }
     return next;
   });
+  // A manual choice wins over the capital-letters rule: an unmarked chat is not re-marked.
+  await updateKey('trackOptOut', (map) => {
+    const next = { ...(map || {}) };
+    if (tracked) delete next[key];
+    else next[key] = Date.now();
+    return next;
+  });
   await refreshAllIcons();
+}
+
+/**
+ * Marks chats whose title is written in capital letters (unless the user unmarked them before).
+ * @param {Array<{ service: import('../core/model.js').ServiceId, id: string, title: string }>} chats
+ * @returns {Promise<string[]>} keys of newly marked chats
+ */
+export async function autoTrackUppercase(chats) {
+  const candidates = chats.filter((c) => c && c.id && isUppercaseTitle(c.title));
+  if (!candidates.length) return [];
+  const [tracked, optOut] = await Promise.all([getTracked(), getKey('trackOptOut').then((m) => m || {})]);
+  const fresh = candidates.filter((c) => !tracked[chatKey(c.service, c.id)] && !optOut[chatKey(c.service, c.id)]);
+  if (!fresh.length) return [];
+  await updateKey('tracked', (map) => {
+    const next = { ...(map || {}) };
+    for (const c of fresh) {
+      const key = chatKey(c.service, c.id);
+      if (!next[key]) next[key] = { service: c.service, id: c.id, title: c.title, addedAt: Date.now(), auto: true };
+    }
+    return next;
+  });
+  return fresh.map((c) => chatKey(c.service, c.id));
 }
 
 /**
