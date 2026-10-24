@@ -36,6 +36,7 @@ jobs:
           key: vidlex-deps-small-v1
 
       - name: Установка компонентов скриптом Install-Dependencies.ps1 (Windows PowerShell 5.1)
+        id: deps
         shell: powershell
         run: |
           VidLex\scripts\Install-Dependencies.ps1 -Model small -DataDir "$env:DEPS"
@@ -53,6 +54,7 @@ jobs:
             --ffmpeg "$env:DEPS\tools\ffmpeg\ffmpeg.exe" --ffprobe "$env:DEPS\tools\ffmpeg\ffprobe.exe"
 
       - name: Проверка интерфейса (запуск без компонентов)
+        if: ${{ !cancelled() }}
         shell: powershell
         run: |
           $media = "$env:RUNNER_TEMP\gui-empty"
@@ -62,6 +64,7 @@ jobs:
             -DataDir "$env:RUNNER_TEMP\gui-nodeps" -ShotsDir "artifacts\screenshots" -Prefix "nodeps-" -NoStart
 
       - name: Проверка интерфейса (обработка папки из GUI)
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
         shell: powershell
         run: |
           $media = "$env:RUNNER_TEMP\gui-media"

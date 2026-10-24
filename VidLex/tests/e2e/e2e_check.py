@@ -129,7 +129,9 @@ def main():
             check(f"WER ≤ {limit}: {rel}", w <= limit, f"WER={w:.2f}")
         check(f"UTF-8 с BOM и CRLF: {rel}", raw.startswith(b"\xef\xbb\xbf") and b"\r\n" in raw)
         check(f"кириллица читается: {rel}", re.search(r"[а-яА-ЯёЁ]{3,}", text) is not None)
-        glued = re.findall(r"[а-яё][.!?…][А-ЯЁа-яё]", text)
+        # Склейка — знак конца предложения сразу после слова (2+ буквы) без пробела. Сокращения «т.д.», «т.е.»
+        # (одна буква перед точкой) склейкой не считаются.
+        glued = re.findall(r"[а-яё]{2}[.!?…][А-ЯЁа-яё]", text)
         check(f"нет склеенных фраз (точка без пробела): {rel}", not glued, str(glued[:3]))
         longw = [x for x in re.findall(r"\S+", text) if len(x) > 30]
         check(f"нет слипшихся слов: {rel}", not longw, str(longw[:3]))
