@@ -138,3 +138,18 @@ test('capital-letter titles mark chats automatically', async () => {
   assert.equal(normalizeSettings(null).autoTrackUppercase, true);
   assert.equal(normalizeSettings({ autoTrackUppercase: false }).autoTrackUppercase, false);
 });
+
+test('wrong automatic marks are removed once the real title is known', async () => {
+  const { isUppercaseTitle, staleAutoMarks } = await import('../src/core/auto-track.js');
+  // Titles from the user's report: one capital word is not enough.
+  for (const t of ['ТЗ для VidLex', 'Разработка SMB приложения', 'API ключи', 'SMB']) assert.equal(isUppercaseTitle(t), t === 'SMB', t);
+  const tracked = {
+    'chatgpt:a': { title: 'РУКОВОДИТЕЛЬ', auto: true },
+    'chatgpt:b': { title: 'РУКОВОДИТЕЛЬ', auto: true },
+    'chatgpt:c': { title: 'Мой чат' },
+    'claude:d': { title: 'ДОМ', auto: true },
+  };
+  const titles = { 'chatgpt:a': 'РУКОВОДИТЕЛЬ', 'chatgpt:b': 'Разработка SMB приложения', 'chatgpt:c': 'Мой чат', 'claude:d': '' };
+  // b: auto mark with a mixed-case title -> removed; c: manual mark stays; d: title unknown -> stays.
+  assert.deepEqual(staleAutoMarks(tracked, titles), ['chatgpt:b']);
+});

@@ -31,6 +31,8 @@ export async function listChats(service, settings, options) {
   const unique = new Map();
   for (const it of /** @type {import('../core/model.js').ChatListItem[]} */ (items)) unique.set(it.id, it);
   const list = [...unique.values()];
+  // Real titles from the list also correct automatic marks set by a stale tab title.
+  await updateTrackedTitles(list);
   if (settings.autoTrackUppercase) {
     const added = await autoTrackUppercase(list);
     if (added.length) {
@@ -71,7 +73,6 @@ export async function findCandidates(service, settings, schedule) {
   // Re-read: the listing may have marked chats by their capital-letter titles.
   const tracked = marked ? await getTracked() : null;
   for (const w of listing.warnings) await addLog('warn', `${SERVICES[service].label}: ${w}`);
-  await updateTrackedTitles(listing.items);
 
   const index = await getIndex();
   const result = detectChanges(index, listing.items, {

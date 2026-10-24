@@ -66,9 +66,10 @@ scroller.addEventListener('scroll', render);
 render();
 </script>`;
 
-const state = { chatgptUpdate: 1761300600, chatgptAnswer: 'Ок', showUpper: false };
+const state = { chatgptUpdate: 1761300600, chatgptAnswer: 'Ок', showUpper: false, showMixed: false };
 const UPPER_ID = '22222222-3333-4444-5555-666666666666';
 const TAB_UPPER_ID = '33333333-4444-5555-6666-777777777777';
+const SPA_NEXT_ID = '44444444-5555-6666-7777-888888888888';
 
 function chatGptConversation() {
   const raw = chatGptFixture();
@@ -87,6 +88,7 @@ async function routeSites(context) {
     if (url.pathname === '/backend-api/conversations') {
       const items = [{ id: CHATGPT_ID, title: 'Тестовый чат: код и таблицы', create_time: '2025-10-24T10:00:00Z', update_time: new Date(state.chatgptUpdate * 1000).toISOString() }];
       if (state.showUpper) items.push({ id: UPPER_ID, title: 'ДЕДУШКА', create_time: '2025-01-01T10:00:00Z', update_time: '2025-01-01T11:00:00Z' });
+      if (state.showMixed) items.push({ id: SPA_NEXT_ID, title: 'Разработка SMB приложения', create_time: '2025-01-01T10:00:00Z', update_time: new Date(state.chatgptUpdate * 1000).toISOString() });
       return json({ items, total: items.length, limit: 100, offset: 0 });
     }
     if (url.pathname.startsWith('/backend-api/gizmos/snorlax/sidebar')) return json({ items: [], cursor: null });
@@ -340,7 +342,51 @@ async function main() {
       return chrome.action.getTitle({ tabId: tab.id });
     }, TAB_UPPER_ID);
     assert.match(catIcon, /помечен «Сохранять»/, 'green icon on the auto-marked tab');
+
+    // 4a4. Switching chats inside the page (as ChatGPT does): the address changes first and the
+    //      tab still shows the OLD title "КОТ" for a moment. The new chat must not be marked.
+    await catTab.evaluate((id) => {
+      history.pushState({}, '', `/c/${id}`);
+      setTimeout(() => { document.title = 'Разработка SMB приложения'; }, 800);
+    }, SPA_NEXT_ID);
+    await ui.waitForTimeout(4000);
+    const wronglyMarked = (await call('getTracked')).data.some((t) => t.key === `chatgpt:${SPA_NEXT_ID}`);
+    assert.equal(wronglyMarked, false, 'chat opened after an upper-case chat is not marked by the stale title');
+    const nextIcon = await sw.evaluate(async (id) => {
+      const [tab] = await chrome.tabs.query({ url: `https://chatgpt.com/c/${id}` });
+      return chrome.action.getTitle({ tabId: tab.id });
+    }, SPA_NEXT_ID);
+    assert.match(nextIcon, /не помечен/, 'red icon on the next chat');
     await catTab.close();
+
+    // The КОТ chat has no data on the stub server: unmark it so the next run does not export it.
+    await call('setTracked', { service: 'chatgpt', id: TAB_UPPER_ID, title: 'КОТ', tracked: false });
+
+    // 4a5. Marks already set wrongly by 1.3.0 are removed: at startup from known titles and on
+    //      the next list reading. The chat is not saved.
+    const seedWrongMark = () => sw.evaluate(async (id) => {
+      const { tracked } = await chrome.storage.local.get('tracked');
+      tracked[`chatgpt:${id}`] = { service: 'chatgpt', id, title: 'КОТ', addedAt: Date.now(), auto: true };
+      await chrome.storage.local.set({ tracked });
+    }, SPA_NEXT_ID);
+    const isMarked = async () => (await call('getTracked')).data.some((t) => t.key === `chatgpt:${SPA_NEXT_ID}`);
+    await seedWrongMark();
+    await sw.evaluate(async (id) => {
+      const key = 'listCache:chatgpt';
+      const cache = (await chrome.storage.local.get(key))[key] || { items: [] };
+      cache.items = [...cache.items, { service: 'chatgpt', id, title: 'Разработка SMB приложения', updatedAt: null }];
+      await chrome.storage.local.set({ [key]: cache });
+    }, SPA_NEXT_ID);
+    assert.equal(await isMarked(), true);
+    const cleaned = await sw.evaluate(() => globalThis.chatExporterDebug.cleanupAutoMarks());
+    assert.deepEqual(cleaned, [`chatgpt:${SPA_NEXT_ID}`], 'startup cleanup removes the wrong mark');
+    await seedWrongMark();
+    state.showMixed = true;
+    r = await call('runBackupNow');
+    s = await waitIdle('mixed-case');
+    assert.equal(await isMarked(), false, 'list reading removes the wrong mark');
+    assert.ok(!s.jobs.some((j) => j.key === `chatgpt:${SPA_NEXT_ID}`), 'wrongly marked chat not saved');
+    state.showMixed = false;
 
     // 4b. DOM fallback: the data endpoint fails (503) for a chat open in a tab with a virtualized list.
     const domTab = await context.newPage();

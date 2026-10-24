@@ -11,7 +11,7 @@ import { BACKUP_ALARM, CATCHUP_ALARM, checkMissedRun, getSchedule, onScheduleAla
 import { loadSettings, saveSettings, DEFAULT_SETTINGS } from './settings.js';
 import { getIndex, getKey, setKey, updateIndexEntry, updateKey } from './storage.js';
 import { ensureContentScript, sendToTab } from './tabs.js';
-import { autoTrackUppercase, getTracked, refreshAllIcons, setTracked, updateTabIcon } from './tracked.js';
+import { autoTrackUppercase, cleanupAutoMarks, getTracked, refreshAllIcons, setTracked, updateTabIcon, updateTrackedTitles } from './tracked.js';
 import { writeFile } from './downloads.js';
 import { expandTemplate } from '../core/filenames.js';
 
@@ -30,33 +30,58 @@ chrome.runtime.onStartup.addListener(() => {
 });
 
 // Toolbar icon colour per tab: green = chat marked "Сохранять", red = not marked.
+// The capital-letters rule reads the tab title. ChatGPT and Claude switch chats without reloading:
+// the address changes first while the tab still shows the PREVIOUS chat's title for a moment.
+// So the title is checked only after it has settled, and a title left over from the previous
+// address is ignored.
+/** @type {Map<number, { titleAtUrlChange: string, timer?: ReturnType<typeof setTimeout> }>} */
+const tabTitleState = new Map();
+
 chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
   if (!info.url && !info.title && info.status !== 'complete') return;
-  autoTrackTab(tab)
-    .catch(() => {})
-    .then(() => updateTabIcon(tabId, tab.url))
-    .catch(() => {});
+  const st = tabTitleState.get(tabId) || { titleAtUrlChange: '' };
+  if (info.url) st.titleAtUrlChange = cleanTabTitle(tab.title || '');
+  clearTimeout(st.timer);
+  st.timer = setTimeout(() => {
+    checkTabTitle(tabId, tab.url || '', st.titleAtUrlChange).catch(() => {});
+  }, 1500);
+  tabTitleState.set(tabId, st);
+  updateTabIcon(tabId, tab.url).catch(() => {});
+});
+chrome.tabs.onRemoved.addListener((tabId) => {
+  clearTimeout(tabTitleState.get(tabId)?.timer);
+  tabTitleState.delete(tabId);
 });
 
 /**
- * Marks the chat open in a tab when its title is written in capital letters.
- * @param {chrome.tabs.Tab} tab
+ * Applies the capital-letters rule to the settled title of a chat tab.
+ * @param {number} tabId
+ * @param {string} expectedUrl address when the check was scheduled
+ * @param {string} staleTitle title the tab showed when its address changed (previous chat)
  */
-async function autoTrackTab(tab) {
+async function checkTabTitle(tabId, expectedUrl, staleTitle) {
+  const tab = await chrome.tabs.get(tabId);
+  if (!tab.url || tab.url !== expectedUrl) return; // navigated again; a newer check is pending
   const service = serviceFromUrl(tab.url);
-  if (!service || !tab.title) return;
-  const id = SERVICES[service].idFromUrl(tab.url || '');
+  if (!service) return;
+  const id = SERVICES[service].idFromUrl(tab.url);
   if (!id) return;
   const settings = await loadSettings();
   if (!settings.autoTrackUppercase) return;
-  const title = cleanTabTitle(tab.title);
+  const title = cleanTabTitle(tab.title || '');
+  if (!title || title === staleTitle) return; // not settled yet, or left over from the previous chat
+  const removed = await updateTrackedTitles([{ service, id, title }]);
+  if (removed.length) await addLog('info', 'Автоматическая пометка снята: название не заглавными буквами', { chat: removed[0], title });
   const added = await autoTrackUppercase([{ service, id, title }]);
   if (added.length) await addLog('info', 'Чат помечен «Сохранять» автоматически: название заглавными буквами', { chat: added[0], title });
+  await updateTabIcon(tabId, tab.url);
 }
 
 /** @param {string} title */
 function cleanTabTitle(title) {
-  return String(title || '').replace(/\s*[-|–]\s*(ChatGPT|Claude)\s*$/i, '').trim();
+  const t = String(title || '').replace(/\s*[-|–]\s*(ChatGPT|Claude)\s*$/i, '').trim();
+  // While a chat loads the tab shows the service name, a placeholder or the address: not a chat title.
+  return /^(ChatGPT|Claude|New chat|Новый чат|Новый диалог)$/i.test(t) || /^[a-z]+:\/\/|^[\w.-]+\.(com|ai)\//i.test(t) ? '' : t;
 }
 chrome.tabs.onActivated.addListener(({ tabId }) => {
   chrome.tabs.get(tabId).then((tab) => updateTabIcon(tabId, tab.url), () => {});
@@ -76,6 +101,8 @@ async function init() {
   initialized = true;
   await resumeQueue();
   await checkMissedRun();
+  const removed = await cleanupAutoMarks();
+  if (removed.length) await addLog('info', `Снята ошибочная автоматическая пометка «Сохранять» (название не заглавными буквами): ${removed.length} чат(ов)`);
   await refreshAllIcons();
 }
 
@@ -83,7 +110,7 @@ async function init() {
 init().catch((err) => console.error('[Chat Exporter] init failed', err));
 
 // Handles for the DevTools console of the service worker (diagnostics and e2e tests).
-/** @type {any} */ (globalThis).chatExporterDebug = { checkMissedRun, runBackup, syncSchedule, processQueue, htmlToPdf };
+/** @type {any} */ (globalThis).chatExporterDebug = { cleanupAutoMarks, checkMissedRun, runBackup, syncSchedule, processQueue, htmlToPdf };
 
 // ---- Message router -----------------------------------------------------------------------
 

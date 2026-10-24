@@ -5,7 +5,7 @@
 // Claude /chat/<uuid>) and matches the id in the service's data, so renaming does not matter.
 import { chatKey, serviceFromUrl, SERVICES } from '../adapters/registry.js';
 import { getKey, updateKey } from './storage.js';
-import { isUppercaseTitle } from '../core/auto-track.js';
+import { isUppercaseTitle, staleAutoMarks } from '../core/auto-track.js';
 
 /**
  * @typedef {Object} TrackedChat
@@ -70,21 +70,42 @@ export async function autoTrackUppercase(chats) {
 }
 
 /**
- * Keeps stored titles up to date (titles change, ids do not).
+ * Keeps stored titles up to date (titles change, ids do not) and removes automatic marks whose
+ * real title is not written in capital letters (manual marks are kept).
  * @param {Array<{ service: string, id: string, title: string }>} chats
+ * @returns {Promise<string[]>} keys of removed automatic marks
  */
 export async function updateTrackedTitles(chats) {
   const tracked = await getTracked();
-  const changed = chats.filter((c) => tracked[chatKey(c.service, c.id)] && tracked[chatKey(c.service, c.id)].title !== c.title);
-  if (!changed.length) return;
+  /** @type {Record<string, string>} */
+  const titles = {};
+  for (const c of chats) if (c && c.id && typeof c.title === 'string') titles[chatKey(c.service, c.id)] = c.title;
+  const stale = new Set(staleAutoMarks(tracked, titles));
+  const renamed = Object.keys(titles).filter((k) => tracked[k] && !stale.has(k) && tracked[k].title !== titles[k]);
+  if (!stale.size && !renamed.length) return [];
   await updateKey('tracked', (map) => {
     const next = { ...(map || {}) };
-    for (const c of changed) {
-      const key = chatKey(c.service, c.id);
-      if (next[key]) next[key] = { ...next[key], title: c.title };
-    }
+    for (const k of stale) delete next[k];
+    for (const k of renamed) if (next[k]) next[k] = { ...next[k], title: titles[k] };
     return next;
   });
+  if (stale.size) await refreshAllIcons();
+  return [...stale];
+}
+
+/**
+ * Removes automatic marks that contradict titles already known from the chat index and the
+ * cached chat lists (marks set by a stale tab title before version 1.3.1).
+ * @returns {Promise<string[]>} keys of removed automatic marks
+ */
+export async function cleanupAutoMarks() {
+  /** @type {Array<{ service: string, id: string, title: string }>} */
+  const known = Object.values((await getKey('chatIndex')) || {});
+  for (const service of Object.keys(SERVICES)) {
+    const cache = await getKey(`listCache:${service}`);
+    if (cache && Array.isArray(cache.items)) known.push(...cache.items); // fresher: applied last
+  }
+  return updateTrackedTitles(known);
 }
 
 // Absolute paths: relative ones would resolve against the service worker's folder.
