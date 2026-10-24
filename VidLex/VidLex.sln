@@ -1,0 +1,45 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{34C4350A-0CC1-4435-902E-219A8EB5F3A8}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VidLex.Core", "src\VidLex.Core\VidLex.Core.csproj", "{447B2EA9-0145-4B86-9ECB-4C281A980171}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{36EDFD51-2781-4D13-B678-27E4905D5848}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VidLex.Core.Tests", "tests\VidLex.Core.Tests\VidLex.Core.Tests.csproj", "{18DE119F-37B9-4A73-9EE7-9FBC13696B6C}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tools", "tools", "{E8D19B28-C97E-4BFE-BAF6-D65A2D8ED78C}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VidLex.Cli", "tools\VidLex.Cli\VidLex.Cli.csproj", "{0D1A8C3A-109D-4273-8A5E-742C2E7392F0}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{447B2EA9-0145-4B86-9ECB-4C281A980171}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{447B2EA9-0145-4B86-9ECB-4C281A980171}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{447B2EA9-0145-4B86-9ECB-4C281A980171}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{447B2EA9-0145-4B86-9ECB-4C281A980171}.Release|Any CPU.Build.0 = Release|Any CPU
+		{18DE119F-37B9-4A73-9EE7-9FBC13696B6C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{18DE119F-37B9-4A73-9EE7-9FBC13696B6C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{18DE119F-37B9-4A73-9EE7-9FBC13696B6C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{18DE119F-37B9-4A73-9EE7-9FBC13696B6C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0D1A8C3A-109D-4273-8A5E-742C2E7392F0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0D1A8C3A-109D-4273-8A5E-742C2E7392F0}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0D1A8C3A-109D-4273-8A5E-742C2E7392F0}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0D1A8C3A-109D-4273-8A5E-742C2E7392F0}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{447B2EA9-0145-4B86-9ECB-4C281A980171} = {34C4350A-0CC1-4435-902E-219A8EB5F3A8}
+		{18DE119F-37B9-4A73-9EE7-9FBC13696B6C} = {36EDFD51-2781-4D13-B678-27E4905D5848}
+		{0D1A8C3A-109D-4273-8A5E-742C2E7392F0} = {E8D19B28-C97E-4BFE-BAF6-D65A2D8ED78C}
+	EndGlobalSection
+EndGlobal

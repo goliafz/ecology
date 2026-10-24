@@ -1,0 +1,12 @@
+bin/
+obj/
+*.user
+*.suo
+.vs/
+TestResults/
+artifacts/
+publish/
+# Внешние компоненты скачиваются скриптом установки и в репозиторий не входят.
+tools/downloads/
+src/VidLex.App/tools/
+*.bin

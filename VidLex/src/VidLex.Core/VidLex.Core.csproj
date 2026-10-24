@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Ядро без зависимостей от WPF. net48 — целевая платформа приложения,
+       net8.0 — только для запуска модульных и сквозных тестов на любой ОС. -->
+  <PropertyGroup>
+    <TargetFrameworks>net48;net8.0</TargetFrameworks>
+    <RootNamespace>VidLex.Core</RootNamespace>
+    <AssemblyName>VidLex.Core</AssemblyName>
+    <AssemblyTitle>VidLex — ядро обработки</AssemblyTitle>
+    <Description>Поиск видео, извлечение аудио (FFmpeg), распознавание русской речи (whisper.cpp), постобработка и сохранение TXT.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <PackageReference Include="WeCantSpell.Hunspell" Version="7.0.1" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="VidLex.Core.Tests" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Консольный запуск того же конвейера без интерфейса: пакетная обработка и сквозные тесты.
+       net48 — для Windows, net8.0 — для проверки на Linux/macOS. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFrameworks>net48;net8.0</TargetFrameworks>
+    <AssemblyName>VidLex.Cli</AssemblyName>
+    <RootNamespace>VidLex.Cli</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\VidLex.Core\VidLex.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\..\src\VidLex.App\Dictionaries\ru_RU.dic" Link="Dictionaries\ru_RU.dic" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\src\VidLex.App\Dictionaries\ru_RU.aff" Link="Dictionaries\ru_RU.aff" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>
