@@ -56,23 +56,12 @@ jobs:
       - name: Проверка интерфейса (запуск без компонентов)
         if: ${{ !cancelled() }}
         shell: powershell
-        run: |
-          $media = "$env:RUNNER_TEMP\gui-empty"
-          New-Item -ItemType Directory -Force $media | Out-Null
-          Copy-Item "VidLex\tests\e2e\media\Урок 01.mp4" $media
-          VidLex\scripts\ci\Gui-Smoke.ps1 -AppExe "VidLex\src\VidLex.App\bin\Release\net48\VidLex.exe" -Source $media `
-            -DataDir "$env:RUNNER_TEMP\gui-nodeps" -ShotsDir "artifacts\screenshots" -Prefix "nodeps-" -NoStart
+        run: VidLex\scripts\ci\Run-GuiChecks.ps1 -Mode NoDeps -Repo "$env:GITHUB_WORKSPACE" -Temp "$env:RUNNER_TEMP"
 
       - name: Проверка интерфейса (обработка папки из GUI)
         if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
         shell: powershell
-        run: |
-          $media = "$env:RUNNER_TEMP\gui-media"
-          Copy-Item -Recurse "VidLex\tests\e2e\media" $media
-          Remove-Item "$media\Лекция с шумом.mpeg", "$media\Длинная лекция.mp4"
-          VidLex\scripts\ci\Gui-Smoke.ps1 -AppExe "VidLex\src\VidLex.App\bin\Release\net48\VidLex.exe" -Source $media `
-            -DataDir "$env:DEPS" -ShotsDir "artifacts\screenshots" -TimeoutSec 900
-          Copy-Item -Recurse "$env:DEPS\Logs" "artifacts\gui-logs"
+        run: VidLex\scripts\ci\Run-GuiChecks.ps1 -Mode Full -Repo "$env:GITHUB_WORKSPACE" -Temp "$env:RUNNER_TEMP" -Deps "$env:DEPS"
 
       - name: Release-сборка с компонентами
         if: always()
