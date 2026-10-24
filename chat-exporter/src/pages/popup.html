@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Chat Exporter</title>
+<link rel="stylesheet" href="common.css">
+<link rel="stylesheet" href="popup.css">
+</head>
+<body>
+<header class="row">
+  <h1>Chat Exporter</h1>
+  <span class="spacer"></span>
+  <button class="link" id="open-options" title="Настройки">Настройки</button>
+</header>
+
+<div id="missed" class="notice warn" hidden>
+  <div id="missed-text"></div>
+  <div class="row" style="margin-top:6px">
+    <button class="primary" id="run-missed">Выполнить сейчас</button>
+    <button id="dismiss-missed">Пропустить</button>
+  </div>
+</div>
+
+<section class="card stack">
+  <div id="current-chat" class="small"></div>
+  <div id="formats"></div>
+  <button class="primary wide" id="export-current">Экспорт текущего чата</button>
+</section>
+
+<section class="stack">
+  <div class="row">
+    <button id="choose-chats" class="grow">Выбрать чаты</button>
+    <button id="export-selected" class="grow">Экспортировать выбранные</button>
+  </div>
+</section>
+
+<section class="card stack">
+  <label class="switch"><input type="checkbox" id="auto-toggle"><span><strong>Автоматический режим</strong></span></label>
+  <div id="auto-info" class="small muted"></div>
+  <button id="backup-now" class="small">Сохранить изменившиеся чаты сейчас</button>
+</section>
+
+<section id="status" class="stack" hidden>
+  <div class="row"><strong id="status-title">Выполняется</strong><span class="spacer"></span><button class="danger small" id="cancel">Отменить</button></div>
+  <div class="progress"><div id="progress-bar"></div></div>
+  <div id="progress-text" class="small muted"></div>
+</section>
+
+<div id="result" class="notice" hidden></div>
+
+<footer class="row small">
+  <button class="link" id="open-log">Журнал операций</button>
+  <span class="spacer"></span>
+  <span class="muted" id="version"></span>
+</footer>
+<script type="module" src="popup.js"></script>
+</body>
+</html>

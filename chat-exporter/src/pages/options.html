@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Chat Exporter — настройки</title>
+<link rel="stylesheet" href="common.css">
+<link rel="stylesheet" href="options.css">
+</head>
+<body>
+<main>
+<header class="row">
+  <h1>Chat Exporter — настройки</h1>
+  <span class="spacer"></span>
+  <a href="chats.html">Список чатов</a>
+</header>
+
+<form id="form" class="stack">
+
+<section class="card">
+  <h2>Форматы по умолчанию</h2>
+  <div class="field"><span>Ручной и пакетный экспорт</span><div id="formats"></div></div>
+</section>
+
+<section class="card">
+  <h2>Сохранение файлов</h2>
+  <p class="small muted">Chrome разрешает расширениям сохранять файлы только внутри папки загрузок (можно с подпапками). Абсолютные пути недоступны. Если в настройках Chrome включено «Всегда указывать место для скачивания», Chrome будет спрашивать путь для каждого файла — для автоматического режима это нужно отключить (chrome://settings/downloads).</p>
+  <label class="field"><span>Папка внутри «Загрузок»</span><input type="text" name="rootFolder"></label>
+  <label class="field"><span>Шаблон папки чата</span><input type="text" name="folderTemplate"></label>
+  <label class="field"><span>Шаблон имени файла</span><input type="text" name="fileTemplate"></label>
+  <p class="small muted">Переменные: <code>{service}</code> <code>{title}</code> <code>{id}</code> <code>{shortId}</code> <code>{date}</code> <code>{time}</code>. В папке всегда есть уникальный id, иначе чаты с одинаковыми названиями смешались бы. Папка чата фиксируется при первом экспорте, поэтому переименование чата не создаёт вторую папку.</p>
+  <div class="field"><span>Повторный экспорт</span>
+    <div class="stack">
+      <label><input type="radio" name="versioning" value="overwrite"> Обновлять текущую копию (файлы перезаписываются только при изменениях)</label>
+      <label><input type="radio" name="versioning" value="versions"> Создавать новую версию с датой и временем</label>
+    </div>
+  </div>
+  <label class="check"><input type="checkbox" name="eraseFromDownloadList"> Убирать сохранённые файлы из списка загрузок Chrome (сами файлы остаются)</label>
+</section>
+
+<section class="card">
+  <h2>Содержимое</h2>
+  <label class="check"><input type="checkbox" name="includeImages"> Встраивать изображения в HTML и PDF</label>
+  <label class="field"><span>Максимальный размер изображения, МБ</span><input type="number" name="maxImageMb" min="0.1" max="50" step="0.1"></label>
+  <label class="check"><input type="checkbox" name="mdEmbed"> Встраивать изображения и в Markdown (файл станет большим)</label>
+  <label class="check"><input type="checkbox" name="includeTools"> Включать вызовы инструментов (код, поиск, результаты)</label>
+  <label class="check"><input type="checkbox" name="includeThinking"> Включать размышления модели (если сервис их отдаёт)</label>
+  <label class="check"><input type="checkbox" name="domFallback"> Резервное извлечение со страницы, если данные недоступны</label>
+</section>
+
+<section class="card">
+  <h2>PDF</h2>
+  <div class="stack">
+    <label><input type="radio" name="pdfMethod" value="debugger"> Автоматически (печать Chrome через chrome.debugger). Во время генерации Chrome показывает полосу «…начало отладку этого браузера» — это нормально.</label>
+    <label><input type="radio" name="pdfMethod" value="dialog"> Через окно печати (сохранять вручную; в автоматическом режиме PDF пропускается)</label>
+  </div>
+  <p id="debugger-warning" class="notice warn small" hidden>Разрешение debugger отсутствует в manifest.json — доступен только вариант с окном печати.</p>
+</section>
+
+<section class="card">
+  <h2>Сервисы</h2>
+  <label class="check"><input type="checkbox" name="svc-chatgpt"> ChatGPT</label>
+  <label class="check"><input type="checkbox" name="svc-claude"> Claude</label>
+  <label class="check"><input type="checkbox" name="includeChatGptProjects"> ChatGPT: включать чаты из проектов</label>
+  <label class="check"><input type="checkbox" name="trackActivity"> Отмечать чаты, с которыми я работаю, как изменившиеся</label>
+</section>
+
+<section class="card">
+  <h2>Автоматическое резервное копирование</h2>
+  <p class="small muted">Работает только пока запущен Chrome. Если в назначенное время браузер закрыт или компьютер спит, запуск выполняется по правилу ниже при следующем запуске браузера.</p>
+  <label class="check"><input type="checkbox" name="auto-enabled"> Включено</label>
+  <label class="field"><span>Время</span><input type="time" name="auto-time"></label>
+  <div class="field"><span>Дни недели (пусто = каждый день)</span><div id="days" class="formats"></div></div>
+  <div class="field"><span>Форматы</span><div id="auto-formats"></div></div>
+  <div class="field"><span>Если запуск пропущен</span>
+    <select name="auto-missedRun">
+      <option value="ask">Спросить в окне расширения</option>
+      <option value="auto">Выполнить автоматически после запуска браузера</option>
+      <option value="skip">Пропустить</option>
+    </select>
+  </div>
+  <label class="field"><span>Не больше чатов за запуск</span><input type="number" name="auto-maxChatsPerRun" min="1" max="1000"></label>
+  <label class="field"><span>Пауза между чатами, с</span><input type="number" name="auto-delaySec" min="0.5" max="60" step="0.5"></label>
+  <label class="field"><span>Попыток при временных ошибках</span><input type="number" name="auto-maxAttempts" min="1" max="10"></label>
+  <label class="check"><input type="checkbox" name="auto-backfill"> Постепенно сохранить и старые чаты, изменённые до включения режима</label>
+  <label class="check"><input type="checkbox" name="auto-openTabs"> Открывать вкладку сервиса в фоне, если она закрыта</label>
+  <label class="check"><input type="checkbox" name="auto-closeOpenedTabs"> Закрывать вкладки, открытые расширением, после завершения</label>
+</section>
+
+<section class="card">
+  <h2>Исключённые чаты</h2>
+  <p class="small muted">Не участвуют в автоматическом копировании. Добавить можно на странице «Список чатов».</p>
+  <div id="excluded"></div>
+</section>
+
+<div class="row sticky">
+  <button type="submit" class="primary">Сохранить</button>
+  <span id="save-status" class="small muted"></span>
+  <span class="spacer"></span>
+  <button type="button" id="reset">Сбросить настройки</button>
+</div>
+</form>
+
+<section class="card" id="log">
+  <div class="row"><h2>Журнал операций</h2><span class="spacer"></span>
+    <label class="check small"><input type="checkbox" id="journal-enabled"> Вести журнал</label>
+    <button id="clear-log" class="danger small">Очистить журнал</button>
+  </div>
+  <p class="small muted">Журнал хранится только в этом браузере и содержит названия чатов и статусы, без текста переписок.</p>
+  <div id="log-table"></div>
+</section>
+
+<section class="card">
+  <h2>Данные расширения</h2>
+  <p class="small muted" id="index-stats"></p>
+  <button id="clear-index" class="danger">Очистить метаданные экспортов</button>
+  <p class="small muted">После очистки расширение будет считать все чаты несохранёнными. Файлы на диске не удаляются.</p>
+</section>
+</main>
+<script type="module" src="options.js"></script>
+</body>
+</html>

@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Chat Exporter — выбор чатов</title>
+<link rel="stylesheet" href="common.css">
+<link rel="stylesheet" href="chats.css">
+</head>
+<body>
+<main>
+<header class="row">
+  <h1>Выбор чатов</h1>
+  <span class="spacer"></span>
+  <a href="options.html">Настройки</a>
+</header>
+
+<section class="card stack">
+  <div class="row">
+    <label class="chip"><input type="radio" name="service" value="chatgpt" checked> ChatGPT</label>
+    <label class="chip"><input type="radio" name="service" value="claude"> Claude</label>
+    <button id="load" class="primary">Загрузить список</button>
+    <label class="small"><input type="checkbox" id="allow-open" checked> открыть вкладку сервиса, если её нет</label>
+  </div>
+  <div id="list-info" class="small muted"></div>
+</section>
+
+<section class="row">
+  <input type="search" id="search" placeholder="Поиск по названию" class="grow">
+  <select id="filter">
+    <option value="all">Все</option>
+    <option value="changed">Изменены после сохранения или не сохранены</option>
+    <option value="never">Ни разу не сохранены</option>
+    <option value="problems">Ошибки и неполные</option>
+    <option value="excluded">Исключённые</option>
+  </select>
+  <button id="select-visible">Выбрать видимые</button>
+  <button id="select-none">Снять выбор</button>
+</section>
+
+<section id="table"></section>
+
+<section class="card row sticky">
+  <div id="formats"></div>
+  <label class="small"><input type="checkbox" id="force"> перезаписать даже без изменений</label>
+  <span class="spacer"></span>
+  <span id="selected-count" class="small muted"></span>
+  <button id="export" class="primary">Экспортировать выбранные</button>
+</section>
+<div id="message" class="notice" hidden></div>
+</main>
+<script type="module" src="chats.js"></script>
+</body>
+</html>

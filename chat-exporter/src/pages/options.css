@@ -1,0 +1,14 @@
+main { max-width: 820px; margin: 0 auto; padding: 20px 16px 60px; }
+main > * + * { margin-top: 14px; }
+.spacer { flex: 1; }
+.card h2 { margin-top: 0; }
+.card > * + * { margin-top: 8px; }
+.field { display: grid; grid-template-columns: 240px 1fr; gap: 8px; align-items: center; }
+.field input[type="text"] { width: 100%; }
+.check { display: flex; gap: 8px; align-items: flex-start; }
+.sticky { position: sticky; bottom: 0; background: var(--bg); padding: 10px 0; border-top: 1px solid var(--border); }
+#log-table { max-height: 420px; overflow: auto; }
+.lvl-error { color: var(--err); }
+.lvl-warn { color: var(--warn); }
+code { background: var(--panel); padding: 0 4px; border-radius: 4px; }
+@media (max-width: 640px) { .field { grid-template-columns: 1fr; } }

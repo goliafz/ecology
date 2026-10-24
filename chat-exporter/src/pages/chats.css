@@ -1,0 +1,8 @@
+main { max-width: 1000px; margin: 0 auto; padding: 20px 16px 40px; }
+main > * + * { margin-top: 12px; }
+.spacer { flex: 1; }
+.grow { flex: 1; min-width: 200px; }
+.sticky { position: sticky; bottom: 0; }
+#table { max-height: calc(100vh - 300px); overflow: auto; border: 1px solid var(--border); border-radius: 10px; }
+#table td.title { overflow-wrap: anywhere; }
+tr.excluded td { opacity: .55; }

@@ -1,0 +1,8 @@
+body { width: 360px; padding: 12px; }
+body > * + * { margin-top: 10px; }
+.spacer { flex: 1; }
+.wide { width: 100%; }
+.grow { flex: 1; }
+#current-chat strong { overflow-wrap: anywhere; }
+#result ul { margin: 4px 0 0; padding-left: 18px; }
+footer { border-top: 1px solid var(--border); padding-top: 8px; }
