@@ -158,3 +158,53 @@ test('verify-backups: detects missing, modified and incomplete files', async () 
   assert.ok(r.problems.some((p) => p.includes('отсутствует')));
   assert.equal(r.incomplete.length, 1);
 });
+
+test('images load in parallel within a time budget; the rest get a note', async () => {
+  const { loadImages } = await import('../src/content/http.js');
+  const delay = (ms, v) => new Promise((resolve) => setTimeout(() => resolve(v), ms));
+  let active = 0;
+  let maxActive = 0;
+  const keys = Array.from({ length: 8 }, (_, i) => `img${i}`);
+  const t0 = Date.now();
+  const res = await loadImages(keys, async (k) => {
+    active += 1;
+    maxActive = Math.max(maxActive, active);
+    await delay(100);
+    active -= 1;
+    return `data:${k}`;
+  });
+  assert.equal(Object.keys(res.images).length, 8);
+  assert.equal(maxActive, 4, 'four at a time');
+  assert.ok(Date.now() - t0 < 400, 'parallel, not one by one');
+  // A hanging image is cut by its own timeout; images after the budget are not started.
+  const slow = await loadImages(['a', 'b', 'c'], (k) => (k === 'a' ? new Promise(() => {}) : delay(700, k)), { concurrency: 1, budgetMs: 2200, perImageMs: 800 });
+  assert.match(slow.imageErrors.a, /Превышено время ожидания/);
+  assert.equal(slow.images.b, 'b', JSON.stringify(slow));
+  assert.match(slow.imageErrors.c, /превышено общее время/);
+});
+
+test('cancellation helpers', async () => {
+  const { abortable, sleepUnlessCancelled, ErrorCode } = await import('../src/core/util.js');
+  const ctrl = new AbortController();
+  const never = new Promise(() => {});
+  const p = abortable(never, ctrl.signal);
+  ctrl.abort();
+  await assert.rejects(p, (err) => /** @type {any} */ (err).code === ErrorCode.CANCELLED);
+  assert.equal(await abortable(Promise.resolve(5), new AbortController().signal), 5);
+  const c2 = new AbortController();
+  const t0 = Date.now();
+  setTimeout(() => c2.abort(), 50);
+  await sleepUnlessCancelled(5000, c2.signal);
+  assert.ok(Date.now() - t0 < 1000);
+});
+
+test('DOM cross-check: page ids of another scheme with no more messages than the data pass', async () => {
+  const { evaluateCompleteness } = await import('../src/core/completeness.js');
+  const base = { schemaVersion: 1, service: 'chatgpt', id: 'x', title: 't', url: '', createdAt: null, updatedAt: null, model: null, source: 'api', extractedAt: '', notes: [],
+    messages: [{ id: 'u', parentId: null, role: 'user', createdAt: null, model: null, blocks: [{ type: 'markdown', text: 'q' }], meta: {} }, { id: 'a', parentId: 'u', role: 'assistant', createdAt: null, model: null, blocks: [{ type: 'markdown', text: 'a' }], meta: {} }] };
+  const integ = { totalNodes: 3, pathLength: 3, brokenLinks: [], leafId: 'a', generating: false };
+  const ok = evaluateCompleteness(/** @type {any} */ ({ ...base, integrity: { ...integ, crossCheckMissing: [], crossCheckUnknownIds: 87 } }));
+  assert.equal(ok.status, 'complete');
+  const bad = evaluateCompleteness(/** @type {any} */ ({ ...base, integrity: { ...integ, crossCheckMissing: ['m1'] } }));
+  assert.equal(bad.status, 'incomplete');
+});

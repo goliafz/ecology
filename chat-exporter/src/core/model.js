@@ -111,6 +111,7 @@ export const SCHEMA_VERSION = 1;
  * @property {boolean} [reachedBottom]
  * @property {number} [imagesFailed]
  * @property {string[]} [crossCheckMissing] Ids visible in the DOM but absent from the API result.
+ * @property {number} [crossCheckUnknownIds] Page ids of another scheme (message counts match).
  * @property {string[]} [pathIds] Message ids accounted for (exported or deliberately hidden), for the DOM cross-check.
  * @property {number} [rescuedTurns] Answers in an unrecognized format saved as raw text.
  * @property {number} [unextracted] Messages whose content could not be extracted at all.

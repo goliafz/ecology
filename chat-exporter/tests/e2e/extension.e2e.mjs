@@ -66,7 +66,7 @@ scroller.addEventListener('scroll', render);
 render();
 </script>`;
 
-const state = { chatgptUpdate: 1761300600, chatgptAnswer: 'Ок', showUpper: false, showMixed: false };
+const state = { chatgptUpdate: 1761300600, chatgptAnswer: 'Ок', showUpper: false, showMixed: false, slowChat: false };
 const UPPER_ID = '22222222-3333-4444-5555-666666666666';
 const TAB_UPPER_ID = '33333333-4444-5555-6666-777777777777';
 const SPA_NEXT_ID = '44444444-5555-6666-7777-888888888888';
@@ -94,7 +94,8 @@ async function routeSites(context) {
     if (url.pathname.startsWith('/backend-api/gizmos/snorlax/sidebar')) return json({ items: [], cursor: null });
     if (url.pathname === `/backend-api/conversation/${CHATGPT_ID}`) {
       if (route.request().headers().authorization !== 'Bearer test-token') return route.fulfill({ status: 401, body: '{}' });
-      return json(chatGptConversation());
+      if (state.slowChat) await new Promise((resolve) => setTimeout(resolve, 30_000));
+      return json(chatGptConversation()).catch(() => {}); // the request may have been cancelled meanwhile
     }
     if (url.pathname === `/backend-api/conversation/${UPPER_ID}`) return json({ ...chatGptConversation(), title: 'ДЕДУШКА', conversation_id: UPPER_ID, update_time: 1735729200 });
     if (url.pathname === `/backend-api/conversation/${CANVAS_ID}`) return json(canvasConversation());
@@ -443,6 +444,24 @@ async function main() {
     assert.ok(s.jobs[0].warnings.some((w) => w.includes('не удалось заменить')), 'user is told why the name changed');
     const interrupted = await sw.evaluate(() => chrome.downloads.search({ state: 'interrupted' }));
     assert.equal(interrupted.length, 0, 'no red "needs permission" entries left in the download list');
+
+    // 4e. "Отменить" stops a running export at once: the chat data takes 30 s to arrive.
+    state.slowChat = true;
+    const beforeCancel = (await sw.evaluate(() => chrome.downloads.search({}))).length;
+    r = await call('exportSelected', { items: [{ service: 'chatgpt', id: CHATGPT_ID, title: 'Медленный' }], formats: ['md'], force: true });
+    assert.ok(r.ok, JSON.stringify(r));
+    await ui.waitForTimeout(1500);
+    assert.equal((await call('getState')).data.queue.running, 1, 'export is running');
+    const cancelAt = Date.now();
+    await call('cancel');
+    s = await waitIdle('cancel');
+    const cancelMs = Date.now() - cancelAt;
+    console.log('cancel took', cancelMs, 'ms; jobs:', s.jobs.map((j) => j.status));
+    assert.ok(cancelMs < 3000, `cancel is immediate (${cancelMs} ms)`);
+    assert.equal(s.jobs[s.jobs.length - 1].status, 'cancelled');
+    state.slowChat = false;
+    await ui.waitForTimeout(1500);
+    assert.equal((await sw.evaluate(() => chrome.downloads.search({}))).length, beforeCancel, 'nothing written after cancel');
 
     // 5. Missed run detection: pretend the 23:00 run was missed while the browser was closed.
     await sw.evaluate(async () => {

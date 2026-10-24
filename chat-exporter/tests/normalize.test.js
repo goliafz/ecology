@@ -248,3 +248,77 @@ test('ChatGPT: "analysis" channel is hidden reasoning, not the answer', () => {
   const withThinking = normalizeChatGpt(raw, { includeThinking: true });
   assert.deepEqual(withThinking.messages[1].blocks.map((b) => b.type), ['thinking', 'markdown']);
 });
+
+/**
+ * Linear ChatGPT conversation from a list of messages (root -> ... -> last).
+ * @param {any[]} msgs
+ */
+function linearChat(msgs) {
+  /** @type {Record<string, any>} */
+  const mapping = { root: { id: 'root', parent: null, children: [msgs[0].id], message: null } };
+  msgs.forEach((m, i) => {
+    mapping[m.id] = { id: m.id, parent: i === 0 ? 'root' : msgs[i - 1].id, children: msgs[i + 1] ? [msgs[i + 1].id] : [], message: { status: 'finished_successfully', recipient: 'all', create_time: 1785000000 + i, metadata: {}, ...m } };
+  });
+  return { title: 'РУКОВОДИТЕЛЬ', conversation_id: 'c1', mapping, current_node: msgs[msgs.length - 1].id };
+}
+const userMsg = (id, text) => ({ id, author: { role: 'user' }, content: { content_type: 'text', parts: [text] } });
+const answer = (id, text) => ({ id, author: { role: 'assistant' }, channel: 'final', content: { content_type: 'text', parts: [text] } });
+
+// Structures from the diagnostics of the reported chat "РУКОВОДИТЕЛЬ" (1.3.1: "Ответ ещё
+// генерируется", "не удалось извлечь: 41", "Не встроено изображений: 20").
+test('ChatGPT: a reasoning message left "in_progress" before a finished answer is not generation', async () => {
+  const { evaluateCompleteness } = await import('../src/core/completeness.js');
+  const raw = linearChat([
+    userMsg('u1', 'Вопрос'),
+    { id: 't1', author: { role: 'assistant' }, status: 'in_progress', content: { content_type: 'thoughts', thoughts: [] } },
+    { id: 'r1', author: { role: 'assistant' }, content: { content_type: 'reasoning_recap', content: 'Думал 5 с' } },
+    answer('a1', 'Ответ'),
+    userMsg('u2', 'Ещё вопрос'),
+    answer('a2', 'Ещё ответ'),
+  ]);
+  const chat = normalizeChatGpt(raw);
+  assert.equal(chat.integrity.generating, false);
+  assert.equal(evaluateCompleteness(chat).status, 'complete');
+  // Still generating: nothing finished after the message in progress.
+  raw.mapping.a2.message.status = 'in_progress';
+  assert.equal(normalizeChatGpt(raw).integrity.generating, true);
+  // The open tab shows a streaming answer.
+  raw.mapping.a2.message.status = 'finished_successfully';
+  assert.equal(normalizeChatGpt(raw, { pageGenerating: true }).integrity.generating, true);
+});
+
+test('ChatGPT: empty tool calls and placeholders are not reported as lost content', () => {
+  const chat = normalizeChatGpt(linearChat([
+    userMsg('u1', 'Найди в интернете'),
+    { id: 'w1', author: { role: 'assistant' }, recipient: 'web.run', content: { content_type: 'text', parts: [''] } },
+    { id: 'b1', author: { role: 'tool', name: 'web.run' }, content: { content_type: 'tether_browsing_display', result: '', summary: '', assets: null, tether_id: null } },
+    { id: 'x1', author: { role: 'tool', name: 'web.run' }, content: { content_type: 'text', parts: [''] } },
+    answer('a1', 'Нашёл'),
+  ]));
+  assert.equal(chat.integrity.unextracted, 0);
+  assert.ok(['w1', 'b1', 'x1'].every((id) => chat.integrity.pathIds?.includes(id)));
+});
+
+test('ChatGPT: pages of an uploaded document handed to the model are neither images nor downloads', () => {
+  const page = (n) => ({ content_type: 'image_asset_pointer', asset_pointer: `sediment://7273533f4c85b3b#file_00000000815c#p_${n}.6e6f61c0e0.jpg`, size_bytes: 234111, metadata: null });
+  const raw = linearChat([
+    { ...userMsg('u1', 'Посмотри резюме'), content: { content_type: 'multimodal_text', parts: [{ content_type: 'image_asset_pointer', asset_pointer: 'sediment://file_000000005c78', size_bytes: 165993 }, 'Посмотри резюме'] } },
+    { id: 'd1', author: { role: 'tool', name: 'api_tool' }, metadata: { command: 'context_stuff' }, content: { content_type: 'multimodal_text', parts: [page(0), page(1)] } },
+    answer('a1', 'Резюме хорошее'),
+  ]);
+  assert.deepEqual(collectChatGptImagePointers(raw), ['sediment://file_000000005c78'], 'only the uploaded photo is downloaded');
+  const chat = normalizeChatGpt(raw, { images: { 'sediment://file_000000005c78': PNG } });
+  assert.equal(chat.integrity.imagesFailed, 0);
+  assert.equal(chat.integrity.unextracted, 0);
+  assert.equal(chat.messages.flatMap((m) => m.blocks).filter((b) => b.type === 'image').length, 1);
+  const withTools = normalizeChatGpt(raw, { includeTools: true, images: { 'sediment://file_000000005c78': PNG } });
+  assert.ok(withTools.messages.flatMap((m) => m.blocks).some((b) => b.type === 'tool' && /Страницы загруженного документа.*2/.test(b.output || '')));
+});
+
+test('ChatGPT: images of other branches are not downloaded', () => {
+  const raw = chatGptFixture();
+  const onBranch = collectChatGptImagePointers(raw);
+  raw.mapping.root.children.push('old');
+  raw.mapping.old = { id: 'old', parent: 'root', children: [], message: { id: 'old', author: { role: 'user' }, content: { content_type: 'multimodal_text', parts: [{ content_type: 'image_asset_pointer', asset_pointer: 'sediment://file_old' }] } } };
+  assert.deepEqual(collectChatGptImagePointers(raw), onBranch);
+});

@@ -8,7 +8,7 @@
 // The organization id is taken from the lastActiveOrg cookie when present.
 import { collectClaudeImageUrls } from '../adapters/claude/normalize.js';
 import { ErrorCode, ExportError, sleep } from '../core/util.js';
-import { fetchImageAsDataUrl, getCookie, requestJson } from './http.js';
+import { fetchImageAsDataUrl, getCookie, loadImages, requestJson } from './http.js';
 
 /** @type {string | null} */
 let orgId = null;
@@ -70,20 +70,9 @@ export async function fetchChat(id, options) {
     `/api/organizations/${org}/chat_conversations/${encodeURIComponent(id)}?tree=True&rendering_mode=messages&render_all_tools=true`,
     { what: 'переписка Claude', timeoutMs: 120_000 },
   );
-  /** @type {Record<string, string>} */
-  const images = {};
-  /** @type {Record<string, string>} */
-  const imageErrors = {};
-  for (const url of collectClaudeImageUrls(raw)) {
-    if (!options.includeImages) {
-      imageErrors[url] = 'Встраивание изображений отключено в настройках.';
-      continue;
-    }
-    try {
-      images[url] = await fetchImageAsDataUrl(url, options.maxImageBytes);
-    } catch (err) {
-      imageErrors[url] = `Изображение не загружено: ${err instanceof Error ? err.message : err}`;
-    }
+  const urls = collectClaudeImageUrls(raw);
+  if (!options.includeImages) {
+    return { raw, images: {}, imageErrors: Object.fromEntries(urls.map((u) => [u, 'Встраивание изображений отключено в настройках.'])) };
   }
-  return { raw, images, imageErrors };
+  return { raw, ...await loadImages(urls, (url) => fetchImageAsDataUrl(url, options.maxImageBytes)) };
 }

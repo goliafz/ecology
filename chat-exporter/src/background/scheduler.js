@@ -11,9 +11,10 @@ import { SERVICES } from '../adapters/registry.js';
 import { computeNextRun, isRunMissed } from '../core/schedule-math.js';
 import { findCandidates } from './changes.js';
 import { addLog } from './log.js';
-import { enqueue, getQueue } from './queue.js';
+import { cancellationSignal, enqueue, getQueue, setListing } from './queue.js';
 import { loadSettings } from './settings.js';
 import { getKey, updateKey } from './storage.js';
+import { abortable, ErrorCode } from '../core/util.js';
 import { getTracked } from './tracked.js';
 
 export const BACKUP_ALARM = 'auto-backup';
@@ -28,6 +29,7 @@ const LATE_FIRE_MS = 15 * 60_000;
  * @property {string} [lastRunSummary]
  * @property {{ dueAt: number } | null} [missedPending]
  * @property {string} [scheduleKey] settings the stored time was computed from
+ * @property {number | null} [previousRunStartedAt] start of the run before the latest one
  */
 
 /** @returns {Promise<ScheduleState>} */
@@ -135,8 +137,9 @@ export async function runBackup(trigger) {
     await addLog('info', note);
     return { queued: 0, errors: [], note };
   }
+  const cancelled = cancellationSignal();
   const previousRun = sched.lastRunStartedAt || null;
-  await updateKey('schedule', (s) => ({ ...(s || {}), lastRunStartedAt: Date.now(), missedPending: null, nextRunAt: null }));
+  await updateKey('schedule', (s) => ({ ...(s || {}), lastRunStartedAt: Date.now(), previousRunStartedAt: previousRun, missedPending: null, nextRunAt: null }));
   if (settings.auto.enabled) await syncSchedule();
 
   await addLog('info', `Резервное копирование запущено (${{ scheduled: 'по расписанию', 'catch-up': 'догоняющий запуск', manual: 'вручную' }[trigger]})`);
@@ -147,16 +150,25 @@ export async function runBackup(trigger) {
   // All lists are read before the queue starts, so services do not interfere with each other.
   for (const service of /** @type {import('../core/model.js').ServiceId[]} */ (['chatgpt', 'claude'])) {
     if (!settings.services[service]) continue;
+    setListing(`${SERVICES[service].label}: чтение списка чатов…`);
     try {
-      const { candidates, stats, skipped } = await findCandidates(service, settings, { lastRunStartedAt: previousRun });
+      const { candidates, stats, skipped } = await abortable(findCandidates(service, settings, { lastRunStartedAt: previousRun }), cancelled);
       if (skipped) continue; // no marked chats of this service: nothing to list
       await addLog('info', `${SERVICES[service].label}: в списке ${stats.listed}, к сохранению ${candidates.length}${stats.excluded ? `, исключено ${stats.excluded}` : ''}`);
       all.push(...candidates);
     } catch (err) {
+      if (/** @type {any} */ (err)?.code === ErrorCode.CANCELLED || cancelled.aborted) break;
       const message = `${SERVICES[service].label}: не удалось получить список чатов — ${err instanceof Error ? err.message : err}`;
       errors.push(message);
       await addLog('error', message, { code: /** @type {any} */ (err)?.code });
     }
+  }
+  setListing(null);
+  if (cancelled.aborted) {
+    // "Отменить" while the lists were read: nothing is queued.
+    // The next run lists chats as far back as if this one had not started.
+    await updateKey('schedule', (s) => ({ ...(s || {}), lastRunStartedAt: previousRun, lastRunFinishedAt: Date.now(), lastRunSummary: 'Отменено пользователем' }));
+    return { queued: 0, errors, note: 'Отменено пользователем' };
   }
   const queued = all.length === 0 ? 0 : await enqueue(all.slice(0, settings.auto.maxChatsPerRun).map((c) => ({
     service: c.service,

@@ -75,6 +75,40 @@ export function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** @param {AbortSignal | undefined} signal */
+export function throwIfCancelled(signal) {
+  if (signal?.aborted) throw new ExportError(ErrorCode.CANCELLED, 'Отменено пользователем');
+}
+
+/**
+ * Settles with `promise`, or rejects with CANCELLED as soon as `signal` aborts. The work behind
+ * the promise is not stopped by this; callers check the signal before any lasting effect.
+ * @template T
+ * @param {Promise<T>} promise
+ * @param {AbortSignal | undefined} signal
+ * @returns {Promise<T>}
+ */
+export function abortable(promise, signal) {
+  if (!signal) return promise;
+  throwIfCancelled(signal);
+  /** @type {() => void} */
+  let onAbort = () => {};
+  const aborted = new Promise((_, reject) => {
+    onAbort = () => reject(new ExportError(ErrorCode.CANCELLED, 'Отменено пользователем'));
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+  return /** @type {Promise<T>} */ (Promise.race([promise, aborted]).finally(() => signal.removeEventListener('abort', onAbort)));
+}
+
+/**
+ * sleep() that ends early when `signal` aborts (resolves, does not throw).
+ * @param {number} ms
+ * @param {AbortSignal | undefined} signal
+ */
+export function sleepUnlessCancelled(ms, signal) {
+  return abortable(sleep(ms), signal).catch(() => {});
+}
+
 /**
  * Rejects with a TIMEOUT ExportError when `promise` does not settle in time.
  * @template T

@@ -7,7 +7,7 @@ import { buildChatFolder, buildFilePaths } from '../core/filenames.js';
 import { chatContentHash } from '../core/hash.js';
 import { chatToHtml } from '../core/html.js';
 import { chatToMarkdown } from '../core/markdown.js';
-import { ErrorCode, ExportError } from '../core/util.js';
+import { abortable, ErrorCode, ExportError, throwIfCancelled } from '../core/util.js';
 import { addLog } from './log.js';
 import { htmlToPdf, openPrintDialog } from './pdf.js';
 import { getIndex, updateIndexEntry } from './storage.js';
@@ -44,9 +44,10 @@ const VERSION = chrome.runtime.getManifest().version;
  * @param {ExportRequest} req
  * @param {import('./settings.js').Settings} settings
  * @param {(text: string) => void} progress
+ * @param {AbortSignal} [signal] "Отменить"
  * @returns {Promise<import('../core/model.js').NormalizedChat>}
  */
-export async function fetchNormalizedChat(req, settings, progress) {
+export async function fetchNormalizedChat(req, settings, progress, signal) {
   const service = SERVICES[req.service];
   const allowOpen = req.reason !== 'manual' ? settings.auto.openTabs : true;
   let tabId;
@@ -69,13 +70,17 @@ export async function fetchNormalizedChat(req, settings, progress) {
   /** @type {ExportError | null} */
   let apiError = null;
   try {
-    fetched = await sendToTab(tabId, {
+    fetched = await abortable(sendToTab(tabId, {
       cmd: 'fetchChat',
       id: req.id,
       includeImages: settings.includeImages,
       maxImageBytes: settings.maxImageBytes,
-    }, 4 * 60_000);
+    }, 5 * 60_000), signal);
   } catch (err) {
+    if (err instanceof ExportError && err.code === ErrorCode.CANCELLED) {
+      sendToTab(tabId, { cmd: 'cancel' }, 5000).catch(() => {}); // stop the tab's downloads too
+      throw err;
+    }
     apiError = err instanceof ExportError ? err : new ExportError(ErrorCode.UNKNOWN, String(err));
   }
 
@@ -101,6 +106,7 @@ export async function fetchNormalizedChat(req, settings, progress) {
 
   // Authentication, missing chat and rate limits are not DOM problems.
   const err = /** @type {ExportError} */ (apiError);
+  throwIfCancelled(signal);
   const domUseful = settings.domFallback && ![ErrorCode.NOT_AUTHENTICATED, ErrorCode.NOT_FOUND, ErrorCode.RATE_LIMITED, ErrorCode.FORBIDDEN].includes(/** @type {any} */ (err.code));
   if (!domUseful) throw err;
 
@@ -115,7 +121,7 @@ export async function fetchNormalizedChat(req, settings, progress) {
   }
   progress('Резервный режим: прокрутка и извлечение со страницы…');
   await addLog('warn', `Данные API недоступны (${err.message}); используется извлечение со страницы`, { chat: chatKey(req.service, req.id) });
-  const dom = await sendToTab(tabId, { cmd: 'extractDom' }, 4.5 * 60_000);
+  const dom = await abortable(sendToTab(tabId, { cmd: 'extractDom' }, 4.5 * 60_000), signal);
   return /** @type {import('../core/model.js').NormalizedChat} */ (dom);
 }
 
@@ -125,11 +131,21 @@ export async function fetchNormalizedChat(req, settings, progress) {
  * @param {{ messageIds?: string[], userMessageCount?: number }} page
  */
 function crossCheck(chat, page) {
+  const apiUsers = chat.messages.filter((m) => m.role === 'user').length;
   if (Array.isArray(page.messageIds) && page.messageIds.length > 0 && Array.isArray(chat.integrity.pathIds)) {
     const known = new Set(chat.integrity.pathIds);
-    chat.integrity.crossCheckMissing = page.messageIds.filter((id) => !known.has(id));
+    const missing = page.messageIds.filter((id) => !known.has(id));
+    // Seen in a real long ChatGPT chat (October 2026): the page marks older messages with ids
+    // that appear nowhere in the chat data, while the data holds more messages than the page.
+    // Unknown ids then mean a different id scheme, not lost messages; the counts decide.
+    const pageUsers = typeof page.userMessageCount === 'number' ? page.userMessageCount : null;
+    if (missing.length > 0 && pageUsers !== null && pageUsers > 0 && pageUsers <= apiUsers) {
+      chat.integrity.crossCheckMissing = [];
+      chat.integrity.crossCheckUnknownIds = missing.length;
+    } else {
+      chat.integrity.crossCheckMissing = missing;
+    }
   } else if (typeof page.userMessageCount === 'number' && page.userMessageCount > 0) {
-    const apiUsers = chat.messages.filter((m) => m.role === 'user').length;
     chat.integrity.crossCheckMissing = page.userMessageCount > apiUsers ? [`page-user-messages:${page.userMessageCount}>${apiUsers}`] : [];
   }
 }
@@ -139,24 +155,27 @@ function crossCheck(chat, page) {
  * @param {ExportRequest} req
  * @param {import('./settings.js').Settings} settings
  * @param {(text: string) => void} [progress]
+ * @param {AbortSignal} [signal] "Отменить": stops before anything else is written
  * @returns {Promise<ExportResult>}
  */
-export function exportChat(req, settings, progress = () => {}) {
-  return withTabLease(() => exportChatInner(req, settings, progress));
+export function exportChat(req, settings, progress = () => {}, signal) {
+  return withTabLease(() => exportChatInner(req, settings, progress, signal));
 }
 
 /**
  * @param {ExportRequest} req
  * @param {import('./settings.js').Settings} settings
  * @param {(text: string) => void} progress
+ * @param {AbortSignal} [signal]
  * @returns {Promise<ExportResult>}
  */
-async function exportChatInner(req, settings, progress) {
+async function exportChatInner(req, settings, progress, signal) {
   const key = chatKey(req.service, req.id);
   const index = await getIndex();
   const entry = index[key];
 
-  const chat = await fetchNormalizedChat(req, settings, progress);
+  const chat = await fetchNormalizedChat(req, settings, progress, signal);
+  throwIfCancelled(signal);
   chat.completeness = evaluateCompleteness(chat, { expectedUpdatedAt: req.expectedUpdatedAt || entry?.updatedAt || null });
   const report = chat.completeness;
   const contentHash = await chatContentHash(chat);
@@ -198,6 +217,7 @@ async function exportChatInner(req, settings, progress) {
 
   for (const format of formats) {
     const path = /** @type {string} */ (paths.files[format]).replace(/(\.\w+)$/, `${incompleteSuffix}$1`);
+    throwIfCancelled(signal);
     progress(`Сохранение ${format.toUpperCase()}…`);
     let res;
     if (format === 'md') {
@@ -216,7 +236,9 @@ async function exportChatInner(req, settings, progress) {
         continue;
       }
       progress('Генерация PDF…');
-      res = await writeFile(path, await htmlToPdf(printable, chat.title), 'application/pdf', { ...writeOpts, timeoutMs: 180_000 });
+      const pdf = await htmlToPdf(printable, chat.title, signal);
+      throwIfCancelled(signal);
+      res = await writeFile(path, pdf, 'application/pdf', { ...writeOpts, timeoutMs: 180_000 });
     }
     if (res.renamed) {
       const name = res.absolutePath.split(/[\\/]/).pop();

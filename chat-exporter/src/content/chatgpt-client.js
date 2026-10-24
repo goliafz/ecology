@@ -9,7 +9,7 @@
 //   GET /backend-api/gizmos/snorlax/sidebar     -> projects (their chats are not in the main list)
 import { collectChatGptImagePointers } from '../adapters/chatgpt/normalize.js';
 import { ErrorCode, ExportError, sleep } from '../core/util.js';
-import { fetchImageAsDataUrl, getCookie, requestJson } from './http.js';
+import { fetchImageAsDataUrl, getCookie, loadImages, requestJson } from './http.js';
 
 /** @type {{ token: string, at: number } | null} */
 let session = null;
@@ -144,22 +144,11 @@ async function listProjectChats(stopMs) {
  */
 export async function fetchChat(id, options) {
   const raw = await api(`/backend-api/conversation/${encodeURIComponent(id)}`, 'переписка ChatGPT');
-  /** @type {Record<string, string>} */
-  const images = {};
-  /** @type {Record<string, string>} */
-  const imageErrors = {};
-  if (options.includeImages) {
-    for (const pointer of collectChatGptImagePointers(raw)) {
-      try {
-        images[pointer] = await resolveImage(pointer, options.maxImageBytes);
-      } catch (err) {
-        imageErrors[pointer] = `Изображение не загружено: ${err instanceof Error ? err.message : err}`;
-      }
-    }
-  } else {
-    for (const pointer of collectChatGptImagePointers(raw)) imageErrors[pointer] = 'Встраивание изображений отключено в настройках.';
+  const pointers = collectChatGptImagePointers(raw);
+  if (!options.includeImages) {
+    return { raw, images: {}, imageErrors: Object.fromEntries(pointers.map((p) => [p, 'Встраивание изображений отключено в настройках.'])) };
   }
-  return { raw, images, imageErrors };
+  return { raw, ...await loadImages(pointers, (pointer) => resolveImage(pointer, options.maxImageBytes)) };
 }
 
 /**

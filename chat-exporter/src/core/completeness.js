@@ -79,6 +79,8 @@ export function evaluateCompleteness(chat, ctx = {}) {
   // 7. DOM cross-check (API mode with an open tab): every message visible on the page must be in the result.
   if (integ.crossCheckMissing && integ.crossCheckMissing.length > 0) {
     add('dom-cross-check', 'fail', `На странице видны сообщения, которых нет в выгрузке: ${integ.crossCheckMissing.length}.`);
+  } else if (integ.crossCheckMissing && integ.crossCheckUnknownIds) {
+    add('dom-cross-check', 'pass', `Сообщений на странице не больше, чем в выгрузке (у ${integ.crossCheckUnknownIds} из них страница использует другие идентификаторы).`);
   } else if (integ.crossCheckMissing) {
     add('dom-cross-check', 'pass', 'Все сообщения, видимые на странице, есть в выгрузке.');
   }

@@ -5,7 +5,7 @@
 // chrome.debugger. While attached, Chrome shows the bar "<extension> started debugging this
 // browser" — this is a Chrome safety feature and cannot be hidden.
 // "dialog" method: the same page opens the regular print dialog; the user saves manually.
-import { ErrorCode, ExportError, sleep, withTimeout } from '../core/util.js';
+import { abortable, ErrorCode, ExportError, sleep, withTimeout } from '../core/util.js';
 import { base64ToBytes } from './downloads.js';
 import { openBackgroundTab } from './tabs.js';
 import { updateKey } from './storage.js';
@@ -64,9 +64,10 @@ const FOOTER = '<div style="width:100%;font-size:8px;color:#888;text-align:cente
 /**
  * @param {string} html complete document (print variant)
  * @param {string} title
+ * @param {AbortSignal} [signal] closes the print tab at once when cancelled
  * @returns {Promise<Uint8Array>}
  */
-export async function htmlToPdf(html, title) {
+export async function htmlToPdf(html, title, signal) {
   if (!isDebuggerAvailable()) {
     throw new ExportError(ErrorCode.PDF_FAILED, 'Разрешение "debugger" недоступно: автоматический PDF невозможен. Выберите в настройках печать через диалог.');
   }
@@ -87,8 +88,8 @@ export async function htmlToPdf(html, title) {
     attached = true;
     await chrome.debugger.sendCommand({ tabId }, 'Emulation.setFocusEmulationEnabled', { enabled: true }).catch(() => {});
     await chrome.tabs.update(tabId, { url: chrome.runtime.getURL(`src/pages/print.html?job=${job}`) });
-    await waitUntilReady(tabId, readyPromise);
-    const result = /** @type {{ data: string }} */ (await withTimeout(chrome.debugger.sendCommand({ tabId }, 'Page.printToPDF', {
+    await abortable(waitUntilReady(tabId, readyPromise), signal);
+    const result = /** @type {{ data: string }} */ (await abortable(withTimeout(chrome.debugger.sendCommand({ tabId }, 'Page.printToPDF', {
       printBackground: true,
       preferCSSPageSize: true,
       displayHeaderFooter: true,
@@ -96,7 +97,7 @@ export async function htmlToPdf(html, title) {
       footerTemplate: FOOTER,
       generateDocumentOutline: true,
       generateTaggedPDF: true,
-    }), 240_000, 'генерация PDF'));
+    }), 240_000, 'генерация PDF'), signal));
     if (!result?.data) throw new ExportError(ErrorCode.PDF_FAILED, 'Chrome вернул пустой PDF');
     return base64ToBytes(result.data);
   } catch (err) {

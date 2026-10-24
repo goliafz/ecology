@@ -54,14 +54,19 @@ function render() {
 
   // Queue progress
   const active = queue.pending + queue.running > 0;
-  $('status').hidden = !active;
+  $('status').hidden = !active && !queue.listing;
+  if (!active && queue.listing) {
+    $('status-title').textContent = 'Резервное копирование: поиск изменившихся чатов';
+    $('progress-bar').style.width = '0%';
+    $('progress-text').textContent = queue.listing;
+  }
   if (active) {
     const finished = queue.done + queue.failed;
     $('status-title').textContent = `${queue.run?.reason === 'auto' ? 'Резервное копирование' : 'Экспорт'}: ${finished} из ${queue.total}`;
     $('progress-bar').style.width = `${queue.total ? Math.round((finished / queue.total) * 100) : 0}%`;
     $('progress-text').textContent = queue.progress || (queue.current ? queue.current.title : 'Ожидание…');
   }
-  /** @type {HTMLButtonElement} */ ($('backup-now')).disabled = active;
+  /** @type {HTMLButtonElement} */ ($('backup-now')).disabled = active || Boolean(queue.listing);
 
   // Result
   if (!active && queue.run?.finishedAt && queue.total > 1) {

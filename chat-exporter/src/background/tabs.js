@@ -196,6 +196,12 @@ export async function closeOpenedTabs() {
   await updateKey('openedTabs', () => [], 'session');
 }
 
+/** Stops data requests still running in ChatGPT / Claude tabs ("Отменить"). */
+export async function cancelTabRequests() {
+  const tabs = await chrome.tabs.query({ url: Object.values(SERVICES).flatMap((s) => s.tabPatterns) });
+  await Promise.all(tabs.map((t) => (t.id === undefined ? null : chrome.tabs.sendMessage(t.id, { cmd: 'cancel' }).catch(() => {}))));
+}
+
 /** @param {number} tabId */
 export async function isOwnTab(tabId) {
   const opened = (await getKey('openedTabs', 'session')) || [];

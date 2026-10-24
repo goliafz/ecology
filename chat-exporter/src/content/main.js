@@ -7,6 +7,7 @@ import * as chatgpt from './chatgpt-client.js';
 import * as claude from './claude-client.js';
 import { domAdapterFor, domProbe } from './dom-adapters.js';
 import { extractViaDom } from './dom-extract.js';
+import { cancelRequests } from './http.js';
 import { startActivityTracker } from './activity.js';
 
 const host = location.hostname;
@@ -56,6 +57,7 @@ function firstUserText(raw) {
 /** @type {Record<string, (msg: any) => Promise<any> | any>} */
 const commands = {
   ping: () => pageInfo(),
+  cancel: () => cancelRequests(),
   listChats: (msg) => client.listChats({ stopBefore: msg.stopBefore, maxPages: msg.maxPages, includeProjects: msg.includeProjects }),
   async fetchChat(msg) {
     const data = await client.fetchChat(String(msg.id), { includeImages: Boolean(msg.includeImages), maxImageBytes: Number(msg.maxImageBytes) || 8 * 1024 * 1024 });

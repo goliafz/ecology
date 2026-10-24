@@ -23,6 +23,7 @@ const TOOL_TEXT_LIMIT = 20_000;
  * @property {Record<string, string>} [imageErrors] asset pointer -> reason
  * @property {string} [fallbackId]
  * @property {string} [nowIso]
+ * @property {boolean} [pageGenerating] the open tab shows an answer being written
  */
 
 /**
@@ -111,7 +112,10 @@ export function normalizeChatGpt(raw, options = {}) {
     }
     if (role === 'user' || role === 'assistant' || role === 'tool') lastPathRole = role === 'user' ? 'user' : 'assistant';
 
+    // ChatGPT leaves some reasoning messages "in_progress" for good; a later finished message
+    // on the branch shows the answer was completed.
     if (msg.status === 'in_progress') generating = true;
+    else if (msg.status === 'finished_successfully') generating = false;
     if (role === 'assistant' && msg.metadata?.model_slug) lastModel = msg.metadata.model_slug;
 
     const converted = convertContent(msg, role, options, ctx);
@@ -121,7 +125,8 @@ export function normalizeChatGpt(raw, options = {}) {
       const text = role === 'user' || msg.channel === 'analysis' ? '' : anyText(msg);
       if (text.trim()) {
         turnSkipped.push({ id: msgId, text, type: String(contentType || 'unknown'), time: msg.create_time, nodeParent: node.parent || null, recipient: String(msg.recipient || '') });
-      } else if (contentType === 'thoughts' || contentType === 'reasoning_recap' || msg.channel === 'analysis') {
+      } else if (contentType === 'thoughts' || contentType === 'reasoning_recap' || msg.channel === 'analysis' || isDocumentPages(msg) || !hasContent(msg.content)) {
+        // Hidden reasoning, pages of an uploaded document passed to the model, or nothing at all.
         knownIds.add(msgId).add(nodeId);
       } else {
         unextracted.push(msgId);
@@ -188,7 +193,7 @@ export function normalizeChatGpt(raw, options = {}) {
       pathLength: path.length,
       brokenLinks,
       leafId,
-      generating,
+      generating: generating || Boolean(options.pageGenerating),
       imagesFailed,
       pathIds: [...knownIds],
       rescuedTurns,
@@ -247,6 +252,36 @@ export function currentPath(mapping, currentNode) {
 /** @param {import('../../core/model.js').Block[]} blocks */
 function hasText(blocks) {
   return blocks.some((b) => b.type === 'markdown' && b.text.trim());
+}
+
+/**
+ * Pages of a document the user uploaded (PDF and the like), rendered to images and handed to the
+ * model by a tool ("context_stuff"). The chat itself shows the file, not these pages, and their
+ * pointers ("sediment://…#file_…#p_0.jpg") are not downloadable files.
+ * @param {any} msg
+ */
+export function isDocumentPages(msg) {
+  if (msg?.author?.role !== 'tool' || msg.content?.content_type !== 'multimodal_text') return false;
+  const parts = Array.isArray(msg.content.parts) ? msg.content.parts : [];
+  return msg.metadata?.command === 'context_stuff'
+    || (parts.length > 0 && parts.every((p) => typeof p === 'string' ? !p.trim() : p?.content_type === 'image_asset_pointer' && String(p.asset_pointer).includes('#')));
+}
+
+/**
+ * True when message content holds anything besides its type: text, an image or other data.
+ * Empty tool calls and placeholders ({ parts: [""] }) hold nothing and lose nothing.
+ * @param {any} content
+ */
+function hasContent(content) {
+  const visit = (/** @type {any} */ v, /** @type {number} */ depth) => {
+    if (depth > 8 || v === null || v === undefined || v === false) return false;
+    if (typeof v === 'string') return v.trim() !== '';
+    if (typeof v === 'number' || v === true) return true;
+    if (Array.isArray(v)) return v.some((x) => visit(x, depth + 1));
+    if (typeof v === 'object') return Object.entries(v).some(([k, x]) => k !== 'content_type' && visit(x, depth + 1));
+    return false;
+  };
+  return visit(content, 0);
 }
 
 /**
@@ -438,6 +473,11 @@ function convertContent(msg, role, options, ctx) {
       break;
     }
     case 'multimodal_text': {
+      if (isDocumentPages(msg)) {
+        const pages = (Array.isArray(content.parts) ? content.parts : []).filter((p) => p?.content_type === 'image_asset_pointer').length;
+        if (options.includeTools && pages) blocks.push({ type: 'tool', name: msg.author?.name || 'tool', output: `Страницы загруженного документа переданы модели в виде изображений: ${pages}. Они не сохраняются — сам файл доступен в ChatGPT.` });
+        break;
+      }
       const parts = Array.isArray(content.parts) ? content.parts : [];
       const textParts = [];
       for (const part of parts) {
@@ -520,16 +560,19 @@ function convertContent(msg, role, options, ctx) {
 export function collectChatGptImagePointers(raw) {
   /** @type {Set<string>} */
   const out = new Set();
-  for (const node of Object.values(raw?.mapping || {})) {
-    const content = /** @type {any} */ (node)?.message?.content;
-    if (!content) continue;
+  const mapping = raw?.mapping || {};
+  // Only the exported (current) branch: images of other versions are never shown.
+  for (const nodeId of currentPath(mapping, raw?.current_node).path) {
+    const node = mapping[nodeId];
+    const content = node?.message?.content;
+    if (!content || isDocumentPages(node.message)) continue;
     if (content.content_type === 'multimodal_text' && Array.isArray(content.parts)) {
       for (const p of content.parts) {
         if (p && p.content_type === 'image_asset_pointer' && typeof p.asset_pointer === 'string') out.add(p.asset_pointer);
       }
     }
     if (content.content_type === 'execution_output') {
-      for (const m of /** @type {any} */ (node).message.metadata?.aggregate_result?.messages || []) {
+      for (const m of node.message.metadata?.aggregate_result?.messages || []) {
         if (m?.message_type === 'image' && typeof m.image_url === 'string') out.add(m.image_url);
       }
     }

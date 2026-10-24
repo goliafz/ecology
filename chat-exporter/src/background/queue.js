@@ -5,12 +5,12 @@
 // Loop protection: per-job attempt limit, rate-limit pauses, and long waits are handed to
 // chrome.alarms instead of keeping the worker busy.
 import { chatKey } from '../adapters/registry.js';
-import { backoffDelay, ErrorCode, serializeError, sleep } from '../core/util.js';
+import { backoffDelay, ErrorCode, serializeError, sleepUnlessCancelled } from '../core/util.js';
 import { exportChat } from './exporter.js';
 import { addLog } from './log.js';
 import { loadSettings } from './settings.js';
 import { getKey, setKey, updateIndexEntry, updateKey } from './storage.js';
-import { closeOpenedTabs } from './tabs.js';
+import { cancelTabRequests, closeOpenedTabs } from './tabs.js';
 
 export const QUEUE_ALARM = 'queue-resume';
 
@@ -47,6 +47,22 @@ export const QUEUE_ALARM = 'queue-resume';
 
 let processing = false;
 let cancelRequested = false;
+// Aborted by "Отменить": stops the running export, pauses and a backup run still reading lists.
+let cancelController = new AbortController();
+
+/** @type {string | null} what a backup run is doing before its jobs are queued */
+let listing = null;
+
+/** @param {string | null} text */
+export function setListing(text) {
+  listing = text;
+  broadcastState();
+}
+
+/** Signal of the next "Отменить" (a new one after each cancel). */
+export function cancellationSignal() {
+  return cancelController.signal;
+}
 /** @type {string} */
 let currentProgress = '';
 
@@ -85,6 +101,7 @@ export function summarize(q) {
     current: q.jobs.find((j) => j.status === 'running') || null,
     progress: currentProgress,
     processing,
+    listing,
   };
 }
 
@@ -123,11 +140,23 @@ export async function enqueue(items, reason) {
 
 export async function cancelQueue() {
   cancelRequested = true;
+  cancelController.abort();
+  cancelController = new AbortController();
+  await chrome.alarms.clear(QUEUE_ALARM);
   await updateQueue((q) => {
-    for (const j of q.jobs) if (j.status === 'pending') j.status = 'cancelled';
+    for (const j of q.jobs) {
+      if (j.status === 'pending' || j.status === 'running') {
+        j.status = 'cancelled';
+        j.outcome = undefined;
+      }
+    }
     if (q.run) q.run.cancelled = true;
   });
-  broadcastState();
+  setProgress('');
+  await cancelTabRequests().catch(() => {});
+  await updateBadge().catch(() => {});
+  await addLog('info', 'Выгрузка отменена пользователем');
+  if (!processing) await finishCancelledRun(await loadSettings());
 }
 
 /** Puts jobs interrupted by a worker restart back into the queue and resumes. */
@@ -187,7 +216,7 @@ export async function processQueue() {
         const wake = Math.min(...waiting.map((j) => j.notBefore || now));
         if (wake - now <= 90_000) {
           setProgress(`Пауза перед повтором: ${Math.ceil((wake - now) / 1000)} с`);
-          await sleep(Math.max(1000, wake - now));
+          await sleepUnlessCancelled(Math.max(1000, wake - now), cancellationSignal());
           continue;
         }
         await chrome.alarms.create(QUEUE_ALARM, { when: wake });
@@ -206,8 +235,9 @@ export async function processQueue() {
       setProgress(`${job.title || job.id}: начало`);
 
       const maxAttempts = job.reason === 'auto' ? settings.auto.maxAttempts : Math.min(2, settings.auto.maxAttempts);
+      const signal = cancellationSignal();
       try {
-        const result = await exportChat(job, settings, (text) => setProgress(`${job.title || job.id}: ${text}`));
+        const result = await exportChat(job, settings, (text) => { if (!signal.aborted) setProgress(`${job.title || job.id}: ${text}`); }, signal);
         await updateQueue((state) => {
           const j = state.jobs.find((x) => x.key === job.key && x.status === 'running');
           if (j) {
@@ -221,6 +251,7 @@ export async function processQueue() {
         await setKey('lastResult', { at: Date.now(), key: job.key, ...result });
       } catch (err) {
         const e = serializeError(err);
+        if (e.code === ErrorCode.CANCELLED) break; // cancelQueue already marked the job
         const transient = /** @type {any} */ (err)?.transient === true || e.code === ErrorCode.INCOMPLETE;
         const attempts = job.attempts + 1;
         const retry = transient && attempts < maxAttempts && !cancelRequested;
@@ -258,9 +289,10 @@ export async function processQueue() {
 
       const remaining = (await getQueue()).jobs.some((j) => j.status === 'pending');
       if (remaining && !cancelRequested) {
-        await sleep(settings.auto.delayMs + Math.round(Math.random() * 1000));
+        await sleepUnlessCancelled(settings.auto.delayMs + Math.round(Math.random() * 1000), cancellationSignal());
       }
     }
+    if (cancelRequested) await finishCancelledRun(await loadSettings());
   } finally {
     clearInterval(keepAlive);
     processing = false;
@@ -268,6 +300,25 @@ export async function processQueue() {
     await updateBadge().catch(() => {});
     broadcastState();
   }
+}
+
+/** @param {import('./settings.js').Settings} settings */
+async function finishCancelledRun(settings) {
+  let backup = false;
+  await updateQueue((q) => {
+    if (q.run && !q.run.finishedAt) {
+      q.run.finishedAt = Date.now();
+      backup = q.run.reason === 'auto';
+    }
+  });
+  // A cancelled backup did not save its chats: the next run lists as far back as this one did.
+  await updateKey('schedule', (sch) => ({
+    ...(sch || {}),
+    ...(backup && sch?.previousRunStartedAt !== undefined ? { lastRunStartedAt: sch.previousRunStartedAt } : {}),
+    lastRunFinishedAt: Date.now(),
+    lastRunSummary: 'Отменено пользователем',
+  }));
+  if (settings.auto.closeOpenedTabs) await closeOpenedTabs();
 }
 
 /** @param {import('./settings.js').Settings} settings */
