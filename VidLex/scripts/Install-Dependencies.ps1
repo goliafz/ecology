@@ -117,9 +117,23 @@ if (-not $SkipWhisper) {
     } else {
         $release = Invoke-RestMethod -Uri "https://api.github.com/repos/ggml-org/whisper.cpp/releases/latest" -Headers @{ "User-Agent" = "VidLex-Installer" } -UseBasicParsing
         Write-Host "    Версия whisper.cpp: $($release.tag_name)"
-        $pattern = if ($Gpu) { '^whisper-cublas-.*-bin-x64\.zip$' } else { '^whisper-bin-x64\.zip$' }
-        $asset = $release.assets | Where-Object { $_.name -match $pattern } | Sort-Object name -Descending | Select-Object -First 1
-        if (-not $asset) { throw "В релизе $($release.tag_name) не найден архив по шаблону $pattern" }
+        # Имена архивов меняются от релиза к релизу, поэтому сначала ищем точное известное имя, затем — по признакам.
+        $zips = @($release.assets | Where-Object { $_.name -match '\.zip$' })
+        Write-Host "    Архивы релиза: $(($zips | ForEach-Object { $_.name }) -join ', ')"
+        $gpuRx = 'cublas|cuda'
+        $otherRx = 'vulkan|openvino|sycl|hip|rocm|xcframework|arm|aarch64|win32|x86(?!_64)|macos|linux|android|ios|jar'
+        if ($Gpu) {
+            $asset = $zips | Where-Object { $_.name -match $gpuRx -and $_.name -match 'x64' } | Sort-Object name -Descending | Select-Object -First 1
+        } else {
+            $asset = $zips | Where-Object { $_.name -eq 'whisper-bin-x64.zip' } | Select-Object -First 1
+            if (-not $asset) {
+                $asset = $zips | Where-Object {
+                    $_.name -match 'x64' -and $_.name -match '^whisper' -and $_.name -notmatch $gpuRx -and $_.name -notmatch 'blas' -and $_.name -notmatch $otherRx
+                } | Sort-Object { $_.name.Length } | Select-Object -First 1
+            }
+        }
+        if (-not $asset) { throw "В релизе $($release.tag_name) не найден подходящий архив для Windows x64 ($(if ($Gpu) { 'CUDA' } else { 'CPU' }))" }
+        Write-Host "    Выбран архив: $($asset.name)"
         $zip = Join-Path $Downloads $asset.name
         Get-File $asset.browser_download_url $zip
         $tmp = Expand-To $zip
