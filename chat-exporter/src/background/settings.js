@@ -6,6 +6,7 @@ import { getKey, setKey } from './storage.js';
 /**
  * @typedef {Object} AutoSettings
  * @property {boolean} enabled
+ * @property {'tracked' | 'all'} scope tracked: only chats marked "Сохранять"; all: every changed chat
  * @property {string} time "HH:MM"
  * @property {number[]} days
  * @property {ExportFormat[]} formats
@@ -76,6 +77,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
   eraseFromDownloadList: false,
   auto: {
     enabled: false,
+    /** Back up only chats marked "Сохранять" (popup checkbox) or every changed chat. */
+    scope: /** @type {'tracked' | 'all'} */ ('tracked'),
     time: '23:00',
     /** 0 = Sunday … 6 = Saturday; empty = every day. */
     days: /** @type {number[]} */ ([]),
@@ -147,6 +150,7 @@ export function normalizeSettings(stored) {
     eraseFromDownloadList: bool(s.eraseFromDownloadList, d.eraseFromDownloadList),
     auto: {
       enabled: bool(a.enabled, d.auto.enabled),
+      scope: /** @type {any} */ (oneOf(a.scope, ['tracked', 'all'], d.auto.scope)),
       time: /^\d{1,2}:\d{2}$/.test(String(a.time)) ? String(a.time) : d.auto.time,
       days: Array.isArray(a.days) ? [...new Set(a.days.map(Number).filter((n) => Number.isInteger(n) && n >= 0 && n <= 6))] : [],
       formats: legacy ? [...d.auto.formats] : formats(a.formats, d.auto.formats),

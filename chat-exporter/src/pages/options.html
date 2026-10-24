@@ -71,6 +71,12 @@
   <h2>Автоматическое резервное копирование</h2>
   <p class="small muted">Работает только пока запущен Chrome. Если в назначенное время браузер закрыт или компьютер спит, запуск выполняется по правилу ниже при следующем запуске браузера.</p>
   <label class="check"><input type="checkbox" name="auto-enabled"> Включено</label>
+  <div class="field"><span>Какие чаты сохранять</span>
+    <div class="stack">
+      <label><input type="radio" name="auto-scope" value="tracked"> Только помеченные «Сохранять» (галочка в окне расширения)</label>
+      <label><input type="radio" name="auto-scope" value="all"> Все чаты, изменившиеся после включения режима</label>
+    </div>
+  </div>
   <label class="field"><span>Время</span><input type="time" name="auto-time"></label>
   <div class="field"><span>Дни недели (пусто = каждый день)</span><div id="days" class="formats"></div></div>
   <div class="field"><span>Форматы</span><div id="auto-formats"></div></div>
@@ -90,8 +96,14 @@
 </section>
 
 <section class="card">
+  <h2>Помеченные чаты</h2>
+  <p class="small muted">Чаты с галочкой «Сохранять». Их отслеживает автоматический режим: при изменениях в папку чата добавляется файл с датой. Чаты хранятся по идентификатору, поэтому переименование не мешает. Значок расширения на вкладке такого чата — зелёный, на остальных чатах — красный.</p>
+  <div id="tracked"></div>
+</section>
+
+<section class="card">
   <h2>Исключённые чаты</h2>
-  <p class="small muted">Не участвуют в автоматическом копировании. Добавить можно на странице «Список чатов».</p>
+  <p class="small muted">Используется в режиме «Все чаты»: исключённые чаты не участвуют в автоматическом копировании. Добавить можно на странице «Список чатов».</p>
   <div id="excluded"></div>
 </section>
 
@@ -118,6 +130,7 @@
   <button id="clear-index" class="danger">Очистить метаданные экспортов</button>
   <p class="small muted">После очистки расширение будет считать все чаты несохранёнными. Файлы на диске не удаляются.</p>
 </section>
+<p class="small muted credit">Chat Exporter · Разработчик: Ходаковский Александр</p>
 </main>
 <script type="module" src="options.js"></script>
 </body>

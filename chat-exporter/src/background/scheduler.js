@@ -14,6 +14,7 @@ import { addLog } from './log.js';
 import { enqueue, getQueue } from './queue.js';
 import { loadSettings } from './settings.js';
 import { getKey, updateKey } from './storage.js';
+import { getTracked } from './tracked.js';
 
 export const BACKUP_ALARM = 'auto-backup';
 export const CATCHUP_ALARM = 'catch-up';
@@ -117,7 +118,7 @@ export async function onScheduleAlarm(alarm) {
 /**
  * Detects changed chats on every enabled service and queues them.
  * @param {'scheduled' | 'catch-up' | 'manual'} trigger
- * @returns {Promise<{ queued: number, errors: string[] }>}
+ * @returns {Promise<{ queued: number, errors: string[], note?: string }>}
  */
 export async function runBackup(trigger) {
   const settings = await loadSettings();
@@ -126,6 +127,13 @@ export async function runBackup(trigger) {
   if (q.jobs.some((j) => j.status === 'running' || j.status === 'pending')) {
     await addLog('info', 'Резервное копирование уже выполняется — новый запуск не нужен');
     return { queued: 0, errors: [] };
+  }
+  if (settings.auto.scope === 'tracked' && Object.keys(await getTracked()).length === 0) {
+    const note = 'Нет помеченных чатов: отметьте «Сохранять» в окне расширения на нужных чатах';
+    await updateKey('schedule', (s) => ({ ...(s || {}), lastRunStartedAt: Date.now(), lastRunFinishedAt: Date.now(), lastRunSummary: note, missedPending: null, nextRunAt: null }));
+    if (settings.auto.enabled) await syncSchedule();
+    await addLog('info', note);
+    return { queued: 0, errors: [], note };
   }
   const previousRun = sched.lastRunStartedAt || null;
   await updateKey('schedule', (s) => ({ ...(s || {}), lastRunStartedAt: Date.now(), missedPending: null, nextRunAt: null }));
@@ -140,7 +148,8 @@ export async function runBackup(trigger) {
   for (const service of /** @type {import('../core/model.js').ServiceId[]} */ (['chatgpt', 'claude'])) {
     if (!settings.services[service]) continue;
     try {
-      const { candidates, stats } = await findCandidates(service, settings, { lastRunStartedAt: previousRun });
+      const { candidates, stats, skipped } = await findCandidates(service, settings, { lastRunStartedAt: previousRun });
+      if (skipped) continue; // no marked chats of this service: nothing to list
       await addLog('info', `${SERVICES[service].label}: в списке ${stats.listed}, к сохранению ${candidates.length}${stats.excluded ? `, исключено ${stats.excluded}` : ''}`);
       all.push(...candidates);
     } catch (err) {

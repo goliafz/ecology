@@ -4,6 +4,7 @@ import { detectChanges } from '../core/change-detection.js';
 import { addLog } from './log.js';
 import { getIndex, mutateIndex, setKey, getKey } from './storage.js';
 import { getServiceTab, sendToTab, withTabLease } from './tabs.js';
+import { getTracked, updateTrackedTitles } from './tracked.js';
 
 /**
  * Lists chats of a service.
@@ -54,8 +55,13 @@ export async function findCandidates(service, settings, schedule) {
   const stopBefore = service === 'chatgpt' && cutoffMs && !settings.auto.backfill
     ? new Date(Math.min(cutoffMs, baselineAt)).toISOString()
     : null;
+  const tracked = settings.auto.scope === 'tracked' ? await getTracked() : null;
+  if (tracked && !Object.keys(tracked).some((k) => k.startsWith(`${service}:`))) {
+    return { candidates: [], stats: { listed: 0, missing: 0, excluded: 0 }, skipped: true };
+  }
   const listing = await listChats(service, settings, { allowOpen: settings.auto.openTabs, stopBefore });
   for (const w of listing.warnings) await addLog('warn', `${SERVICES[service].label}: ${w}`);
+  await updateTrackedTitles(listing.items);
 
   const index = await getIndex();
   const result = detectChanges(index, listing.items, {
@@ -67,6 +73,7 @@ export async function findCandidates(service, settings, schedule) {
     maxAttempts: settings.auto.maxAttempts,
     maxChats: settings.auto.maxChatsPerRun,
     listComplete: listing.complete && !stopBefore,
+    tracked,
   });
   // Only list-derived fields are merged: an export may have updated lastExport meanwhile.
   await mutateIndex((idx) => {
@@ -87,5 +94,5 @@ export async function findCandidates(service, settings, schedule) {
   if (result.stats.missing > 0) {
     await addLog('info', `${SERVICES[service].label}: ${result.stats.missing} чат(ов) больше нет в списке (удалены или архивированы); резервные копии сохранены`);
   }
-  return { candidates: result.candidates, stats: result.stats };
+  return { candidates: result.candidates, stats: result.stats, skipped: false };
 }

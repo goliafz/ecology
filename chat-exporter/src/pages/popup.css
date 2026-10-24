@@ -6,3 +6,5 @@ body > * + * { margin-top: 10px; }
 #current-chat strong { overflow-wrap: anywhere; }
 #result ul { margin: 4px 0 0; padding-left: 18px; }
 footer { border-top: 1px solid var(--border); padding-top: 8px; }
+.credit { text-align: right; margin-top: 4px; }
+#track-row { padding: 6px 0; }

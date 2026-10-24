@@ -89,3 +89,41 @@ test('settings normalization: defaults, clamping, invalid values', () => {
   assert.deepEqual(legacy.auto.formats, ['pdf']);
   assert.equal(normalizeSettings({ schema: 2, folderMask: '' }).folderMask, '', 'empty folder mask allowed');
 });
+
+test('tracked scope: only marked chats, marked-but-never-saved always included', () => {
+  const tracked = { 'chatgpt:t1': { title: 'Помеченный' }, 'chatgpt:old': { title: 'Старый помеченный' }, 'chatgpt:far': { title: 'Нет в списке' }, 'claude:x': { title: 'Claude' } };
+  const index = {
+    'chatgpt:t1': { service: 'chatgpt', id: 't1', title: 't1', updatedAt: null, lastExport: exported('2026-10-23T10:00:00Z') },
+    'chatgpt:far2': { service: 'chatgpt', id: 'far2', title: 'f', updatedAt: null, lastExport: exported('2026-10-01T00:00:00Z') },
+  };
+  const items = [
+    item('t1', '2026-10-24T12:00:00Z'), // marked, changed
+    item('u', '2026-10-24T12:00:00Z'), // not marked, changed -> ignored
+    item('old', '2025-01-01T00:00:00Z'), // marked, never saved, older than baseline -> saved anyway
+  ];
+  const r = detectChanges(/** @type {any} */ (index), items, { ...base, tracked, listComplete: false });
+  assert.deepEqual(r.candidates.map((c) => [c.id, c.reason]).sort(), [['far', 'new'], ['old', 'new'], ['t1', 'changed']]);
+  assert.ok(!r.candidates.some((c) => c.service === 'claude'), 'other service handled in its own run');
+
+  const after = { ...index, 'chatgpt:old': { service: 'chatgpt', id: 'old', title: 'o', updatedAt: '2025-01-01T00:00:00Z', lastExport: exported('2025-01-01T00:00:00Z') } };
+  const r2 = detectChanges(/** @type {any} */ (after), [item('old', '2025-01-01T00:00:00Z')], { ...base, tracked: { 'chatgpt:old': {} }, listComplete: false });
+  assert.equal(r2.candidates.length, 0, 'saved and unchanged -> nothing to do');
+});
+
+test('icon colour: green for a marked chat, red for an unmarked chat, default elsewhere', async () => {
+  const { iconStateFor } = await import('../src/background/tracked.js');
+  const tracked = { 'chatgpt:11111111-2222-3333-4444-555555555555': {}, 'claude:aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee': {} };
+  assert.equal(iconStateFor('https://chatgpt.com/c/11111111-2222-3333-4444-555555555555', /** @type {any} */ (tracked)), 'tracked');
+  assert.equal(iconStateFor('https://chatgpt.com/g/g-abc-name/c/11111111-2222-3333-4444-555555555555', /** @type {any} */ (tracked)), 'tracked');
+  assert.equal(iconStateFor('https://claude.ai/chat/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', /** @type {any} */ (tracked)), 'tracked');
+  assert.equal(iconStateFor('https://chatgpt.com/c/99999999-2222-3333-4444-555555555555', /** @type {any} */ (tracked)), 'untracked');
+  assert.equal(iconStateFor('https://chatgpt.com/', /** @type {any} */ (tracked)), 'default');
+  assert.equal(iconStateFor('https://example.com/c/11111111-2222-3333-4444-555555555555', /** @type {any} */ (tracked)), 'default');
+  assert.equal(iconStateFor(undefined, {}), 'default');
+});
+
+test('settings: auto scope defaults to marked chats', () => {
+  assert.equal(normalizeSettings({ schema: 2 }).auto.scope, 'tracked');
+  assert.equal(normalizeSettings({ schema: 2, auto: { scope: 'all' } }).auto.scope, 'all');
+  assert.equal(normalizeSettings({ schema: 2, auto: { scope: 'x' } }).auto.scope, 'tracked');
+});

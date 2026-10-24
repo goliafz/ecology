@@ -13,6 +13,7 @@ import { htmlToPdf, openPrintDialog } from './pdf.js';
 import { getIndex, updateIndexEntry } from './storage.js';
 import { ensureContentScript, getServiceTab, isOwnTab, navigateOwnTab, sendToTab, withTabLease } from './tabs.js';
 import { writeFile } from './downloads.js';
+import { updateTrackedTitles } from './tracked.js';
 
 const VERSION = chrome.runtime.getManifest().version;
 
@@ -271,6 +272,7 @@ async function exportChatInner(req, settings, progress) {
     } : e?.lastExport,
   }));
 
+  await updateTrackedTitles([{ service: req.service, id: req.id, title: chat.title }]);
   await addLog(report.status === 'complete' ? 'info' : 'warn',
     `Экспорт (${Object.keys(written).join(', ') || 'нет файлов'}): ${STATUS_LABELS[report.status]}, сообщений ${chat.messages.length}`,
     { chat: key, title: chat.title });

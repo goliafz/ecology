@@ -15,6 +15,7 @@
  * @property {number} maxChats
  * @property {boolean} listComplete the list covers every chat (enables deletion detection)
  * @property {import('./model.js').ServiceId} service
+ * @property {Record<string, { title?: string }> | null} [tracked] marked chats: when set, only they are backed up
  */
 
 /**
@@ -63,15 +64,29 @@ export function detectChanges(index, items, opt) {
       excluded += 1;
       continue;
     }
+    if (opt.tracked && !opt.tracked[key]) continue;
     const c = classify(entry, opt);
     if (!c) continue;
     const cand = { service: item.service, id: item.id, title: item.title, updatedAt: entry.updatedAt, reason: c };
     (c === 'backfill' ? backfill : priority).push(cand);
   }
 
+  // Marked chats never saved yet are saved even if the (possibly shortened) list misses them.
+  if (opt.tracked) {
+    for (const [key, t] of Object.entries(opt.tracked)) {
+      if (!key.startsWith(`${opt.service}:`) || listed.has(key)) continue;
+      const entry = next[key];
+      if (entry?.lastExport || entry?.missingSince || (entry?.failures || 0) >= opt.maxAttempts) continue;
+      const id = key.slice(opt.service.length + 1);
+      priority.push({ service: opt.service, id, title: entry?.title || t.title || id, updatedAt: entry?.updatedAt || null, reason: 'new' });
+    }
+  }
+
   // Chats marked by activity tracking but not present in this (possibly partial) list.
   for (const [key, entry] of Object.entries(next)) {
     if (entry.service !== opt.service || listed.has(key) || opt.excluded[key]) continue;
+    if (opt.tracked && !opt.tracked[key]) continue;
+    if (opt.tracked && !entry.lastExport) continue; // already added above
     if (entry.dirty && !entry.missingSince && (entry.failures || 0) < opt.maxAttempts) {
       priority.push({ service: entry.service, id: entry.id, title: entry.title, updatedAt: entry.updatedAt, reason: 'activity' });
     }
@@ -118,6 +133,8 @@ export function classify(entry, opt) {
     if (ms(entry.updatedAt) > ms(last.updatedAt)) return 'changed';
     return null;
   }
+  // A marked chat is saved as soon as it is marked, however old it is.
+  if (opt.tracked) return 'new';
   const updated = ms(entry.updatedAt);
   if (opt.baselineAt && updated >= opt.baselineAt) return 'new';
   if (!opt.baselineAt && updated) return 'new';

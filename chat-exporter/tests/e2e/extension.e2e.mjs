@@ -260,7 +260,34 @@ async function main() {
     const after = (await sw.evaluate(() => chrome.downloads.search({ state: 'complete' }))).length;
     assert.equal(after, before, 'no files written for unchanged chat');
 
-    // 4. Automatic backup run: chat changed on the "server" -> only it is exported.
+    // 4. Marked chats only (default scope): without marks nothing is backed up.
+    r = await call('runBackupNow');
+    assert.match(r.data.note || '', /Нет помеченных чатов/);
+    const iconTitle = () => sw.evaluate(async () => {
+      const [tab] = await chrome.tabs.query({ url: 'https://chatgpt.com/c/*' });
+      return chrome.action.getTitle({ tabId: tab.id });
+    });
+    console.log('icon title before:', await iconTitle());
+    assert.match(await iconTitle(), /не помечен/, 'red icon on an unmarked chat');
+    r = await call('setTracked', { service: 'chatgpt', id: CHATGPT_ID, title: 'Тестовый чат', tracked: true });
+    assert.ok(r.ok, JSON.stringify(r));
+    assert.match(await iconTitle(), /помечен «Сохранять»/, 'green icon on a marked chat');
+    const iconCheck = await sw.evaluate(async () => {
+      const [tab] = await chrome.tabs.query({ url: 'https://chatgpt.com/c/*' });
+      const out = {};
+      for (const p of ['/icons/icon-green16.png', '/icons/icon-red16.png', 'icons/icon-red16.png']) {
+        try { await chrome.action.setIcon({ tabId: tab.id, path: { 16: p } }); out[p] = 'ok'; } catch (e) { out[p] = e.message; }
+      }
+      return out;
+    });
+    console.log('setIcon paths:', JSON.stringify(iconCheck));
+    assert.equal(iconCheck['/icons/icon-green16.png'], 'ok');
+    assert.equal(iconCheck['/icons/icon-red16.png'], 'ok');
+    const trackedList = (await call('getTracked')).data;
+    assert.deepEqual(trackedList.map((t) => t.key), [`chatgpt:${CHATGPT_ID}`]);
+
+    // 4a. Automatic backup run: the marked chat changed on the "server" -> only it is exported;
+    //     the Claude chat is not marked and is not even listed.
     state.chatgptUpdate += 3600;
     state.chatgptAnswer = 'Обновлённый ответ';
     r = await call('runBackupNow');

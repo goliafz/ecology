@@ -2,7 +2,8 @@
   "manifest_version": 3,
   "name": "Chat Exporter — ChatGPT & Claude",
   "short_name": "Chat Exporter",
-  "version": "1.1.2",
+  "version": "1.2.0",
+  "author": "Ходаковский Александр",
   "description": "Экспорт переписок ChatGPT и Claude в PDF, HTML и Markdown с проверкой полноты и автоматическим резервным копированием. Всё локально.",
   "minimum_chrome_version": "120",
   "icons": {

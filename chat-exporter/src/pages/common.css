@@ -63,3 +63,4 @@ table { border-collapse: collapse; width: 100%; }
 th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
 th { font-weight: 600; color: var(--muted); font-size: 12px; }
 label:has(> input[type="radio"]) { display: block; margin: 4px 0; }
+[hidden] { display: none !important; }

@@ -13,3 +13,4 @@ main > * + * { margin-top: 14px; }
 code { background: var(--panel); padding: 0 4px; border-radius: 4px; }
 @media (max-width: 640px) { .field { grid-template-columns: 1fr; } }
 .preview{overflow-wrap:anywhere;padding:4px 6px}
+.credit{text-align:center}

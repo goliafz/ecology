@@ -11,6 +11,7 @@ import { BACKUP_ALARM, CATCHUP_ALARM, checkMissedRun, getSchedule, onScheduleAla
 import { loadSettings, saveSettings, DEFAULT_SETTINGS } from './settings.js';
 import { getIndex, getKey, setKey, updateIndexEntry, updateKey } from './storage.js';
 import { ensureContentScript, sendToTab } from './tabs.js';
+import { getTracked, refreshAllIcons, setTracked, updateTabIcon } from './tracked.js';
 import { writeFile } from './downloads.js';
 import { expandTemplate } from '../core/filenames.js';
 
@@ -28,6 +29,14 @@ chrome.runtime.onStartup.addListener(() => {
   init().catch((err) => console.error(err));
 });
 
+// Toolbar icon colour per tab: green = chat marked "Сохранять", red = not marked.
+chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
+  if (info.url || info.status === 'complete') updateTabIcon(tabId, tab.url).catch(() => {});
+});
+chrome.tabs.onActivated.addListener(({ tabId }) => {
+  chrome.tabs.get(tabId).then((tab) => updateTabIcon(tabId, tab.url), () => {});
+});
+
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === QUEUE_ALARM) {
     processQueue().catch((err) => addLog('error', `Сбой очереди: ${err instanceof Error ? err.message : err}`));
@@ -42,6 +51,7 @@ async function init() {
   initialized = true;
   await resumeQueue();
   await checkMissedRun();
+  await refreshAllIcons();
 }
 
 // The worker also starts for messages and alarms; make sure state is restored then too.
@@ -55,10 +65,14 @@ init().catch((err) => console.error('[Chat Exporter] init failed', err));
 /** @type {Record<string, (msg: any, sender: chrome.runtime.MessageSender) => Promise<any> | any>} */
 const handlers = {
   async getState() {
-    const [settings, queue, schedule, lastResult, tab] = await Promise.all([
-      loadSettings(), getQueue(), getSchedule(), getKey('lastResult'), activeTabInfo(),
+    const [settings, queue, schedule, lastResult, tab, tracked] = await Promise.all([
+      loadSettings(), getQueue(), getSchedule(), getKey('lastResult'), activeTabInfo(), getTracked(),
     ]);
-    return { settings, queue: summarize(queue), jobs: queue.jobs.slice(-50), schedule, lastResult, tab, debuggerAvailable: isDebuggerAvailable() };
+    const tabTracked = Boolean(tab.service && tab.chatId && tracked[chatKey(tab.service, tab.chatId)]);
+    return {
+      settings, queue: summarize(queue), jobs: queue.jobs.slice(-50), schedule, lastResult,
+      tab: { ...tab, tracked: tabTracked }, trackedCount: Object.keys(tracked).length, debuggerAvailable: isDebuggerAvailable(),
+    };
   },
 
   async exportCurrent(msg) {
@@ -93,16 +107,43 @@ const handlers = {
     return { added };
   },
 
+  // Marks / unmarks a chat for automatic backups (the popup checkbox "Сохранять").
+  async setTracked(msg) {
+    let { service, id, title } = msg;
+    if (!service || !id) {
+      const tab = await activeTabInfo();
+      if (!tab.service || !tab.chatId) throw Object.assign(new Error('Откройте чат ChatGPT или Claude в активной вкладке'), { code: 'NOT_A_CHAT' });
+      ({ service, chatId: id, title } = { ...tab, title: title || tab.title });
+    }
+    if (!SERVICES[service]) throw new Error('Неизвестный сервис');
+    await setTracked({ service, id, title }, Boolean(msg.tracked));
+    await addLog('info', msg.tracked ? 'Чат помечен «Сохранять»' : 'Пометка «Сохранять» снята', { chat: chatKey(service, id), title });
+    broadcastState();
+    return true;
+  },
+
+  async getTracked() {
+    const [tracked, index] = await Promise.all([getTracked(), getIndex()]);
+    return Object.entries(tracked).map(([key, t]) => ({
+      ...t,
+      key,
+      lastExport: index[key]?.lastExport ? { at: index[key].lastExport.at, status: index[key].lastExport.status } : null,
+      lastError: index[key]?.lastError || null,
+    }));
+  },
+
   async listChats(msg) {
     const settings = await loadSettings();
     const service = /** @type {import('../core/model.js').ServiceId} */ (msg.service);
     if (!SERVICES[service]) throw new Error('Неизвестный сервис');
     const result = msg.cached ? await getCachedList(service) : await listChats(service, settings, { allowOpen: Boolean(msg.allowOpen) });
     const index = await getIndex();
+    const tracked = await getTracked();
     const items = (result?.items || []).map((/** @type {any} */ it) => {
       const entry = index[chatKey(service, it.id)];
       return {
         ...it,
+        tracked: Boolean(tracked[chatKey(service, it.id)]),
         excluded: Boolean(settings.excluded[chatKey(service, it.id)]),
         lastExport: entry?.lastExport ? { at: entry.lastExport.at, status: entry.lastExport.status, updatedAt: entry.lastExport.updatedAt, formats: entry.lastExport.formats } : null,
         lastError: entry?.lastError || null,

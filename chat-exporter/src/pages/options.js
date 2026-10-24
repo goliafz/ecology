@@ -41,6 +41,7 @@ function fill() {
   field('includeChatGptProjects').checked = s.includeChatGptProjects;
   field('trackActivity').checked = s.trackActivity;
   field('auto-enabled').checked = s.auto.enabled;
+  setRadio('auto-scope', s.auto.scope);
   field('auto-time').value = s.auto.time.padStart(5, '0');
   $('days').replaceChildren(...DAYS.map((d, i) => h('label', { class: 'chip' }, h('input', { type: 'checkbox', 'data-day': String(i), checked: s.auto.days.includes(i) }), ` ${d}`)));
   /** @type {HTMLSelectElement} */ (form.elements.namedItem('auto-missedRun')).value = s.auto.missedRun;
@@ -66,6 +67,25 @@ function updatePreview() {
 $('mask-tokens').replaceChildren('Подстановки: ', ...Object.entries(MASK_TOKENS).flatMap(([k, v], i) => [i ? ', ' : '', h('code', {}, `%${k}%`), ` — ${v}`]));
 for (const name of ['rootFolder', 'folderMask', 'fileMask']) field(name).addEventListener('input', updatePreview);
 $('formats').addEventListener('change', updatePreview);
+
+async function renderTracked() {
+  const list = await call('getTracked');
+  if (!list.length) {
+    $('tracked').replaceChildren(h('p', { class: 'muted small' }, 'Пока нет помеченных чатов. Откройте чат ChatGPT или Claude, нажмите на значок расширения и поставьте галочку «Сохранять».'));
+    return;
+  }
+  list.sort((/** @type {any} */ a, /** @type {any} */ b) => b.addedAt - a.addedAt);
+  $('tracked').replaceChildren(h('table', {},
+    h('thead', {}, h('tr', {}, h('th', {}, 'Сервис'), h('th', {}, 'Чат'), h('th', {}, 'Последнее сохранение'), h('th', {}, ''))),
+    h('tbody', {}, ...list.map((/** @type {any} */ t) => h('tr', {},
+      h('td', {}, t.service === 'claude' ? 'Claude' : 'ChatGPT'),
+      h('td', {}, h('a', { href: t.service === 'claude' ? `https://claude.ai/chat/${t.id}` : `https://chatgpt.com/c/${t.id}`, target: '_blank', rel: 'noopener' }, t.title || t.id), h('div', { class: 'small muted' }, t.id)),
+      h('td', { class: 'small' }, t.lastError && (!t.lastExport || t.lastError.at > t.lastExport.at) ? `ошибка: ${t.lastError.message}` : t.lastExport ? fmtDate(t.lastExport.at) : 'ещё не сохранялся'),
+      h('td', {}, h('button', { type: 'button', class: 'small', onclick: async () => {
+        await call('setTracked', { service: t.service, id: t.id, title: t.title, tracked: false });
+        await renderTracked();
+      } }, 'Снять пометку')))))));
+}
 
 function renderExcluded() {
   const entries = Object.entries(settings.excluded || {});
@@ -106,6 +126,7 @@ function collect() {
     auto: {
       ...settings.auto,
       enabled: field('auto-enabled').checked,
+      scope: getRadio('auto-scope'),
       time: field('auto-time').value || '23:00',
       days,
       formats: readFormats($('auto-formats')),
@@ -179,6 +200,7 @@ async function renderStats() {
   settings = state.settings;
   $('debugger-warning').hidden = state.debuggerAvailable;
   fill();
+  await renderTracked();
   await renderLog();
   await renderStats();
   if (location.hash === '#log') $('log').scrollIntoView();

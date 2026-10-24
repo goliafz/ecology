@@ -3,6 +3,8 @@ import { call, COMPLETENESS_TEXT, fmtDate, FORMAT_LABELS, h } from './ui.js';
 const $ = (/** @type {string} */ id) => /** @type {HTMLElement} */ (document.getElementById(id));
 /** @type {any[]} */
 let items = [];
+/** Auto mode scope: the exclusion column only matters when every changed chat is backed up. */
+let scope = 'tracked';
 /** Selected keys "service:id" -> item. Survives switching services. */
 /** @type {Map<string, any>} */
 const selected = new Map();
@@ -31,6 +33,7 @@ function matchesFilter(it) {
   if (f === 'never') return !it.lastExport;
   if (f === 'problems') return st.cls === 'err';
   if (f === 'excluded') return it.excluded;
+  if (f === 'tracked') return it.tracked;
   return true;
 }
 
@@ -44,7 +47,7 @@ function render() {
     $('table').replaceChildren(h('p', { class: 'muted', style: 'padding:12px' }, 'Список не загружен. Нажмите «Загрузить список».'));
   } else {
     $('table').replaceChildren(h('table', {},
-      h('thead', {}, h('tr', {}, h('th', {}, ''), h('th', {}, 'Название'), h('th', {}, 'Изменён'), h('th', {}, 'Резервная копия'), h('th', {}, 'Авто'))),
+      h('thead', {}, h('tr', {}, h('th', {}, ''), h('th', {}, 'Название'), h('th', {}, 'Изменён'), h('th', {}, 'Резервная копия'), h('th', {}, 'Сохранять'), scope === 'all' ? h('th', {}, 'Авто') : null)),
       h('tbody', {}, ...rows.map((it) => {
         const st = statusOf(it);
         return h('tr', { class: it.excluded ? 'excluded' : '' },
@@ -56,7 +59,8 @@ function render() {
           h('td', { class: 'title' }, it.title, it.project ? h('span', { class: 'muted small' }, ' (проект)') : null),
           h('td', { class: 'small' }, fmtDate(it.updatedAt)),
           h('td', { class: 'small' }, h('span', { class: `badge ${st.cls}` }, st.text)),
-          h('td', {}, h('button', { class: 'small', onclick: () => toggleExcluded(it) }, it.excluded ? 'вернуть' : 'исключить')));
+          h('td', {}, h('input', { type: 'checkbox', title: 'Отслеживать и сохранять автоматически', checked: Boolean(it.tracked), onchange: (/** @type {Event} */ e) => toggleTracked(it, /** @type {HTMLInputElement} */ (e.target).checked) })),
+          scope === 'all' ? h('td', {}, h('button', { class: 'small', onclick: () => toggleExcluded(it) }, it.excluded ? 'вернуть' : 'исключить')) : null);
       }))));
   }
   $('selected-count').textContent = `Выбрано: ${selected.size}`;
@@ -66,6 +70,12 @@ async function saveSelection() {
   $('selected-count').textContent = `Выбрано: ${selected.size}`;
   const selection = [...selected.values()].map((it) => ({ service: it.service, id: it.id, title: it.title, updatedAt: it.updatedAt }));
   await chrome.storage.local.set({ selection });
+}
+
+/** @param {any} it @param {boolean} tracked */
+async function toggleTracked(it, tracked) {
+  await call('setTracked', { service: it.service, id: it.id, title: it.title, tracked });
+  it.tracked = tracked;
 }
 
 /** @param {any} it */
@@ -131,6 +141,7 @@ $('export').addEventListener('click', async () => {
 
 (async () => {
   const state = await call('getState');
+  scope = state.settings.auto.scope;
   const names = state.settings.formats.map((/** @type {keyof typeof FORMAT_LABELS} */ f) => FORMAT_LABELS[f]).join(', ');
   $('formats').replaceChildren(h('span', { class: 'small muted' }, `Формат: ${names} (меняется в `), h('a', { href: 'options.html', class: 'small' }, 'настройках'), h('span', { class: 'small muted' }, ')'));
   const { selection } = await chrome.storage.local.get('selection');

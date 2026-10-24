@@ -29,6 +29,8 @@ function render() {
     cur.append(h('span', { class: 'muted' }, 'Активная вкладка — не ChatGPT и не Claude.'));
   }
   /** @type {HTMLButtonElement} */ ($('export-current')).disabled = !(tab?.service && tab.chatId);
+  $('track-row').hidden = !(tab?.service && tab.chatId);
+  /** @type {HTMLInputElement} */ ($('track-toggle')).checked = Boolean(tab?.tracked);
 
   // Formats are chosen in the settings only.
   const names = settings.formats.map((/** @type {keyof typeof FORMAT_LABELS} */ f) => FORMAT_LABELS[f]).join(', ');
@@ -37,6 +39,7 @@ function render() {
 
   // Auto mode
   /** @type {HTMLInputElement} */ ($('auto-toggle')).checked = settings.auto.enabled;
+  $('auto-scope').textContent = settings.auto.scope === 'tracked' ? `помеченные чаты (${state.trackedCount})` : 'все изменившиеся чаты';
   const days = settings.auto.days.length ? settings.auto.days.map((/** @type {number} */ d) => DAYS[d]).join(', ') : 'ежедневно';
   const parts = [`${days} в ${settings.auto.time}`];
   if (settings.auto.enabled && schedule.nextRunAt) parts.push(`следующий запуск: ${fmtDate(schedule.nextRunAt)}`);
@@ -135,12 +138,20 @@ $('auto-toggle').addEventListener('change', (e) => guarded(async () => {
 
 $('backup-now').addEventListener('click', () => guarded(async () => {
   const res = await call('runBackupNow');
-  if (res.queued === 0) showResult(res.errors.length ? 'err' : 'ok', res.errors.length ? res.errors.join('; ') : 'Изменившихся чатов нет.');
+  if (res.queued === 0) showResult(res.errors.length ? 'err' : 'ok', res.errors.length ? res.errors.join('; ') : res.note || 'Изменившихся чатов нет.');
 }));
 
 $('save-raw').addEventListener('click', () => guarded(async () => {
   const res = await call('saveRawCurrent');
   showResult('ok', `Данные чата сохранены для диагностики: ${res.path}. Файл содержит текст переписки — передавайте его только тому, кому доверяете.`);
+}));
+
+$('track-toggle').addEventListener('change', (e) => guarded(async () => {
+  const tracked = /** @type {HTMLInputElement} */ (e.target).checked;
+  await call('setTracked', { tracked });
+  showResult('ok', tracked
+    ? 'Чат помечен «Сохранять»: значок стал зелёным, чат будет сохраняться автоматически при изменениях.'
+    : 'Пометка снята: значок стал красным, чат больше не сохраняется автоматически.');
 }));
 
 $('cancel').addEventListener('click', () => guarded(() => call('cancel')));
