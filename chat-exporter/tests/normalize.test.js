@@ -205,3 +205,46 @@ test('ChatGPT: tool calls skipped by settings do not trigger rescue when the tur
   assert.equal(chat.integrity.rescuedTurns, 0);
   assert.ok(chat.integrity.pathIds?.includes('a2'), 'skipped tool call is accounted for');
 });
+
+// Structure of a real ChatGPT answer (diagnostics file of the reported chat, text replaced):
+// the whole answer is a ```markdown code block, and metadata.content_references marks that same
+// block as a client_defined_widget (alt: null). Version 1.0.0 treated it as a citation and cut
+// the answer out; 1.1.0 rescued it from fallbackMarkdown with false warnings.
+test('ChatGPT: code block widget in content_references keeps the answer (regression)', async () => {
+  const { evaluateCompleteness } = await import('../src/core/completeness.js');
+  const answer = '```markdown\n# Системный промпт\n\n## 1. Роль\n\nТекст «в кавычках» и `код`.\n```\n\n';
+  const block = answer.trimEnd();
+  const chat = normalizeChatGpt(threeNodeChat({
+    channel: 'final',
+    content: { content_type: 'text', parts: [answer] },
+    metadata: {
+      model_slug: 'gpt-6',
+      content_references: [{ type: 'client_defined_widget', category: 'code_block', data: { content: '# Системный промпт', language: 'markdown', widget_type: 'code_block' }, matched_text: block, start_idx: 0, end_idx: block.length, alt: null }],
+      model_dil_v2: { code: 'DIL.render(...)', fallbackMarkdown: block, clientDefinedWidgets: {} },
+    },
+  }));
+  assert.equal(chat.messages.length, 2);
+  assert.equal(chat.messages[1].blocks.length, 1);
+  assert.equal(/** @type {any} */ (chat.messages[1].blocks[0]).text.trim(), block);
+  assert.equal(chat.integrity.rescuedTurns, 0, 'no raw-format rescue needed');
+  assert.equal(evaluateCompleteness(chat).status, 'complete');
+});
+
+test('ChatGPT: citation spans are still replaced, plain spans without alt are kept', () => {
+  assert.equal(cleanCitations('A citet0 B', { content_references: [{ matched_text: 'citet0', alt: '[s](https://x.y)' }] }), 'A [s](https://x.y) B');
+  assert.equal(cleanCitations('keep this text', { content_references: [{ matched_text: 'this text', alt: null, type: 'client_defined_widget' }] }), 'keep this text');
+  assert.equal(cleanCitations('see x', { content_references: [{ matched_text: 'x', type: 'webpage', url: 'https://e.com', title: 'E' }] }), 'see  ([E](https://e.com))');
+});
+
+test('ChatGPT: "analysis" channel is hidden reasoning, not the answer', () => {
+  const raw = threeNodeChat({ channel: 'final', content: { content_type: 'text', parts: ['Ответ'] } });
+  raw.mapping.q.children = ['r'];
+  raw.mapping.r = { id: 'r', parent: 'q', children: ['a'], message: { id: 'r', author: { role: 'assistant' }, channel: 'analysis', recipient: 'all', content: { content_type: 'text', parts: ['Внутренние рассуждения'] } } };
+  raw.mapping.a.parent = 'r';
+  const plain = normalizeChatGpt(raw);
+  assert.deepEqual(plain.messages[1].blocks.map((b) => b.type), ['markdown']);
+  assert.ok(!JSON.stringify(plain.messages).includes('Внутренние рассуждения'));
+  assert.equal(plain.integrity.rescuedTurns, 0);
+  const withThinking = normalizeChatGpt(raw, { includeThinking: true });
+  assert.deepEqual(withThinking.messages[1].blocks.map((b) => b.type), ['thinking', 'markdown']);
+});

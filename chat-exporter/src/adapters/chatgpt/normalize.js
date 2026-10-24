@@ -118,10 +118,10 @@ export function normalizeChatGpt(raw, options = {}) {
     imagesFailed += converted.imagesFailed;
     const blocks = [...attachmentBlocks(msg), ...converted.blocks];
     if (blocks.length === 0) {
-      const text = role === 'user' ? '' : anyText(msg);
+      const text = role === 'user' || msg.channel === 'analysis' ? '' : anyText(msg);
       if (text.trim()) {
         turnSkipped.push({ id: msgId, text, type: String(contentType || 'unknown'), time: msg.create_time, nodeParent: node.parent || null, recipient: String(msg.recipient || '') });
-      } else if (contentType === 'thoughts' || contentType === 'reasoning_recap') {
+      } else if (contentType === 'thoughts' || contentType === 'reasoning_recap' || msg.channel === 'analysis') {
         knownIds.add(msgId).add(nodeId);
       } else {
         unextracted.push(msgId);
@@ -267,8 +267,13 @@ function attachmentBlocks(msg) {
 }
 
 /**
- * Replaces ChatGPT citation markers with Markdown links where the API provides them.
- * Unknown markers (private-use characters) are removed.
+ * Applies ChatGPT content references to the message text.
+ *
+ * `content_references` mark spans of the text (`matched_text`). Citation markers are wrapped in
+ * private-use characters ("citeturn0search3") and are replaced by their
+ * Markdown link (`alt`) or removed. Other references point at real content: a
+ * `client_defined_widget` with widget_type "code_block" marks a whole ```code block``` that the UI
+ * draws as a widget. Such spans are kept as they are: deleting them deleted the answer itself.
  * @param {string} text
  * @param {any} metadata
  */
@@ -277,14 +282,16 @@ export function cleanCitations(text, metadata) {
   const refs = Array.isArray(metadata?.content_references) ? metadata.content_references : [];
   for (const ref of refs) {
     if (!ref || typeof ref.matched_text !== 'string' || !ref.matched_text) continue;
+    const hasAlt = typeof ref.alt === 'string' && ref.alt.trim();
+    const isMarker = /[-]/.test(ref.matched_text);
+    if (!hasAlt && !isMarker) continue; // real content (code block widget etc.): keep it
     let replacement = '';
-    if (typeof ref.alt === 'string' && ref.alt.trim()) replacement = ref.alt;
+    if (hasAlt) replacement = ref.alt;
     else if (ref.type === 'webpage' && ref.url) replacement = ` ([${ref.title || ref.url}](${ref.url}))`;
     out = out.split(ref.matched_text).join(replacement);
   }
-  // Remaining markers look like "\uE200cite\uE202turn0search3\uE201".
-  out = out.replace(/ ?\uE200[^\uE201]*\uE201/g, '');
-  out = out.replace(/[\uE200-\uE2FF]/g, '');
+  out = out.replace(/ ?[^]*/g, '');
+  out = out.replace(/[-]/g, '');
   return out;
 }
 
@@ -406,6 +413,15 @@ function convertContent(msg, role, options, ctx) {
       });
     }
   };
+
+  // Reasoning models write hidden reasoning to the "analysis" channel; it is not the answer.
+  if (role === 'assistant' && msg.channel === 'analysis' && type === 'text') {
+    if (options.includeThinking) {
+      const parts = Array.isArray(content.parts) ? content.parts.filter((p) => typeof p === 'string') : [];
+      if (parts.join('').trim()) blocks.push({ type: 'thinking', text: parts.join('\n\n') });
+    }
+    return { blocks, imagesFailed };
+  }
 
   switch (type) {
     case 'text': {

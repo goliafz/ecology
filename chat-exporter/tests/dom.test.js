@@ -71,3 +71,26 @@ test('DOM adapters: ChatGPT and Claude message discovery', async () => {
     delete g.document;
   }
 });
+
+test('ChatGPT fallback selectors and diagnostics probe (no text in the probe)', async () => {
+  const dom = new JSDOM(`<!DOCTYPE html><body><main>
+    <article data-testid="conversation-turn-1" data-turn="user"><div class="whitespace-pre-wrap">Покажи как составлен промт</div></article>
+    <article data-testid="conversation-turn-2" data-turn="assistant"><div class="markdown"><p>Ответ</p></div></article>
+  </main></body>`);
+  const g = /** @type {any} */ (globalThis);
+  g.document = dom.window.document;
+  g.NodeFilter = dom.window.NodeFilter;
+  try {
+    const { chatGptDom, domProbe } = await import('../src/content/dom-adapters.js');
+    assert.deepEqual(chatGptDom.messages().map((m) => [m.role, m.text]), [['user', 'Покажи как составлен промт'], ['assistant', 'Ответ']]);
+    assert.equal(chatGptDom.userMessageCount(), 1);
+    const probe = domProbe('Покажи как составлен промт');
+    assert.equal(probe.counts['[data-testid^="conversation-turn-"]'], 2);
+    assert.match(probe.ancestors[0], /^<div class="whitespace-pre-wrap">$/);
+    assert.match(probe.ancestors[1], /data-turn="user"/);
+    assert.ok(!probe.ancestors.join('').includes('Покажи'), 'probe contains no message text');
+  } finally {
+    delete g.document;
+    delete g.NodeFilter;
+  }
+});

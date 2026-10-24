@@ -5,7 +5,7 @@ import { claudeIdFromUrl } from '../adapters/claude/normalize.js';
 import { serializeError, ErrorCode, ExportError } from '../core/util.js';
 import * as chatgpt from './chatgpt-client.js';
 import * as claude from './claude-client.js';
-import { domAdapterFor } from './dom-adapters.js';
+import { domAdapterFor, domProbe } from './dom-adapters.js';
 import { extractViaDom } from './dom-extract.js';
 import { startActivityTracker } from './activity.js';
 
@@ -37,13 +37,31 @@ function pageInfo() {
   };
 }
 
+/**
+ * Text of the first user message in raw chat data (used only to locate it in the page).
+ * @param {any} raw
+ */
+function firstUserText(raw) {
+  if (raw?.mapping) {
+    const first = Object.values(raw.mapping)
+      .map((n) => /** @type {any} */ (n).message)
+      .filter((m) => m?.author?.role === 'user' && Array.isArray(m.content?.parts) && typeof m.content.parts[0] === 'string')
+      .sort((a, b) => (a.create_time || 0) - (b.create_time || 0))[0];
+    return first ? first.content.parts[0] : '';
+  }
+  const human = (raw?.chat_messages || []).find((/** @type {any} */ m) => m.sender === 'human');
+  return human?.content?.find?.((/** @type {any} */ c) => c.type === 'text')?.text || human?.text || '';
+}
+
 /** @type {Record<string, (msg: any) => Promise<any> | any>} */
 const commands = {
   ping: () => pageInfo(),
   listChats: (msg) => client.listChats({ stopBefore: msg.stopBefore, maxPages: msg.maxPages, includeProjects: msg.includeProjects }),
   async fetchChat(msg) {
     const data = await client.fetchChat(String(msg.id), { includeImages: Boolean(msg.includeImages), maxImageBytes: Number(msg.maxImageBytes) || 8 * 1024 * 1024 });
-    return { ...data, page: pageInfo() };
+    const page = pageInfo();
+    if (msg.diagnose) Object.assign(page, { domProbe: domProbe(firstUserText(data.raw)) });
+    return { ...data, page };
   },
   async extractDom() {
     if (!service || !dom) throw new ExportError(ErrorCode.NOT_A_CHAT, 'Неподдерживаемый сайт');

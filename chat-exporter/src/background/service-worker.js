@@ -157,7 +157,7 @@ const handlers = {
     if (!tab.service || !tab.chatId || tab.tabId === undefined) throw Object.assign(new Error('Откройте чат ChatGPT или Claude в активной вкладке'), { code: 'NOT_A_CHAT' });
     const settings = await loadSettings();
     await ensureContentScript(tab.tabId);
-    const data = await sendToTab(tab.tabId, { cmd: 'fetchChat', id: tab.chatId, includeImages: false, maxImageBytes: 0 }, 120_000);
+    const data = await sendToTab(tab.tabId, { cmd: 'fetchChat', id: tab.chatId, includeImages: false, maxImageBytes: 0, diagnose: true }, 120_000);
     const root = expandTemplate(settings.rootFolder, {}) || 'ChatBackups';
     const body = { savedAt: new Date().toISOString(), extension: chrome.runtime.getManifest().version, page: data.page, raw: data.raw };
     const res = await writeFile(`${root}/_diagnostics/${tab.service}_${tab.chatId}.json`, `${JSON.stringify(body, null, 2)}\n`, 'application/json;charset=utf-8', { conflictAction: 'overwrite' });

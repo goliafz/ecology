@@ -28,14 +28,17 @@ const CLAUDE_DOM_ID = 'cccccccc-1111-2222-3333-444444444444';
 const CANVAS_ID = '6ad9ca9b-c008-83eb-a4a9-d534310d6a17';
 const CANVAS_DOC = '# Промт-улучшатель\n\n### Шаг 4. Сделай промпт проверяемым\n\nЗаменяй абстрактные требования конкретными.';
 
-// Shape of the reported chat: root, question, one answer delivered as a ChatGPT canvas document.
+// Shape of the reported chat (from its diagnostics file, text replaced): the answer is a
+// ```markdown block that content_references also marks as a client_defined_widget.
 function canvasConversation() {
   return {
     title: 'Показ промта улучшателя', create_time: 1792658076, update_time: 1792658164, current_node: 'a', conversation_id: CANVAS_ID,
     mapping: {
       root: { id: 'root', parent: null, children: ['q'], message: null },
       q: { id: 'q', parent: 'root', children: ['a'], message: { id: 'q', author: { role: 'user' }, create_time: 1792658085, content: { content_type: 'text', parts: ['Покажи как составлен промт для улучшения промтов.'] }, status: 'finished_successfully', recipient: 'all' } },
-      a: { id: 'a', parent: 'q', children: [], message: { id: 'a', author: { role: 'assistant' }, create_time: 1792658160, recipient: 'canmore.create_textdoc', status: 'finished_successfully', content: { content_type: 'code', language: 'json', text: JSON.stringify({ name: 'Промт-улучшатель', type: 'code/markdown', content: CANVAS_DOC }) } } },
+      a: { id: 'a', parent: 'q', children: [], message: { id: 'a', author: { role: 'assistant' }, create_time: 1792658160, recipient: 'all', channel: 'final', status: 'finished_successfully',
+        content: { content_type: 'text', parts: [`\`\`\`markdown\n${CANVAS_DOC}\n\`\`\`\n\n`] },
+        metadata: { model_slug: 'gpt-6', content_references: [{ type: 'client_defined_widget', category: 'code_block', data: { content: CANVAS_DOC, language: 'markdown', widget_type: 'code_block' }, matched_text: `\`\`\`markdown\n${CANVAS_DOC}\n\`\`\``, start_idx: 0, alt: null }], model_dil_v2: { fallbackMarkdown: `\`\`\`markdown\n${CANVAS_DOC}\n\`\`\`` } } } },
     },
   };
 }
@@ -290,7 +293,7 @@ async function main() {
     assert.equal((domText.match(/^Ок$/gm) || []).length, 12, 'repeated identical messages are kept, not merged');
     await domTab.close();
 
-    // 4c. The reported case: an answer given as a ChatGPT canvas, PDF only, no meta.json.
+    // 4c. The reported case: an answer that is one code block widget, PDF + MD, no meta.json.
     const cur = (await call('getState')).data.settings;
     await call('saveSettings', { settings: { ...cur, formats: ['pdf', 'md'], folderMask: '%name%', writeMeta: false } });
     const beforeCanvas = (await sw.evaluate(() => chrome.downloads.search({ state: 'complete' }))).length;
@@ -304,7 +307,8 @@ async function main() {
     const canvasMd = canvasFiles.find((i) => i.filename.endsWith('.md'));
     assert.match(canvasMd.filename, /ChatBackups[\\/](Показ промта улучшателя|Pokaz promta uluchshatelya)[\\/](Показ промта улучшателя|Pokaz promta uluchshatelya)_\d{4}-\d{2}-\d{2}\.md$/);
     const canvasText = readFileSync(canvasMd.filename, 'utf8');
-    assert.match(canvasText, /\*\*Холст: Промт-улучшатель\*\*/);
+    assert.match(canvasText, /```markdown\n# Промт-улучшатель/);
+    assert.ok(!canvasText.includes('формат не распознан'), 'no raw-format rescue');
     assert.match(canvasText, /Шаг 4\. Сделай промпт проверяемым/);
     const canvasPdf = canvasFiles.find((i) => i.filename.endsWith('.pdf'));
     assert.ok(canvasPdf && canvasPdf.fileSize > 1000);
