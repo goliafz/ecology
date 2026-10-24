@@ -218,6 +218,11 @@ async function exportChatInner(req, settings, progress) {
       progress('Генерация PDF…');
       res = await writeFile(path, await htmlToPdf(printable, chat.title), 'application/pdf', { ...writeOpts, timeoutMs: 180_000 });
     }
+    if (res.renamed) {
+      const name = res.absolutePath.split(/[\\/]/).pop();
+      warnings.push(`Файл с таким именем не удалось заменить (возможно, он открыт в другой программе) — сохранён как «${name}».`);
+      await addLog('warn', `Существующий файл не заменён, сохранён как «${name}»`, { chat: key, title: chat.title });
+    }
     written[format] = { path: res.path, sha256: res.sha256, bytes: res.bytes, absolutePath: res.absolutePath };
     absolute[format] = res.absolutePath;
   }

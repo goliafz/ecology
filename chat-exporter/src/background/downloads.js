@@ -53,6 +53,31 @@ export function base64ToBytes(b64) {
 }
 
 /**
+ * Human readable text for chrome.downloads InterruptReason values.
+ * FILE_ACCESS_DENIED is what Chrome's download list shows as "Для скачивания нужно разрешение":
+ * the file could not be written (e.g. the old file is open in a PDF viewer, or the folder is protected).
+ * @param {string | undefined} reason
+ */
+export function interruptReasonText(reason) {
+  const map = {
+    FILE_ACCESS_DENIED: 'нет доступа к файлу — вероятно, файл с таким именем открыт в другой программе (например, в просмотрщике PDF) или папка защищена от записи (FILE_ACCESS_DENIED)',
+    FILE_NO_SPACE: 'на диске нет места (FILE_NO_SPACE)',
+    FILE_NAME_TOO_LONG: 'слишком длинный путь к файлу — сократите маску имени или папки (FILE_NAME_TOO_LONG)',
+    FILE_TOO_LARGE: 'файл слишком большой для файловой системы (FILE_TOO_LARGE)',
+    FILE_VIRUS_INFECTED: 'антивирус заблокировал файл (FILE_VIRUS_INFECTED)',
+    FILE_BLOCKED: 'сохранение заблокировано политикой безопасности (FILE_BLOCKED)',
+    FILE_SECURITY_CHECK_FAILED: 'проверка безопасности не пройдена (FILE_SECURITY_CHECK_FAILED)',
+    FILE_TRANSIENT_ERROR: 'временная ошибка файловой системы (FILE_TRANSIENT_ERROR)',
+    FILE_FAILED: 'ошибка записи файла (FILE_FAILED)',
+    USER_CANCELED: 'сохранение отменено (USER_CANCELED)',
+  };
+  return /** @type {Record<string, string>} */ (map)[reason || ''] || `ошибка ${reason || 'без описания'}`;
+}
+
+/** Reasons worth one retry under a new name instead of replacing the existing file. */
+const RETRY_AS_NEW_NAME = new Set(['FILE_ACCESS_DENIED', 'FILE_TRANSIENT_ERROR', 'FILE_FAILED']);
+
+/**
  * @param {number} id
  * @param {number} timeoutMs
  * @returns {Promise<chrome.downloads.DownloadItem>}
@@ -67,7 +92,9 @@ function waitForDownload(id, timeoutMs) {
         return true;
       }
       if (item.state === 'interrupted') {
-        reject(new ExportError(ErrorCode.DOWNLOAD_FAILED, `Сохранение файла прервано: ${item.error || 'неизвестная причина'}`));
+        const err = new ExportError(ErrorCode.DOWNLOAD_FAILED, `Файл не сохранён: ${interruptReasonText(item.error)}`);
+        /** @type {any} */ (err).reason = item.error || '';
+        reject(err);
         return true;
       }
       return false;
@@ -91,6 +118,7 @@ function waitForDownload(id, timeoutMs) {
  * @property {string} absolutePath where Chrome saved it
  * @property {number} bytes
  * @property {string} sha256
+ * @property {boolean} [renamed] saved under a new name because the existing file could not be replaced
  */
 
 /**
@@ -139,13 +167,33 @@ export async function writeFile(path, data, mime, options = {}) {
         throw new ExportError(ErrorCode.DOWNLOAD_FAILED, `chrome.downloads отклонил файл «${ascii}»: ${err2 instanceof Error ? err2.message : err2}`);
       }
     }
-    const item = await waitForDownload(downloadId, options.timeoutMs || 120_000);
+    let item;
+    let renamed = false;
+    try {
+      item = await waitForDownload(downloadId, options.timeoutMs || 120_000);
+    } catch (err) {
+      const reason = /** @type {any} */ (err)?.reason;
+      // Remove the failed entry so Chrome's download list does not keep a red item.
+      await chrome.downloads.erase({ id: downloadId }).catch(() => {});
+      if (!RETRY_AS_NEW_NAME.has(reason)) throw err;
+      // The existing file could not be replaced (often: it is open in another program).
+      // Save next to it as "<name> (1).pdf" instead of failing.
+      const retryId = await chrome.downloads.download({ url, filename: finalPath, conflictAction: 'uniquify', saveAs: false });
+      try {
+        item = await waitForDownload(retryId, options.timeoutMs || 120_000);
+      } catch (err2) {
+        await chrome.downloads.erase({ id: retryId }).catch(() => {});
+        throw err2;
+      }
+      downloadId = retryId;
+      renamed = true;
+    }
     const written = item.fileSize > 0 ? item.fileSize : item.bytesReceived;
     if (written !== bytes.length) {
       throw new ExportError(ErrorCode.DOWNLOAD_FAILED, `Размер сохранённого файла (${written}) не совпадает с ожидаемым (${bytes.length})`);
     }
     if (options.eraseFromList) await chrome.downloads.erase({ id: downloadId });
-    return { path: finalPath, absolutePath: item.filename, bytes: bytes.length, sha256 };
+    return { path: finalPath, absolutePath: item.filename, bytes: bytes.length, sha256, renamed };
   } finally {
     chrome.runtime.sendMessage({ target: 'offscreen', type: 'revokeBlobUrl', url }).catch(() => {});
   }

@@ -8,7 +8,8 @@
 // Run: xvfb-run -a node tests/e2e/extension.e2e.mjs   (Playwright and Chromium must be installed)
 import { createRequire } from 'node:module';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
-import { spawn } from 'node:child_process';
+import { spawn, execSync } from 'node:child_process';
+import { localStamp } from '../../src/core/util.js';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -162,6 +163,8 @@ async function main() {
   const cdp = await browser.newBrowserCDPSession();
   await cdp.send('Browser.setDownloadBehavior', { behavior: 'default' });
   const errors = [];
+  /** @type {string[]} */
+  const lockedFiles = [];
   try {
     await routeSites(context);
     const isOurs = (w) => w.url().endsWith('/src/background/service-worker.js');
@@ -323,6 +326,17 @@ async function main() {
     // 4c. The reported case: an answer that is one code block widget, PDF + MD, no meta.json.
     const cur = (await call('getState')).data.settings;
     await call('saveSettings', { settings: { ...cur, formats: ['pdf', 'md'], folderMask: '%name%', writeMeta: false } });
+    // The user's case: today's PDF already exists and cannot be replaced (on Windows: open in a
+    // PDF viewer). chattr +i reproduces Chrome's FILE_ACCESS_DENIED ("Для скачивания нужно разрешение").
+    const today = localStamp(new Date()).date;
+    for (const name of ['Показ промта улучшателя', 'Pokaz promta uluchshatelya']) {
+      const dir = join(downloads, 'ChatBackups', name);
+      mkdirSync(dir, { recursive: true });
+      const locked = join(dir, `${name}_${today}.pdf`);
+      writeFileSync(locked, 'old copy');
+      execSync(`chattr +i "${locked}"`);
+      lockedFiles.push(locked);
+    }
     const beforeCanvas = (await sw.evaluate(() => chrome.downloads.search({ state: 'complete' }))).length;
     r = await call('exportSelected', { items: [{ service: 'chatgpt', id: CANVAS_ID, title: 'Показ промта улучшателя' }] });
     s = await waitIdle('canvas');
@@ -339,6 +353,10 @@ async function main() {
     assert.match(canvasText, /Шаг 4\. Сделай промпт проверяемым/);
     const canvasPdf = canvasFiles.find((i) => i.filename.endsWith('.pdf'));
     assert.ok(canvasPdf && canvasPdf.fileSize > 1000);
+    assert.match(canvasPdf.filename, / \(1\)\.pdf$/, 'locked file kept, new copy saved next to it');
+    assert.ok(s.jobs[0].warnings.some((w) => w.includes('не удалось заменить')), 'user is told why the name changed');
+    const interrupted = await sw.evaluate(() => chrome.downloads.search({ state: 'interrupted' }));
+    assert.equal(interrupted.length, 0, 'no red "needs permission" entries left in the download list');
 
     // 5. Missed run detection: pretend the 23:00 run was missed while the browser was closed.
     await sw.evaluate(async () => {
@@ -365,6 +383,7 @@ async function main() {
   } finally {
     await browser.close().catch(() => {});
     proc.kill();
+    for (const f of lockedFiles) execSync(`chattr -i "${f}"`);
   }
 }
 
