@@ -87,7 +87,10 @@ test('settings normalization: defaults, clamping, invalid values', () => {
   const legacy = normalizeSettings({ schema: 1, formats: ['html', 'md'], auto: { formats: ['html', 'md'] } });
   assert.deepEqual(legacy.formats, ['pdf'], 'old implicit defaults are replaced by PDF');
   assert.deepEqual(legacy.auto.formats, ['pdf']);
-  assert.equal(normalizeSettings({ schema: 2, folderMask: '' }).folderMask, '', 'empty folder mask allowed');
+  assert.equal(normalizeSettings({ schema: 3, folderMask: '' }).folderMask, '', 'empty folder mask allowed');
+  assert.equal(normalizeSettings(null).folderMask, '%service%/%name%', 'default: separate folders per service');
+  assert.equal(normalizeSettings({ schema: 2, folderMask: '%name%' }).folderMask, '%service%/%name%', 'old default migrated');
+  assert.equal(normalizeSettings({ schema: 2, folderMask: '%name% (%date%)' }).folderMask, '%name% (%date%)', 'custom mask kept');
 });
 
 test('tracked scope: only marked chats, marked-but-never-saved always included', () => {

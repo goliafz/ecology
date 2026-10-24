@@ -186,6 +186,7 @@ async function main() {
     // Defaults of a fresh install: PDF only, masks %name% / %name%_%date%, no meta.json.
     assert.deepEqual(st0.data.settings.formats, ['pdf']);
     assert.equal(st0.data.settings.writeMeta, false);
+    assert.equal(st0.data.settings.folderMask, '%service%/%name%', 'chats are split by service');
     await call('saveSettings', { settings: { ...st0.data.settings, formats: ['md', 'html', 'pdf'], folderMask: '%service%/%name%', writeMeta: true, auto: { ...st0.data.settings.auto, formats: ['md', 'html'], delayMs: 500 } } });
 
     // Open the ChatGPT chat in a tab (the user's tab).
@@ -325,12 +326,12 @@ async function main() {
 
     // 4c. The reported case: an answer that is one code block widget, PDF + MD, no meta.json.
     const cur = (await call('getState')).data.settings;
-    await call('saveSettings', { settings: { ...cur, formats: ['pdf', 'md'], folderMask: '%name%', writeMeta: false } });
+    await call('saveSettings', { settings: { ...cur, formats: ['pdf', 'md'], writeMeta: false } });
     // The user's case: today's PDF already exists and cannot be replaced (on Windows: open in a
     // PDF viewer). chattr +i reproduces Chrome's FILE_ACCESS_DENIED ("Для скачивания нужно разрешение").
     const today = localStamp(new Date()).date;
     for (const name of ['Показ промта улучшателя', 'Pokaz promta uluchshatelya']) {
-      const dir = join(downloads, 'ChatBackups', name);
+      const dir = join(downloads, 'ChatBackups', 'ChatGPT', name);
       mkdirSync(dir, { recursive: true });
       const locked = join(dir, `${name}_${today}.pdf`);
       writeFileSync(locked, 'old copy');
@@ -346,7 +347,7 @@ async function main() {
     console.log('canvas files:', canvasFiles.map((i) => i.filename));
     assert.equal((await sw.evaluate(() => chrome.downloads.search({ state: 'complete' }))).length - beforeCanvas, 2, 'exactly pdf + md, no meta.json');
     const canvasMd = canvasFiles.find((i) => i.filename.endsWith('.md'));
-    assert.match(canvasMd.filename, /ChatBackups[\\/](Показ промта улучшателя|Pokaz promta uluchshatelya)[\\/](Показ промта улучшателя|Pokaz promta uluchshatelya)_\d{4}-\d{2}-\d{2}\.md$/);
+    assert.match(canvasMd.filename, /ChatBackups[\\/]ChatGPT[\\/](Показ промта улучшателя|Pokaz promta uluchshatelya)[\\/](Показ промта улучшателя|Pokaz promta uluchshatelya)_\d{4}-\d{2}-\d{2}\.md$/);
     const canvasText = readFileSync(canvasMd.filename, 'utf8');
     assert.match(canvasText, /```markdown\n# Промт-улучшатель/);
     assert.ok(!canvasText.includes('формат не распознан'), 'no raw-format rescue');

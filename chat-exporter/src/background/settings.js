@@ -47,12 +47,12 @@ import { getKey, setKey } from './storage.js';
 
 /** @type {Readonly<Settings>} */
 export const DEFAULT_SETTINGS = Object.freeze({
-  schema: 2,
+  schema: 3,
   /** Formats for manual exports. */
   formats: /** @type {ExportFormat[]} */ (['pdf']),
   rootFolder: 'ChatBackups',
   /** Folder of a chat inside rootFolder; %tokens% as in core/filenames.js MASK_TOKENS. */
-  folderMask: '%name%',
+  folderMask: '%service%/%name%',
   /** File name without extension. With %date% every day gets its own file: a dated history. */
   fileMask: '%name%_%date%',
   /** A file with the same name already exists: replace it or add a number. */
@@ -126,11 +126,14 @@ export function normalizeSettings(stored) {
   // Schema 1 (version 1.0.0) saved HTML + Markdown as the default formats; they were never an
   // explicit choice, so they are replaced by the new default (PDF).
   const legacy = typeof s.schema === 'number' && s.schema < 2;
+  // Schema 2 (1.1.0–1.2.1) defaulted to one folder per chat without the service level;
+  // that default is replaced so ChatGPT and Claude chats go to separate folders.
+  const oldFolderDefault = typeof s.schema === 'number' && s.schema < 3 && (s.folderMask === undefined || String(s.folderMask).trim() === '%name%');
   return {
-    schema: 2,
+    schema: 3,
     formats: legacy ? [...d.formats] : formats(s.formats, d.formats),
     rootFolder: str(s.rootFolder, d.rootFolder),
-    folderMask: typeof s.folderMask === 'string' ? s.folderMask.trim() : d.folderMask,
+    folderMask: oldFolderDefault ? d.folderMask : typeof s.folderMask === 'string' ? s.folderMask.trim() : d.folderMask,
     fileMask: str(s.fileMask, d.fileMask),
     onConflict: /** @type {any} */ (oneOf(s.onConflict, ['overwrite', 'uniquify'], d.onConflict)),
     writeMeta: bool(s.writeMeta, d.writeMeta),

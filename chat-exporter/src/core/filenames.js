@@ -104,7 +104,7 @@ export function shortId(id) {
 export function buildChatFolder(settings, chat, now, taken = new Set()) {
   const vars = templateVars(chat, now);
   const root = expandTemplate(settings.rootFolder || 'ChatBackups', {});
-  const sub = expandTemplate(settings.folderMask ?? '%name%', vars);
+  const sub = expandTemplate(settings.folderMask ?? '%service%/%name%', vars);
   let folder = [root, sub].filter(Boolean).join('/') || 'ChatBackups';
   if (taken.has(folder)) folder = `${folder} (${vars.shortId})`;
   return folder;
