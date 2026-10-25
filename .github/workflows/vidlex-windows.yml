@@ -6,6 +6,14 @@ on:
       - "VidLex/**"
       - ".github/workflows/vidlex-windows.yml"
   workflow_dispatch:
+    inputs:
+      publish_screenshots:
+        description: "Сохранить скриншоты интерфейса в VidLex/docs/screenshots этой ветки"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
 
 jobs:
   windows:
@@ -79,20 +87,14 @@ jobs:
             VidLex/artifacts/*.zip
           if-no-files-found: warn
 
-      - name: Скриншоты в журнал (base64 JPEG)
-        if: always()
-        shell: powershell
+      - name: Публикация скриншотов в ветку (ручной запуск)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_screenshots }}
+        shell: bash
         run: |
-          Add-Type -AssemblyName System.Drawing
-          $codec = [System.Drawing.Imaging.ImageCodecInfo]::GetImageEncoders() | Where-Object { $_.MimeType -eq "image/jpeg" }
-          $ep = New-Object System.Drawing.Imaging.EncoderParameters 1
-          $ep.Param[0] = New-Object System.Drawing.Imaging.EncoderParameter ([System.Drawing.Imaging.Encoder]::Quality), 72L
-          Get-ChildItem artifacts\screenshots -Filter *.png -ErrorAction SilentlyContinue | ForEach-Object {
-            $img = [System.Drawing.Image]::FromFile($_.FullName)
-            $ms = New-Object IO.MemoryStream
-            $img.Save($ms, $codec, $ep); $img.Dispose()
-            $b64 = [Convert]::ToBase64String($ms.ToArray())
-            Write-Host "===SHOT-BEGIN $($_.BaseName)==="
-            for ($i = 0; $i -lt $b64.Length; $i += 3000) { Write-Host $b64.Substring($i, [Math]::Min(3000, $b64.Length - $i)) }
-            Write-Host "===SHOT-END $($_.BaseName)==="
-          }
+          mkdir -p VidLex/docs/screenshots
+          cp artifacts/screenshots/*.png VidLex/docs/screenshots/
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add VidLex/docs/screenshots
+          git commit -m "VidLex: скриншоты интерфейса из CI (Windows) [skip ci]" || echo "Изменений нет"
+          git push origin HEAD:${GITHUB_REF_NAME}
