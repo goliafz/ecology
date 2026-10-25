@@ -208,7 +208,7 @@
                                 </Style>
                             </DataGridTextColumn.ElementStyle>
                         </DataGridTextColumn>
-                        <DataGridTextColumn Header="Длительность" Binding="{Binding DurationText, Mode=OneWay}" Width="100" SortMemberPath="Duration" />
+                        <DataGridTextColumn Header="Длительность" Binding="{Binding DurationText, Mode=OneWay}" Width="120" SortMemberPath="Duration" />
                         <DataGridTemplateColumn Header="Статус" Width="150" SortMemberPath="Status">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>

@@ -10,26 +10,33 @@
         </Grid.RowDefinitions>
         <TextBlock Text="Журнал" Style="{StaticResource PageTitle}" />
 
-        <Grid Grid.Row="1" Margin="0,0,0,12">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
+        <!-- Панель переносится на вторую строку на узком окне (1024×768 и меньше). -->
+        <WrapPanel Grid.Row="1" Margin="0,0,0,6">
             <ComboBox Width="230" ItemsSource="{Binding Levels}" DisplayMemberPath="Title" SelectedItem="{Binding LevelFilter}"
-                      AutomationProperties.Name="Фильтр по уровню" Margin="0,0,8,0" />
-            <TextBox Grid.Column="1" Width="260" Text="{Binding Search, UpdateSourceTrigger=PropertyChanged, Delay=200}"
-                     AutomationProperties.Name="Поиск в журнале" ToolTip="Поиск по сообщению, имени файла и этапу" />
-            <CheckBox Grid.Column="2" Style="{StaticResource ToggleSwitch}" Margin="12,0,0,0" IsChecked="{Binding AutoScroll}" Content="Прокручивать к новым" VerticalAlignment="Center" />
-            <StackPanel Grid.Column="4" Orientation="Horizontal">
-                <Button Content="_Копировать запись" Command="{Binding CopyCommand}" />
-                <Button Content="Копировать видимые" Command="{Binding CopyAllVisibleCommand}" />
-                <Button Content="Открыть папку журналов" Command="{Binding OpenFolderCommand}" />
-                <Button Content="Очистить старые…" Style="{StaticResource DangerButton}" Command="{Binding DeleteOldCommand}" Margin="0" />
-            </StackPanel>
-        </Grid>
+                      AutomationProperties.Name="Фильтр по уровню" Margin="0,0,8,6" />
+            <Grid Width="260" Margin="0,0,12,6">
+                <TextBox x:Name="LogSearch" Text="{Binding Search, UpdateSourceTrigger=PropertyChanged, Delay=200}"
+                         AutomationProperties.Name="Поиск в журнале" ToolTip="Поиск по сообщению, имени файла и этапу" />
+                <TextBlock Text="Поиск в журнале…" Margin="10,0,0,0" VerticalAlignment="Center" IsHitTestVisible="False"
+                           Foreground="{StaticResource DisabledTextBrush}">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding Text, ElementName=LogSearch}" Value="">
+                                    <Setter Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+            </Grid>
+            <CheckBox Style="{StaticResource ToggleSwitch}" Margin="0,0,16,6" IsChecked="{Binding AutoScroll}" Content="Прокручивать к новым" VerticalAlignment="Center" />
+            <Button Content="_Копировать запись" Command="{Binding CopyCommand}" Margin="0,0,8,6" />
+            <Button Content="Копировать видимые" Command="{Binding CopyAllVisibleCommand}" Margin="0,0,8,6" />
+            <Button Content="Открыть папку журналов" Command="{Binding OpenFolderCommand}" Margin="0,0,8,6" />
+            <Button Content="Очистить старые…" Style="{StaticResource DangerButton}" Command="{Binding DeleteOldCommand}" Margin="0,0,0,6" />
+        </WrapPanel>
 
         <Border Grid.Row="2" Style="{StaticResource Card}" Padding="0" Margin="0">
             <DataGrid x:Name="LogGrid" ItemsSource="{Binding View}" SelectedItem="{Binding Selected}" SelectionMode="Single" RowHeight="30"
