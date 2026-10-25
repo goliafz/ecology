@@ -10,6 +10,7 @@ param(
     [Parameter(Mandatory = $true)][string]$ShotsDir,
     [string]$Prefix = "",
     [switch]$NoStart,
+    [ValidateSet("Normal", "CloseDuringProcessing")][string]$Scenario = "Normal",
     [int]$TimeoutSec = 900
 )
 $ErrorActionPreference = "Stop"
@@ -38,6 +39,23 @@ function Find-Window([int]$seconds) {
         Start-Sleep -Milliseconds 500
     }
     return $null
+}
+
+function Find-NamedWindow([string]$name, [int]$seconds) {
+    $cond = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, $name)
+    $sw = [Diagnostics.Stopwatch]::StartNew()
+    while ($sw.Elapsed.TotalSeconds -lt $seconds) {
+        # Диалог может быть и окном верхнего уровня, и дочерним окном главного.
+        $w = [System.Windows.Automation.AutomationElement]::RootElement.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $cond)
+        if ($w) { return $w }
+        Start-Sleep -Milliseconds 500
+    }
+    return $null
+}
+
+function Read-Log() {
+    $files = Get-ChildItem (Join-Path $DataDir "Logs") -Filter "VidLex_*.log" -ErrorAction SilentlyContinue
+    return ($files | ForEach-Object { Get-Content $_.FullName -Raw -Encoding UTF8 }) -join "`n"
 }
 
 function Shot($win, [string]$name) {
@@ -84,6 +102,42 @@ if (Click $win "Настройки") { Shot $win "02-settings"; if (Has-Text $wi
 if (Click $win "Журнал") { Shot $win "03-log" }
 if (Click $win "О программе") { Shot $win "04-about"; if (Has-Text $win "Разработчик: Ходаковский Александр") { Ok "раздел «О программе»: разработчик указан" } else { Fail "в «О программе» нет разработчика" } }
 [void](Click $win "Главная")
+
+if ($Scenario -eq "CloseDuringProcessing") {
+    # Сценарий ТЗ №19: закрытие во время обработки → подтверждение → сохранение состояния → восстановление при запуске.
+    $sw = [Diagnostics.Stopwatch]::StartNew()
+    while ($sw.Elapsed.TotalSeconds -lt 120 -and (Read-Log) -notmatch "Распознавание: whisper") { Start-Sleep -Seconds 1 }
+    Start-Sleep -Seconds 3
+    Shot $win "07-processing-before-close"
+    $win.GetCurrentPattern([System.Windows.Automation.WindowPattern]::Pattern).Close()
+    $dlg = Find-NamedWindow "VidLex — Идёт обработка" 15
+    if (-not $dlg) { Fail "при закрытии во время обработки не появилось подтверждение" }
+    else {
+        Ok "появилось подтверждение закрытия во время обработки"
+        Shot $dlg "08-close-confirmation"
+        [void](Click $dlg "Остановить и закрыть")
+    }
+    if ($proc.WaitForExit(60000)) { Ok "приложение закрылось после подтверждения" } else { Fail "приложение не закрылось после подтверждения"; $proc.Kill() }
+    $state = Get-Content (Join-Path $DataDir "State\queue-state.json") -Raw -Encoding UTF8 | ConvertFrom-Json
+    if ($state.IsRunning) { Ok "состояние очереди сохранено как прерванное" } else { Fail "состояние очереди не помечено как прерванное" }
+    if ((Read-Log) -match "контрольная точка сохранена") { Ok "контрольная точка длинного видео сохранена" } else { Fail "в журнале нет записи о сохранении контрольной точки" }
+
+    # Перезапуск без параметров: программа должна предложить восстановить очередь.
+    $proc = Start-Process -FilePath $AppExe -PassThru
+    $win = Find-Window 60
+    $dlg = Find-NamedWindow "VidLex — Продолжить прерванную обработку?" 30
+    if (-not $dlg) { Fail "после перезапуска не предложено восстановить очередь" }
+    else {
+        Ok "после перезапуска предложено восстановить очередь"
+        Shot $dlg "09-restore-offer"
+        [void](Click $dlg "Восстановить")
+        Start-Sleep -Seconds 6
+        if ((Read-Log) -match "Очередь восстановлена") { Ok "очередь восстановлена" } else { Fail "в журнале нет записи о восстановлении очереди" }
+        $win = Find-Window 10
+        Shot $win "10-restored"
+    }
+    $NoStart = $true
+}
 
 if (-not $NoStart) {
     $logDir = Join-Path $DataDir "Logs"

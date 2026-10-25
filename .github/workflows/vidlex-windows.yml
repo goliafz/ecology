@@ -40,8 +40,11 @@ jobs:
       - name: Кэш компонентов (FFmpeg, whisper.cpp, модель)
         uses: actions/cache@v4
         with:
-          path: vidlex-deps
-          key: vidlex-deps-small-v1
+          # Только компоненты: журналы и состояние в кэш попадать не должны.
+          path: |
+            vidlex-deps/tools
+            vidlex-deps/Models
+          key: vidlex-deps-small-v2
 
       - name: Установка компонентов скриптом Install-Dependencies.ps1 (Windows PowerShell 5.1)
         id: deps
@@ -70,6 +73,11 @@ jobs:
         if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
         shell: powershell
         run: VidLex\scripts\ci\Run-GuiChecks.ps1 -Mode Full -Repo "$env:GITHUB_WORKSPACE" -Temp "$env:RUNNER_TEMP" -Deps "$env:DEPS"
+
+      - name: Проверка интерфейса (закрытие во время обработки и восстановление очереди)
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
+        shell: powershell
+        run: VidLex\scripts\ci\Run-GuiChecks.ps1 -Mode CloseDuring -Repo "$env:GITHUB_WORKSPACE" -Temp "$env:RUNNER_TEMP" -Deps "$env:DEPS"
 
       - name: Release-сборка с компонентами
         if: always()
